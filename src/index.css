@@ -1,0 +1,95 @@
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+@import "tailwindcss";
+
+body {
+  @apply bg-[#020617] text-white overflow-x-hidden select-none;
+  font-family: 'Press Start 2P', system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.gta-panel {
+  background: rgba(4, 8, 2, 0.92);
+  border: 1px solid rgba(142, 255, 120, 0.18);
+  box-shadow: 0 0 30px rgba(105, 255, 95, 0.1);
+}
+
+.gta-button {
+  background: rgba(83, 191, 34, 0.18);
+  border: 1px solid rgba(126, 255, 103, 0.22);
+  color: #d6ff9f;
+}
+
+.gta-button:hover {
+  background: rgba(83, 191, 34, 0.26);
+}
+
+.gta-title {
+  color: #d6ff9f;
+  letter-spacing: 0.2em;
+}
+
+.gta-label {
+  color: #9eff52;
+  letter-spacing: 0.18em;
+}
+
+.gta-tag {
+  color: #a8ff8d;
+}
+
+.gta-frame {
+  box-shadow: inset 0 0 0 1px rgba(126, 255, 103, 0.24), 0 0 50px rgba(126, 255, 103, 0.08);
+  border: 1px solid rgba(126, 255, 103, 0.25);
+  position: relative;
+}
+
+.gta-frame::before,
+.gta-frame::after {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border: 1px solid rgba(126, 255, 103, 0.35);
+}
+
+.gta-frame::before {
+  top: 0;
+  left: 0;
+  border-right: transparent;
+  border-bottom: transparent;
+}
+
+.gta-frame::after {
+  bottom: 0;
+  right: 0;
+  border-left: transparent;
+  border-top: transparent;
+}
+
+.gta-detail {
+  color: #aef06c;
+}
+
+.gta-hud {
+  background: rgba(4, 8, 1, 0.82);
+  border: 1px solid rgba(94, 255, 105, 0.1);
+}
+
+/* Эффект стеклянного блика на маркерах */
+.glass-shine {
+  background: linear-gradient(135deg, rgba(255,255,255,0.3) 0%, transparent 50%, rgba(0,0,0,0.1) 100%);
+}
+
+/* Плавная пульсация для активной локации */
+@keyframes marker-pulse {
+  0% { transform: scale(1); opacity: 0.5; }
+  50% { transform: scale(1.4); opacity: 0.2; }
+  100% { transform: scale(1); opacity: 0.5; }
+}
+.animate-marker-pulse {
+  animation: marker-pulse 2s infinite;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
