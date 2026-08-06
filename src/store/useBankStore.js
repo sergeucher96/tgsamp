@@ -6,11 +6,67 @@ const BANK_INTEREST_RATE = 0.001; // 0.1% в час
 
 export const useBankStore = create((set, get) => ({
   interestIntervalId: null,
+  realtimeChannel: null,
+  notifications: [],
 
   _normalizeAmount: (input) => {
     const amount = Number(input);
     if (Number.isNaN(amount) || amount <= 0) return null;
     return Math.round(amount * 100) / 100;
+  },
+
+  addNotification: (notification) => {
+    const id = Date.now();
+    set({ notifications: [...get().notifications, { ...notification, id }] });
+    // Auto remove after 5 seconds
+    setTimeout(() => {
+      set({ notifications: get().notifications.filter(n => n.id !== id) });
+    }, 5000);
+  },
+
+  startRealtimeSubscription: () => {
+    const { player } = usePlayerStore.getState();
+    if (!player || get().realtimeChannel) return;
+
+    const channel = supabase
+      .channel('bank-transfers')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'profiles',
+          filter: `id=eq.${player.id}`,
+        },
+        (payload) => {
+          const newBalance = Number(payload.new.bank_balance || 0);
+          const oldBalance = Number(player.bank_balance || 0);
+          
+          // If balance increased and it's not interest accrual
+          if (newBalance > oldBalance && newBalance - oldBalance > 0.01) {
+            const receivedAmount = Number((newBalance - oldBalance).toFixed(2));
+            get().addNotification({
+              type: 'transfer_received',
+              amount: receivedAmount,
+              message: `Вам поступил перевод ${receivedAmount.toLocaleString()} ₽`,
+            });
+            
+            // Update local player balance
+            usePlayerStore.getState().updateProfile({ bank_balance: newBalance });
+          }
+        }
+      )
+      .subscribe();
+
+    set({ realtimeChannel: channel });
+  },
+
+  stopRealtimeSubscription: () => {
+    const channel = get().realtimeChannel;
+    if (channel) {
+      supabase.removeChannel(channel);
+      set({ realtimeChannel: null });
+    }
   },
 
   depositToOwnAccount: async (amountInput) => {
@@ -19,14 +75,25 @@ export const useBankStore = create((set, get) => ({
     if (!player || amount === null) return false;
 
     if (Number(player.money || 0) < amount) {
-      alert('Недостаточно наличных для депозита.');
+      get().addNotification({
+        type: 'error',
+        message: 'Недостаточно наличных для депозита.',
+      });
       return false;
     }
 
-    return await updateProfile({
+    const success = await updateProfile({
       money: Number(player.money || 0) - amount,
       bank_balance: Number((Number(player.bank_balance || 0) + amount).toFixed(2))
     });
+    
+    if (success) {
+      get().addNotification({
+        type: 'success',
+        message: `Депозит ${amount.toLocaleString()} ₽ выполнен`,
+      });
+    }
+    return success;
   },
 
   withdrawFromOwnAccount: async (amountInput) => {
@@ -35,14 +102,25 @@ export const useBankStore = create((set, get) => ({
     if (!player || amount === null) return false;
 
     if (Number(player.bank_balance || 0) < amount) {
-      alert('На банковском счету недостаточно средств.');
+      get().addNotification({
+        type: 'error',
+        message: 'На банковском счету недостаточно средств.',
+      });
       return false;
     }
 
-    return await updateProfile({
+    const success = await updateProfile({
       money: Number(player.money || 0) + amount,
       bank_balance: Number((Number(player.bank_balance || 0) - amount).toFixed(2))
     });
+    
+    if (success) {
+      get().addNotification({
+        type: 'success',
+        message: `Снятие ${amount.toLocaleString()} ₽ выполнено`,
+      });
+    }
+    return success;
   },
 
   transferToPhone: async (phoneNumber, amountInput) => {
@@ -51,12 +129,18 @@ export const useBankStore = create((set, get) => ({
     if (!player || amount === null) return false;
 
     if (!phoneNumber || phoneNumber === player.phone_number) {
-      alert('Введите корректный номер телефона получателя.');
+      get().addNotification({
+        type: 'error',
+        message: 'Введите корректный номер телефона получателя.',
+      });
       return false;
     }
 
     if (Number(player.bank_balance || 0) < amount) {
-      alert('На банковском счету недостаточно средств для перевода.');
+      get().addNotification({
+        type: 'error',
+        message: 'На банковском счету недостаточно средств для перевода.',
+      });
       return false;
     }
 
@@ -68,12 +152,18 @@ export const useBankStore = create((set, get) => ({
 
     if (findError) {
       console.error(findError);
-      alert('Ошибка при поиске получателя. Попробуйте позже.');
+      get().addNotification({
+        type: 'error',
+        message: 'Ошибка при поиске получателя. Попробуйте позже.',
+      });
       return false;
     }
 
     if (!recipient) {
-      alert('Пользователь с таким номером не найден.');
+      get().addNotification({
+        type: 'error',
+        message: 'Пользователь с таким номером не найден.',
+      });
       return false;
     }
 
@@ -91,7 +181,10 @@ export const useBankStore = create((set, get) => ({
       const success = await updateProfile({ bank_balance: Number(senderBankBalance.toFixed(2)) });
       if (!success) throw new Error('Не удалось списать средства со счета отправителя.');
 
-      alert(`Перевод ${amount.toLocaleString()} ₽ выполнен на номер ${phoneNumber}.`);
+      get().addNotification({
+        type: 'success',
+        message: `Перевод ${amount.toLocaleString()} ₽ выполнен на номер ${phoneNumber}`,
+      });
       return true;
     } catch (err) {
       console.error(err);
@@ -99,7 +192,10 @@ export const useBankStore = create((set, get) => ({
         .from('profiles')
         .update({ bank_balance: player.bank_balance || 0 })
         .eq('id', player.id);
-      alert('Не удалось совершить перевод. Попробуйте позже.');
+      get().addNotification({
+        type: 'error',
+        message: 'Не удалось совершить перевод. Попробуйте позже.',
+      });
       return false;
     }
   },

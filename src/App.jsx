@@ -15,6 +15,9 @@ import RegistrationView from './views/RegistrationView';
 import HouseInterior from './views/HouseInterior';
 import GarageView from './views/GarageView';
 
+// Components
+import BankNotifications from './components/BankNotifications';
+
 import { Loader2 } from 'lucide-react';
 
 function App() {
@@ -29,6 +32,7 @@ function App() {
         fetchDbHouses();
         fetchVehicles();
         useBankStore.getState().startInterestAccrual();
+        useBankStore.getState().startRealtimeSubscription();
         useWeaponStore.getState().fetchWeapons();
     });
   }, []);
@@ -70,6 +74,9 @@ function App() {
 
   return (
     <div className="fixed inset-0 flex flex-col bg-[#020617] text-white select-none overflow-x-hidden font-sans">
+      
+      {/* Bank Notifications */}
+      <BankNotifications />
       
       {/* СЛОЙ 1: ГАРАЖ (Самый верхний) */}
       {currentGarage && <GarageView />}
