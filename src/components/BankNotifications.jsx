@@ -22,15 +22,15 @@ export default function BankNotifications() {
               ${isError ? 'bg-red-500/10 border-red-500/30 text-red-400' : ''}
             `}
           >
-            <div className="flex items-center gap-2">
+            <div className="flex items-start gap-2">
               {isSuccess ? (
-                <CheckCircle size={16} />
+                <CheckCircle size={16} className="mt-0.5 shrink-0" />
               ) : isError ? (
-                <XCircle size={16} />
+                <XCircle size={16} className="mt-0.5 shrink-0" />
               ) : (
-                <Banknote size={16} />
+                <Banknote size={16} className="mt-0.5 shrink-0" />
               )}
-              <span className="text-sm font-black">{notif.message}</span>
+              <span className="text-sm font-black leading-tight">{notif.message}</span>
             </div>
           </div>
         );

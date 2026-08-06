@@ -8,6 +8,7 @@ export const useBankStore = create((set, get) => ({
   interestIntervalId: null,
   realtimeChannel: null,
   notifications: [],
+  isUpdatingLocally: false, // Prevent realtime loops
 
   _normalizeAmount: (input) => {
     const amount = Number(input);
@@ -39,20 +40,20 @@ export const useBankStore = create((set, get) => ({
           filter: `id=eq.${player.id}`,
         },
         (payload) => {
-          const newBalance = Number(payload.new.bank_balance || 0);
-          const oldBalance = Number(player.bank_balance || 0);
+          // Skip if this update was triggered by our own local action
+          if (get().isUpdatingLocally) return;
           
-          // If balance increased and it's not interest accrual
-          if (newBalance > oldBalance && newBalance - oldBalance > 0.01) {
+          const newBalance = Number(payload.new.bank_balance || 0);
+          const oldBalance = Number(payload.old.bank_balance || 0);
+          
+          // Only notify for incoming transfers (not interest or tiny changes)
+          if (newBalance > oldBalance && newBalance - oldBalance > 10) {
             const receivedAmount = Number((newBalance - oldBalance).toFixed(2));
             get().addNotification({
               type: 'transfer_received',
               amount: receivedAmount,
-              message: `Вам поступил перевод ${receivedAmount.toLocaleString()} ₽`,
+              message: `Поступил перевод +${receivedAmount.toLocaleString()} ₽. Баланс: ${newBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽`,
             });
-            
-            // Update local player balance
-            usePlayerStore.getState().updateProfile({ bank_balance: newBalance });
           }
         }
       )
@@ -82,10 +83,12 @@ export const useBankStore = create((set, get) => ({
       return false;
     }
 
+    set({ isUpdatingLocally: true });
     const success = await updateProfile({
       money: Number(player.money || 0) - amount,
       bank_balance: Number((Number(player.bank_balance || 0) + amount).toFixed(2))
     });
+    set({ isUpdatingLocally: false });
     
     if (success) {
       get().addNotification({
@@ -109,10 +112,12 @@ export const useBankStore = create((set, get) => ({
       return false;
     }
 
+    set({ isUpdatingLocally: true });
     const success = await updateProfile({
       money: Number(player.money || 0) + amount,
       bank_balance: Number((Number(player.bank_balance || 0) - amount).toFixed(2))
     });
+    set({ isUpdatingLocally: false });
     
     if (success) {
       get().addNotification({
@@ -178,7 +183,10 @@ export const useBankStore = create((set, get) => ({
 
       if (recipientError) throw recipientError;
 
+      set({ isUpdatingLocally: true });
       const success = await updateProfile({ bank_balance: Number(senderBankBalance.toFixed(2)) });
+      set({ isUpdatingLocally: false });
+      
       if (!success) throw new Error('Не удалось списать средства со счета отправителя.');
 
       get().addNotification({
@@ -210,9 +218,12 @@ export const useBankStore = create((set, get) => ({
     const interest = Math.round(balance * BANK_INTEREST_RATE * 100) / 100;
     if (interest <= 0) return false;
 
-    return await updateProfile({
+    set({ isUpdatingLocally: true });
+    const success = await updateProfile({
       bank_balance: Number((balance + interest).toFixed(2))
     });
+    set({ isUpdatingLocally: false });
+    return success;
   },
 
   startInterestAccrual: () => {
