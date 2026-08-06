@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { supabase } from '../api/supabase';
 import { usePlayerStore } from './usePlayerStore';
+import { useInventoryStore } from './useInventoryStore';
+import { useQuestStore } from './useQuestStore';
 import { HOUSE_CLASSES } from '../data/houseConfig';
 import { VEHICLE_DATABASE } from '../data/vehicleConfig';
 
@@ -86,6 +88,7 @@ export const useVehicleStore = create((set, get) => ({
       if (error) throw error;
 
       await updateProfile({ money: Number(player.money) - config.price });
+      useQuestStore.getState().registerEvent('buy_vehicle');
       await get().fetchVehicles();
       return true;
     } catch (e) {

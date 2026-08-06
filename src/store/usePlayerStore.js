@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { supabase } from '../api/supabase';
+import { useInventoryStore } from './useInventoryStore';
 
 export const usePlayerStore = create((set, get) => ({
   player: null,
@@ -40,7 +41,21 @@ export const usePlayerStore = create((set, get) => ({
       // ЗАПУСКАЕМ МЕТАБОЛИЗМ (Раз в 2 минуты -1 энергия)
       setInterval(() => {
         get().processMetabolism();
-      }, 120000); 
+      }, 120000);
+
+      // Проверяем, есть ли у игрока телефон, если нет — выдаём
+      const { items, fetchPlayerInventory } = useInventoryStore.getState();
+      const hasPhone = items.some(i => i.item_id === 'phone');
+      if (!hasPhone) {
+        await supabase.from('inventory').insert([{
+          owner_id: profile.id.toString(),
+          item_id: 'phone',
+          amount: 1,
+          storage_type: 'player'
+        }]);
+        await fetchPlayerInventory();
+      }
+
 
     } catch (err) {
       console.error(err);

@@ -27,8 +27,9 @@ export const ITEM_DATABASE = {
   'phone': {
     id: 'phone',
     name: 'Смартфон',
-    desc: 'Доступ к связи и навигации.',
+    desc: 'Доступ к связи, банку и навигации.',
     icon: '📱',
+    action: 'OPEN_PHONE',
     stackable: false
   },
   'repair_kit': {

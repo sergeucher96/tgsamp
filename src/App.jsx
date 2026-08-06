@@ -1,10 +1,11 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { usePlayerStore } from './store/usePlayerStore';
 import { useNavigationStore } from './store/useNavigationStore';
 import { useHouseStore } from './store/useHouseStore';
 import { useVehicleStore } from './store/useVehicleStore';
 import { useBankStore } from './store/useBankStore';
 import { useWeaponStore } from './store/useWeaponStore';
+import { useQuestStore } from './store/useQuestStore';
 import { useTelegram } from './hooks/useTelegram';
 
 // Views
@@ -14,6 +15,8 @@ import InventoryView from './views/InventoryView';
 import RegistrationView from './views/RegistrationView';
 import HouseInterior from './views/HouseInterior';
 import GarageView from './views/GarageView';
+import QuestView from './views/QuestView';
+import PhoneView from './views/PhoneView';
 
 // Components
 import BankNotifications from './components/BankNotifications';
@@ -22,18 +25,20 @@ import { Loader2 } from 'lucide-react';
 
 function App() {
   const { player, loading, login, needsRegistration, skills, licenses } = usePlayerStore();
-  const { activeTab, setActiveTab, currentInterior, currentGarage } = useNavigationStore();
+  const { activeTab, setActiveTab, currentInterior, currentGarage, showPhone, closePhone } = useNavigationStore();
   const { fetchDbHouses } = useHouseStore();
   const { fetchVehicles } = useVehicleStore();
   const { isTelegram } = useTelegram();
+  const [showQuests, setShowQuests] = useState(false);
 
   useEffect(() => { 
     login().then(() => {
         fetchDbHouses();
         fetchVehicles();
         useBankStore.getState().startInterestAccrual();
-        useBankStore.getState().startRealtimeSubscription();
         useWeaponStore.getState().fetchWeapons();
+        useQuestStore.getState().loadProgress();
+        useQuestStore.getState().startQuestTimer();
     });
   }, []);
 
@@ -78,6 +83,10 @@ function App() {
       {/* Bank Notifications */}
       <BankNotifications />
       
+      {/* Quest View */}
+      {showQuests && <QuestView onClose={() => setShowQuests(false)} />}
+      {showPhone && <PhoneView onClose={closePhone} />}
+      
       {/* СЛОЙ 1: ГАРАЖ (Самый верхний) */}
       {currentGarage && <GarageView />}
 
@@ -115,6 +124,7 @@ function App() {
               <NavButton active={activeTab === 'map'} onClick={() => setActiveTab('map')} icon="🗺️" />
               <NavButton active={activeTab === 'profile'} onClick={() => setActiveTab('profile')} icon="👤" />
               <NavButton active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} icon="🎒" />
+              <NavButton active={showQuests} onClick={() => setShowQuests(true)} icon="📜" />
           </footer>
         </>
       )}

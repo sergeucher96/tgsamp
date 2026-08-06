@@ -118,6 +118,9 @@ export default function MapView() {
   const [showGunRange, setShowGunRange] = useState(false);
   const [activeJobId, setActiveJobId] = useState(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  // Long-press travel marker
+  const [travelMarker, setTravelMarker] = useState(null);
+  const longPressTimer = useRef(null);
   // Поиск / фильтрация
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -188,6 +191,44 @@ export default function MapView() {
     const newY = (vh / 2) - (loc.y * targetScale);
     try { pinchRef.current.setTransform(newX, newY, targetScale, 600); } catch(e) { /* ignore */ }
     setIsFollowing(false);
+  };
+
+  // Find nearest road waypoint to arbitrary map point
+  const findNearestRoadPoint = (mapX, mapY) => {
+    let minDist = Infinity;
+    let nearest = null;
+    for (const id in WAYPOINTS) {
+      const wp = WAYPOINTS[id];
+      const dist = Math.abs(wp.x - mapX) + Math.abs(wp.y - mapY);
+      if (dist < minDist) {
+        minDist = dist;
+        nearest = id;
+      }
+    }
+    return nearest;
+  };
+
+  // Handle long-press on map to set travel destination
+  const handleMapLongPress = (e) => {
+    if (isMoving) return;
+    const scale = currentScaleRef.current;
+    const transform = pinchRef.current?.state;
+    if (!transform) return;
+
+    const mapX = Math.round((e.clientX - transform.x) / scale);
+    const mapY = Math.round((e.clientY - transform.y) / scale);
+
+    const nearestWaypoint = findNearestRoadPoint(mapX, mapY);
+    if (nearestWaypoint) {
+      setTravelMarker({ x: mapX, y: mapY, waypoint: nearestWaypoint });
+    }
+  };
+
+  const startTravelToMarker = () => {
+    if (!travelMarker) return;
+    setIsFollowing(true);
+    startRoute(travelMarker.waypoint);
+    setTravelMarker(null);
   };
 
   // --- ЛОГИКА КАМЕРЫ (60 FPS) ---
@@ -300,6 +341,21 @@ export default function MapView() {
           <div className="relative" style={{ width: `${MAP_CONFIG.width}px`, height: `${MAP_CONFIG.height}px` }}>
             <img src="/map.webp" className="absolute inset-0 w-full h-full opacity-60" style={{ filter: 'brightness(0.5) contrast(1.2)', pointerEvents: 'none' }} onLoad={() => setIsImgLoading(false)} />
 
+            {/* Travel marker from long-press */}
+            {travelMarker && (
+              <div className="absolute pointer-events-none" style={{ left: `${travelMarker.x}px`, top: `${travelMarker.y}px`, transform: 'translate(-50%, -50%)', zIndex: 50 }}>
+                <div className="w-6 h-6 bg-yellow-400 rounded-full border-2 border-white shadow-lg animate-ping absolute" />
+                <div className="w-6 h-6 bg-yellow-400 rounded-full border-2 border-white shadow-lg relative flex items-center justify-center">
+                  <Navigation size={10} className="text-black" />
+                </div>
+                <div className="absolute -bottom-14 left-1/2 -translate-x-1/2 whitespace-nowrap">
+                  <div className="bg-black/80 backdrop-blur-md border border-yellow-400/30 rounded-xl px-3 py-1.5">
+                    <span className="text-[9px] font-black uppercase text-yellow-400 italic">Нажмите для перемещения</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <TravelOverlay
               player={player}
               activeVehicle={activeVehicle}
@@ -308,6 +364,23 @@ export default function MapView() {
               routeTarget={routeTarget}
               currentPosition={currentPosition}
               currentRotation={currentRotation}
+            />
+
+            {/* Long-press overlay for travel */}
+            <div
+              className="absolute inset-0 z-5"
+              onMouseDown={(e) => {
+                if (longPressTimer.current) clearTimeout(longPressTimer.current);
+                longPressTimer.current = setTimeout(() => handleMapLongPress(e), 500);
+              }}
+              onMouseUp={() => { if (longPressTimer.current) clearTimeout(longPressTimer.current); }}
+              onMouseLeave={() => { if (longPressTimer.current) clearTimeout(longPressTimer.current); }}
+              onTouchStart={(e) => {
+                if (longPressTimer.current) clearTimeout(longPressTimer.current);
+                const touch = e.touches[0];
+                longPressTimer.current = setTimeout(() => handleMapLongPress(touch), 500);
+              }}
+              onTouchEnd={() => { if (longPressTimer.current) clearTimeout(longPressTimer.current); }}
             />
 
             {/* МАРКЕРЫ ОБЪЕКТОВ */}
@@ -437,6 +510,25 @@ export default function MapView() {
         {isFollowing ? <Target size={28} /> : <Crosshair size={28} />}
       </button>
 
+      {/* Travel marker confirm button */}
+      {travelMarker && (
+        <div className="absolute bottom-28 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2">
+          <button
+            onClick={startTravelToMarker}
+            disabled={isMoving}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white px-6 py-3 rounded-2xl font-black uppercase text-sm shadow-xl active:scale-95 transition-all"
+          >
+            <Navigation size={18} /> Переместиться сюда
+          </button>
+          <button
+            onClick={() => setTravelMarker(null)}
+            className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-xl text-xs font-black uppercase"
+          >
+            <X size={14} /> Отмена
+          </button>
+        </div>
+      )}
+
       {activeDeliveryJob && showDeliveryCard && (
         <div className="absolute left-6 bottom-24 z-50 w-[min(92vw,340px)] bg-[#071006]/95 backdrop-blur-xl border border-[#7eff67]/20 p-4 rounded-4xl shadow-[0_30px_80px_rgba(0,0,0,0.4)] gta-panel gta-frame">
           <div className="flex items-start justify-between gap-3 mb-3">
@@ -472,6 +564,9 @@ export default function MapView() {
             <div className="text-left">
               <p className="text-[9px] font-black text-[#a9ff8f] uppercase tracking-widest leading-none">{isFollowing ? 'FOLLOW ON' : 'STANDBY'}</p>
               <p className="text-[13px] font-black text-[#e0ffb8] mt-1 uppercase italic tracking-widest leading-none">SAT NAV ACTIVE</p>
+              {!isMoving && !travelMarker && (
+                <p className="text-[8px] text-[#6b8a62] mt-1 tracking-wider">Зажмите на карте для перемещения</p>
+              )}
             </div>
         </div>
       </div>

@@ -102,7 +102,7 @@ export const useInventoryStore = create((set, get) => ({
       await get().removeItem(item.id, 1);
     }
 
-    // 2. ЛОГИКА СИМ-КАРТЫ (НОВОЕ!)
+    // 2. ЛОГИКА СИМ-КАРТЫ
     if (itemData.action === 'ACTIVATE_SIM') {
       // Проверяем, есть ли у игрока телефон в сумке (опционально для реализма)
       const hasPhone = get().items.some(i => i.item_id === 'phone');
@@ -138,6 +138,11 @@ export const useInventoryStore = create((set, get) => ({
       } finally {
         set({ isLoading: false });
       }
+    }
+
+    // 3. ЛОГИКА ТЕЛЕФОНА
+    if (itemData.action === 'OPEN_PHONE') {
+      useNavigationStore.getState().openPhone();
     }
   },
 

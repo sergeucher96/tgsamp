@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { supabase } from '../api/supabase';
 import { usePlayerStore } from './usePlayerStore';
+import { useQuestStore } from './useQuestStore';
 
 const BANK_INTEREST_RATE = 0.001; // 0.1% в час
 
@@ -99,6 +100,7 @@ export const useBankStore = create((set, get) => ({
     
     if (success) {
       set({ _lastBalance: newBalance });
+      useQuestStore.getState().registerEvent('deposit', amount);
       get().addNotification({
         type: 'success',
         message: `Депозит ${amount.toLocaleString()} ₽ выполнен`,
@@ -130,6 +132,7 @@ export const useBankStore = create((set, get) => ({
     
     if (success) {
       set({ _lastBalance: newBalance });
+      useQuestStore.getState().registerEvent('withdraw', amount);
       get().addNotification({
         type: 'success',
         message: `Снятие ${amount.toLocaleString()} ₽ выполнено`,
@@ -200,6 +203,7 @@ export const useBankStore = create((set, get) => ({
       if (!success) throw new Error('Не удалось списать средства со счета отправителя.');
 
       set({ _lastBalance: Number(senderBankBalance.toFixed(2)) });
+      useQuestStore.getState().registerEvent('transfer', amount);
       get().addNotification({
         type: 'success',
         message: `Перевод ${amount.toLocaleString()} ₽ выполнен на номер ${phoneNumber}`,

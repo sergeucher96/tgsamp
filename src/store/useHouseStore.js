@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { supabase } from '../api/supabase';
 import { usePlayerStore } from './usePlayerStore';
+import { useQuestStore } from './useQuestStore';
 import { HOUSE_CLASSES } from '../data/houseConfig';
 
 export const useHouseStore = create((set, get) => ({
@@ -90,6 +91,7 @@ export const useHouseStore = create((set, get) => ({
 
       if (dbError) throw dbError;
       await updateProfile({ money: Number(player.money) - hConfig.price });
+      useQuestStore.getState().registerEvent('buy_house');
       await get().fetchDbHouses();
       alert(`Поздравляем с покупкой!`);
       return true;
