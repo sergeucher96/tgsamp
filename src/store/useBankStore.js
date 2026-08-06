@@ -52,7 +52,7 @@ export const useBankStore = create((set, get) => ({
             get().addNotification({
               type: 'transfer_received',
               amount: receivedAmount,
-              message: `Поступил перевод +${receivedAmount.toLocaleString()} ₽. Баланс: ${newBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽`,
+              message: `Вам поступил перевод +${receivedAmount.toLocaleString()} ₽`,
             });
           }
         }
@@ -88,7 +88,7 @@ export const useBankStore = create((set, get) => ({
       money: Number(player.money || 0) - amount,
       bank_balance: Number((Number(player.bank_balance || 0) + amount).toFixed(2))
     });
-    set({ isUpdatingLocally: false });
+    setTimeout(() => set({ isUpdatingLocally: false }), 1000);
     
     if (success) {
       get().addNotification({
@@ -117,7 +117,7 @@ export const useBankStore = create((set, get) => ({
       money: Number(player.money || 0) + amount,
       bank_balance: Number((Number(player.bank_balance || 0) - amount).toFixed(2))
     });
-    set({ isUpdatingLocally: false });
+    setTimeout(() => set({ isUpdatingLocally: false }), 1000);
     
     if (success) {
       get().addNotification({
@@ -185,7 +185,7 @@ export const useBankStore = create((set, get) => ({
 
       set({ isUpdatingLocally: true });
       const success = await updateProfile({ bank_balance: Number(senderBankBalance.toFixed(2)) });
-      set({ isUpdatingLocally: false });
+      setTimeout(() => set({ isUpdatingLocally: false }), 1000);
       
       if (!success) throw new Error('Не удалось списать средства со счета отправителя.');
 
@@ -222,7 +222,7 @@ export const useBankStore = create((set, get) => ({
     const success = await updateProfile({
       bank_balance: Number((balance + interest).toFixed(2))
     });
-    set({ isUpdatingLocally: false });
+    setTimeout(() => set({ isUpdatingLocally: false }), 1000);
     return success;
   },
 
