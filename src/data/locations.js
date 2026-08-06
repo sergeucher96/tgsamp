@@ -5,7 +5,7 @@ export const LOCATIONS = [
   { id: 'vokzal', x: 3200, y: 5150, name: 'Вокзал', icon: '🚉', color: 'bg-blue-600', type: 'public' },
   { id: 'meriya', x: 2800, y: 4200, name: 'Мэрия', icon: '🏛️', color: 'bg-amber-600', type: 'public' },
   { id: 'showroom_ls', x: 5870, y: 4500, name: 'Premium Motors', desc: 'Официальный дилер марок Clover, Sentinel и Infernus. Лучший сервис в штате.', icon: '🏎️', color: 'bg-red-600', type: 'public' },  
-  { id: 'bank_1', x: 5410, y: 4620, name: 'Банк', icon: '🏦', color: 'bg-teal-500', type: 'bank' },
+  { id: 'bank_1', x: 5432, y: 4550, name: 'Банк', icon: '🏦', color: 'bg-teal-500', type: 'bank' },
   { id: 'pizzeria_1', x: 5340, y: 4625, name: 'Пиццерия "Pizza Express"', desc: 'Работа курьера: получите скутер, доставьте пиццу клиенту и вернитесь за оплатой.', icon: '🍕', color: 'bg-orange-500', type: 'job' },
   { 
     id: 'mine', 
