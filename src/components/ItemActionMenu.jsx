@@ -21,7 +21,7 @@ export default function ItemActionMenu({ item, location, onUse, onTransfer, onDr
 
   return (
     <div className="fixed inset-0 z-[1001] bg-black/60 backdrop-blur-md flex items-center justify-center p-6 animate-in fade-in duration-200">
-      <div className="w-full max-w-xs bg-slate-900 border border-white/10 rounded-[40px] p-8 shadow-2xl">
+      <div className="w-full max-w-xs bg-slate-900 p-8 shadow-2xl">
         
         <div className="text-center mb-8">
           <div className="text-6xl mb-4 drop-shadow-[0_10px_20px_rgba(0,0,0,0.5)]">

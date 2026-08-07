@@ -6,6 +6,7 @@ import { useVehicleStore } from './store/useVehicleStore';
 import { useBankStore } from './store/useBankStore';
 import { useWeaponStore } from './store/useWeaponStore';
 import { useQuestStore } from './store/useQuestStore';
+import { useSmsStore } from './store/useSmsStore';
 import { useTelegram } from './hooks/useTelegram';
 
 // Views
@@ -36,9 +37,11 @@ function App() {
         fetchDbHouses();
         fetchVehicles();
         useBankStore.getState().startInterestAccrual();
+        useBankStore.getState().startRealtimeSubscription();
         useWeaponStore.getState().fetchWeapons();
         useQuestStore.getState().loadProgress();
         useQuestStore.getState().startQuestTimer();
+        useSmsStore.getState().startRealtimeSubscription();
     });
   }, []);
 

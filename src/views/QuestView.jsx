@@ -66,8 +66,8 @@ export default function QuestView({ onClose }) {
   } : null;
 
   return (
-    <div className="fixed inset-0 z-[400] bg-[#020617]/95 backdrop-blur-xl flex items-center justify-center p-3 text-white font-sans">
-      <div className="w-full max-w-2xl h-[85vh] bg-[#0a1208] rounded-2xl border border-[#68ff79]/20 shadow-2xl flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-[400] bg-[#020617] flex flex-col text-white font-sans">
+      <div className="w-full flex-1 bg-[#0a1208] flex flex-col overflow-hidden">
 
         {/* Header - GTA style */}
         <div className="shrink-0 px-4 py-3 bg-gradient-to-r from-[#0f1a0b] to-[#0a1208] border-b border-[#68ff79]/15 flex items-center justify-between">

@@ -55,9 +55,8 @@ export default function PizzeriaView({ onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-500 bg-[#020617]/95 backdrop-blur-xl flex justify-center items-start p-4 text-white font-sans animate-in fade-in duration-300">
-      <div className="w-full max-w-xl rounded-[40px] border border-white/10 bg-[#020617]/95 shadow-2xl overflow-hidden">
-        <div className="max-h-[calc(100vh-2rem)] overflow-y-auto p-6 space-y-6">
+    <div className="fixed inset-0 z-[500] bg-[#020617] flex flex-col text-white font-sans animate-in fade-in duration-300">
+      <div className="w-full flex-1 overflow-y-auto p-6 space-y-6">
           <div className="flex justify-between items-start mb-8">
             <div className="text-left">
               <p className="text-[10px] font-black text-orange-400 uppercase tracking-[0.3em] mb-1">Pizza Express</p>
@@ -166,7 +165,6 @@ export default function PizzeriaView({ onClose }) {
             )}
           </div>
         </div>
-      </div>
     </div>
   );
 }

@@ -37,9 +37,8 @@ export default function BankView({ onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[400] bg-[#020617]/95 backdrop-blur-xl flex items-center justify-center p-4 text-white font-sans">
-      <div className="w-full max-w-lg bg-transparent">
-        <div className="bg-[#08101a] rounded-3xl p-4 shadow-2xl border border-white/5">
+    <div className="fixed inset-0 z-[400] bg-[#020617] flex flex-col text-white font-sans">
+      <div className="w-full bg-[#08101a] flex-1 overflow-y-auto p-4">
           <div className="flex items-start justify-between">
             <div>
               <p className="text-teal-400 font-black uppercase text-[10px] tracking-widest mb-1">Банк штата</p>
@@ -144,7 +143,6 @@ export default function BankView({ onClose }) {
             </div>
           </div>
         </div>
-      </div>
     </div>
   );
 }

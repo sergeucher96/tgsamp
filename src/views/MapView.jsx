@@ -235,7 +235,7 @@ export default function MapView() {
   const syncCamera = useCallback(() => {
     if (!pinchRef.current || !isFollowing) return;
     const { setTransform } = pinchRef.current;
-    const targetScale = isMoving ? 1.1 : currentScaleRef.current;
+    const targetScale = isMoving ? 0.8 : 1.2;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
 
@@ -451,14 +451,13 @@ export default function MapView() {
         </TransformComponent>
       </TransformWrapper>
       
-      {/* SEARCH + FILTER */}
+      {/* SEARCH BUTTON - small magnifying glass */}
       <div className="absolute top-6 right-6 z-50 flex flex-col items-end gap-3">
         <button
           onClick={() => setIsSearchOpen((open) => !open)}
-          className="flex items-center gap-2 rounded-3xl border border-[#7eff67]/30 bg-[#071006]/95 px-4 py-3 text-sm font-black uppercase tracking-[0.18em] text-[#d6ff9f] shadow-[0_0_24px_rgba(130,255,100,0.16)] transition hover:bg-[#0b1208] gta-button"
+          className="w-12 h-12 flex items-center justify-center rounded-2xl border border-[#7eff67]/30 bg-[#071006]/95 text-[#d6ff9f] shadow-[0_0_24px_rgba(130,255,100,0.16)] transition hover:bg-[#0b1208] active:scale-90"
         >
-          <Search size={18} />
-          <span>{isSearchOpen ? 'Скрыть поиск' : 'Открыть поиск'}</span>
+          <Search size={22} />
         </button>
 
         {isSearchOpen && (
@@ -466,7 +465,7 @@ export default function MapView() {
             <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Поиск локаций (название, id)"
+              placeholder="Поиск локаций..."
               className="w-full bg-[#081108]/95 border border-[#7eff67]/20 p-3 rounded-2xl text-sm outline-none placeholder:text-[#9eff8d] text-[#def1c5]"
             />
             <div className="flex flex-wrap gap-2 mt-3 text-[11px]">
@@ -504,7 +503,7 @@ export default function MapView() {
       </div>
 
       {/* КНОПКА ФОКУСА */}
-      <button onClick={() => { setIsFollowing(true); pinchRef.current.zoomToElement("player-car-hub", 1.1, 600); }}
+      <button onClick={() => { setIsFollowing(true); pinchRef.current.zoomToElement("player-car-hub", 1.2, 600); }}
         className={`absolute bottom-10 right-6 z-50 p-5 rounded-3xl shadow-[0_0_30px_rgba(90,255,95,0.18)] border ${isFollowing ? 'bg-[#2b690d] border-[#8cff4a] text-[#e8ffc4]' : 'bg-[#0f1209] border-[#4b6b3f]/50 text-[#a0c68f]'}`}
       >
         {isFollowing ? <Target size={28} /> : <Crosshair size={28} />}
@@ -555,19 +554,10 @@ export default function MapView() {
         </div>
       )}
 
-      {/* GPS ОВЕРЛЕЙ */}
+      {/* GPS indicator - minimal */}
       <div className="absolute top-6 left-6 z-50 pointer-events-none">
-        <div className="bg-[#071006]/90 backdrop-blur-xl border border-[#7eff67]/20 p-4 rounded-[28px] shadow-[0_0_40px_rgba(113,255,91,0.18)] flex items-center gap-4">
-            <div className={`w-10 h-10 ${isMoving ? 'bg-[#4f8f0f] animate-pulse shadow-[0_0_15px_rgba(115,255,102,0.35)]' : 'bg-[#121a0c]'} rounded-2xl flex items-center justify-center text-[#d9ffb3]`}>
-                {isMoving ? <Navigation size={20} className="animate-bounce" /> : <Compass size={20} />}
-            </div>
-            <div className="text-left">
-              <p className="text-[9px] font-black text-[#a9ff8f] uppercase tracking-widest leading-none">{isFollowing ? 'FOLLOW ON' : 'STANDBY'}</p>
-              <p className="text-[13px] font-black text-[#e0ffb8] mt-1 uppercase italic tracking-widest leading-none">SAT NAV ACTIVE</p>
-              {!isMoving && !travelMarker && (
-                <p className="text-[8px] text-[#6b8a62] mt-1 tracking-wider">Зажмите на карте для перемещения</p>
-              )}
-            </div>
+        <div className={`w-10 h-10 ${isMoving ? 'bg-[#4f8f0f] animate-pulse shadow-[0_0_15px_rgba(115,255,102,0.35)]' : 'bg-[#121a0c]'} rounded-2xl flex items-center justify-center text-[#d9ffb3] border border-[#7eff67]/20`}>
+          {isMoving ? <Navigation size={20} className="animate-bounce" /> : <Compass size={20} />}
         </div>
       </div>
 

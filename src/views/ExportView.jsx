@@ -10,7 +10,7 @@ export default function ExportView({ onClose }) {
   const sellableItems = items.filter(i => RESOURCE_PRICES[i.item_id]);
 
   return (
-    <div className="fixed inset-0 z-[300] bg-[#020617]/95 backdrop-blur-xl flex flex-col p-8 text-white font-sans animate-in fade-in">
+    <div className="fixed inset-0 z-[300] bg-[#020617] flex flex-col p-8 text-white font-sans animate-in fade-in">
       
       {/* HEADER */}
       <div className="flex justify-between items-start mb-10">

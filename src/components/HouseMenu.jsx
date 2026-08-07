@@ -15,8 +15,8 @@ export default function HouseMenu({ house, player, onBuy, onGPS, onClose }) {
   const dailyTax = Math.round(houseClass.price * 0.001);
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-xl font-sans">
-      <div className="w-full max-w-md bg-[#080d1a] rounded-[32px] border border-white/10 overflow-hidden shadow-2xl mx-4" style={{ maxHeight: '90vh' }}>
+    <div className="fixed inset-0 z-[200] flex bg-black font-sans">
+      <div className="w-full bg-[#080d1a] overflow-y-auto" style={{ maxHeight: '100vh' }}>
         
         {/* Header with image */}
         <div className="relative">

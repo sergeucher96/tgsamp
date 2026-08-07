@@ -13,7 +13,7 @@ export default function ShopView({ shopType, player, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[400] bg-[#020617]/95 backdrop-blur-xl flex flex-col p-6 text-white font-sans animate-in fade-in duration-300">
+    <div className="fixed inset-0 z-[400] bg-[#020617] flex flex-col p-6 text-white font-sans animate-in fade-in duration-300">
       
       <div className="flex justify-between items-center mb-8">
         <div className="text-left">

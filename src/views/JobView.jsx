@@ -39,55 +39,52 @@ export default function JobView({ jobId, onClose }) {
   const stop = shift?.stops?.[shift.currentStop];
 
   return (
-    <div className="fixed inset-0 z-[999] bg-[#020617]/95 backdrop-blur-xl flex justify-center items-start p-4 text-white font-sans animate-in fade-in duration-300">
-      <div className="w-full max-w-xl rounded-[40px] border border-white/10 bg-[#020617]/95 shadow-2xl overflow-hidden">
-        <div className="max-h-[calc(100vh-2rem)] overflow-y-auto p-6 space-y-5">
-
-          <div className="flex justify-between items-start">
-            <div className="text-left">
-              <p className={`text-[10px] font-black uppercase tracking-[0.3em] mb-1 ${job.accent}`}>{job.short}</p>
-              <h2 className="text-4xl font-black uppercase italic tracking-tighter">{job.name} {job.icon}</h2>
-              <p className="text-sm text-slate-400 mt-3">{job.desc}</p>
-            </div>
-            <button onClick={onClose} className="p-3 bg-white/5 rounded-2xl active:scale-90"><X size={24} /></button>
+    <div className="fixed inset-0 z-[999] bg-[#020617] flex flex-col text-white font-sans animate-in fade-in duration-300">
+      <div className="w-full flex-1 overflow-y-auto p-6 space-y-5">
+        <div className="flex justify-between items-start">
+          <div className="text-left">
+            <p className={`text-[10px] font-black uppercase tracking-[0.3em] mb-1 ${job.accent}`}>{job.short}</p>
+            <h2 className="text-4xl font-black uppercase italic tracking-tighter">{job.name} {job.icon}</h2>
+            <p className="text-sm text-slate-400 mt-3">{job.desc}</p>
           </div>
-
-          <div className="bg-white/[0.03] border border-white/10 rounded-[32px] p-5">
-            <div className="flex justify-between items-center mb-3">
-              <span className="text-[10px] font-black uppercase text-slate-500 tracking-[0.3em]">Навык</span>
-              <span className={`font-black italic ${job.accent}`}>{skill}%</span>
-            </div>
-            <div className="h-1.5 bg-black/40 rounded-full overflow-hidden">
-              <div className="h-full bg-white/60 transition-all duration-700" style={{ width: `${skill}%` }} />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-3 text-center">
-            <Stat icon={<Wallet size={14} className="text-emerald-400" />} label="Баланс" value={`$${Number(player?.money || 0).toLocaleString()}`} />
-            <Stat icon={<Zap size={14} className="text-yellow-400" />} label="Энергия" value={`${player?.energy || 0}%`} />
-            <Stat icon={<Award size={14} className="text-sky-400" />} label="Расход" value={`-${job.energyCost}%`} />
-          </div>
-
-          {jobMessage && (
-            <div className="bg-white/[0.04] border border-white/10 rounded-3xl p-4 text-sm text-slate-300">{jobMessage}</div>
-          )}
-
-          {!licensed && (
-            <div className="bg-red-500/10 border border-red-500/30 rounded-3xl p-4 text-sm text-red-300">
-              Требуется лицензия: {job.license === 'truck' ? 'Грузовые (C)' : 'Вождение (B)'}.
-            </div>
-          )}
-
-          {otherShift && (
-            <div className="bg-amber-500/10 border border-amber-500/30 rounded-3xl p-4 text-sm text-amber-200">
-              У вас уже открыта смена на другой работе. Завершите её, чтобы начать эту.
-            </div>
-          )}
-
-          {job.kind === 'route'
-            ? <RouteBody job={job} shift={shift} stop={stop} busy={busy} onStart={() => startShift(jobId)} onGo={goToCurrentStop} onComplete={completeStop} onReturn={returnToBase} onCancel={cancelShift} disabled={!licensed || otherShift} />
-            : <StationBody job={job} shift={shift} busy={busy} progress={taskProgress} lastTask={lastTask} tasks={availableTasks(jobId)} onStart={() => startShift(jobId)} onRun={runTask} onEnd={endStationShift} disabled={otherShift} />}
+          <button onClick={onClose} className="p-3 bg-white/5 rounded-2xl active:scale-90"><X size={24} /></button>
         </div>
+
+        <div className="bg-white/[0.03] border border-white/10 rounded-[32px] p-5">
+          <div className="flex justify-between items-center mb-3">
+            <span className="text-[10px] font-black uppercase text-slate-500 tracking-[0.3em]">Навык</span>
+            <span className={`font-black italic ${job.accent}`}>{skill}%</span>
+          </div>
+          <div className="h-1.5 bg-black/40 rounded-full overflow-hidden">
+            <div className="h-full bg-white/60 transition-all duration-700" style={{ width: `${skill}%` }} />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3 text-center">
+          <Stat icon={<Wallet size={14} className="text-emerald-400" />} label="Баланс" value={`${Number(player?.money || 0).toLocaleString()}`} />
+          <Stat icon={<Zap size={14} className="text-yellow-400" />} label="Энергия" value={`${player?.energy || 0}%`} />
+          <Stat icon={<Award size={14} className="text-sky-400" />} label="Расход" value={`-${job.energyCost}%`} />
+        </div>
+
+        {jobMessage && (
+          <div className="bg-white/[0.04] border border-white/10 rounded-3xl p-4 text-sm text-slate-300">{jobMessage}</div>
+        )}
+
+        {!licensed && (
+          <div className="bg-red-500/10 border border-red-500/30 rounded-3xl p-4 text-sm text-red-300">
+            Требуется лицензия: {job.license === 'truck' ? 'Грузовые (C)' : 'Вождение (B)'}.
+          </div>
+        )}
+
+        {otherShift && (
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-3xl p-4 text-sm text-amber-200">
+            У вас уже открыта смена на другой работе. Завершите её, чтобы начать эту.
+          </div>
+        )}
+
+        {job.kind === 'route'
+          ? <RouteBody job={job} shift={shift} stop={stop} busy={busy} onStart={() => startShift(jobId)} onGo={goToCurrentStop} onComplete={completeStop} onReturn={returnToBase} onCancel={cancelShift} disabled={!licensed || otherShift} />
+          : <StationBody job={job} shift={shift} busy={busy} progress={taskProgress} lastTask={lastTask} tasks={availableTasks(jobId)} onStart={() => startShift(jobId)} onRun={runTask} onEnd={endStationShift} disabled={otherShift} />}
       </div>
     </div>
   );

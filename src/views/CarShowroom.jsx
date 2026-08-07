@@ -20,7 +20,7 @@ export default function CarShowroom({ onClose, playerHouses, playerPos, showroom
   };
 
   return (
-    <div className="fixed inset-0 z-[300] bg-[#050814]/95 backdrop-blur-xl flex flex-col p-6 text-white overflow-y-auto no-scrollbar">
+    <div className="fixed inset-0 z-[300] bg-[#050814] flex flex-col p-6 text-white overflow-y-auto no-scrollbar">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-3xl font-black uppercase italic tracking-tighter">Premium Motors</h2>
         <button onClick={onClose} className="p-3 bg-white/5 rounded-2xl"><X /></button>

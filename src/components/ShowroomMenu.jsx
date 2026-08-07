@@ -3,8 +3,8 @@ import { Car, X, Navigation, Info, DoorOpen } from 'lucide-react';
 
 export default function ShowroomMenu({ showroom, onGPS, onClose, isPlayerHere, onOpen }) {
   return (
-    <div className="fixed inset-0 z-[200] flex items-end justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
-      <div className="w-full max-w-md bg-[#0a0f1e] rounded-[48px] border border-white/10 p-8 pb-10 shadow-2xl">
+    <div className="fixed inset-0 z-[200] bg-black animate-in fade-in duration-300">
+      <div className="w-full bg-[#0a0f1e] p-8 pb-16">
         <div className="flex justify-between items-start mb-6">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 bg-red-600 rounded-2xl flex items-center justify-center shadow-lg border-2 border-white/20">

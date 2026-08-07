@@ -68,12 +68,18 @@ export const useInventoryStore = create((set, get) => ({
             await get().fetchPlayerInventory();
             return true;
           }
+        } else {
+          // No existing stack - check inventory limit before creating new slot
+          if (currentItems.length >= (player.inv_slots || 12)) {
+            alert("Сумка полна!");
+            return false;
+          }
         }
-      }
-
-      if (currentItems.length >= (player.inv_slots || 12)) {
-        alert("Сумка полна!");
-        return false;
+      } else {
+        if (currentItems.length >= (player.inv_slots || 12)) {
+          alert("Сумка полна!");
+          return false;
+        }
       }
 
       const { error } = await supabase.from('inventory').insert([{
