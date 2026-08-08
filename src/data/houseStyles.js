@@ -1,6 +1,51 @@
 // src/data/houseStyles.js
 
+// Hotspots для интерактивных зон дома (дверь, гараж и т.д.)
+// Координаты рассчитываются от картинки (object-contain) — стабильны при любом размере экрана.
+// Нарисуйте зоны через HotspotTool (Ctrl+Shift+H)
+export const HOUSE_HOTSPOTS = {
+  economy: {
+    1: [
+      { id: 'door', type: 'rect', x: 22.03635853728407, y: 50.697541268952165, w: 32.53247332111437, h: 18.46437690836538, action: 'enter', label: 'Войти в дом' },
+      { id: 'garage', type: 'rect', x: 67.53786676604943, y: 45.568543767077344, w: 27.03711334302976, h: 24.912261960987607, action: 'garage', label: 'Гараж' }
+    ]
+  },
+  comfort: {},
+  business: {},
+  premium: {}
+};
+
 // Реестр изображений (используем индексы v: 1, v: 2 и т.д.)
+export const HOUSE_PREVIEWS_MAP = {
+  economy: {
+    images: [
+      { id: 1, src: '/houses/eco_1.webp' },
+      { id: 2, src: '/houses/eco_2.webp' },
+      { id: 3, src: '/houses/eco_water.webp' },
+    ],
+    default: '/houses/eco_1.webp'
+  },
+  comfort: {
+    images: [
+      { id: 1, src: '/houses/comf_1.webp' },
+      { id: 2, src: '/houses/comf_modern.webp' },
+    ],
+    default: '/houses/comf_1.webp'
+  },
+  business: {
+    images: [
+      { id: 1, src: '/houses/bus_1.webp' },
+    ],
+    default: '/houses/bus_1.webp'
+  },
+  premium: {
+    images: [
+      { id: 1, src: '/houses/prem_villa.webp' },
+    ],
+    default: '/houses/prem_villa.webp'
+  }
+};
+
 const HOUSE_PREVIEWS = {
   economy: {
     1: '/houses/eco_1.webp',

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, lazy, Suspense } from 'react';
 import { usePlayerStore } from './store/usePlayerStore';
 import { useNavigationStore } from './store/useNavigationStore';
 import { useHouseStore } from './store/useHouseStore';
@@ -8,6 +8,10 @@ import { useWeaponStore } from './store/useWeaponStore';
 import { useQuestStore } from './store/useQuestStore';
 import { useSmsStore } from './store/useSmsStore';
 import { useTelegram } from './hooks/useTelegram';
+
+// Dev tools (only in development — won't be bundled in production build)
+const IS_DEV = import.meta.env.DEV;
+const HotspotTool = IS_DEV ? lazy(() => import('./components/HotspotTool')) : null;
 
 // Views
 import MapView from './views/MapView';
@@ -31,6 +35,20 @@ function App() {
   const { fetchVehicles } = useVehicleStore();
   const { isTelegram } = useTelegram();
   const [showQuests, setShowQuests] = useState(false);
+  const [showDevTools, setShowDevTools] = useState(false);
+
+  // Dev keyboard shortcut: Ctrl+Shift+H
+  useEffect(() => {
+    if (!IS_DEV) return;
+    const handler = (e) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'H') {
+        e.preventDefault();
+        setShowDevTools(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   useEffect(() => { 
     login().then(() => {
@@ -90,6 +108,13 @@ function App() {
       {showQuests && <QuestView onClose={() => setShowQuests(false)} />}
       {showPhone && <PhoneView onClose={closePhone} />}
       
+      {/* Dev Tools (development only) */}
+      {IS_DEV && HotspotTool && showDevTools && (
+        <Suspense fallback={null}>
+          <HotspotTool onClose={() => setShowDevTools(false)} />
+        </Suspense>
+      )}
+      
       {/* СЛОЙ 1: ГАРАЖ (Самый верхний) */}
       {currentGarage && <GarageView />}
 
@@ -128,6 +153,7 @@ function App() {
               <NavButton active={activeTab === 'profile'} onClick={() => setActiveTab('profile')} icon="👤" />
               <NavButton active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} icon="🎒" />
               <NavButton active={showQuests} onClick={() => setShowQuests(true)} icon="📜" />
+              {IS_DEV && <NavButton active={showDevTools} onClick={() => setShowDevTools(true)} icon="🛠️" />}
           </footer>
         </>
       )}
