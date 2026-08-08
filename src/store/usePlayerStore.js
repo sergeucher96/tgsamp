@@ -19,7 +19,7 @@ export const usePlayerStore = create((set, get) => ({
       let { data: profile } = await supabase.from('profiles').select('*').eq('telegram_id', tgId).maybeSingle();
 
       if (!profile) {
-        const { data: newProf } = await supabase.from('profiles').insert([{ telegram_id: tgId, money: 50000, inv_slots: 12, bank_balance: 0 }]).select().single();
+        const { data: newProf } = await supabase.from('profiles').insert([{ telegram_id: tgId, money: 50000, inv_slots: 12, bank_balance: 0, deposit_balance: 0 }]).select().single();
         profile = newProf;
       }
 
