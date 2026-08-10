@@ -294,6 +294,14 @@ export const LOCATIONS = [
   // ==========================================
   { id: 'driving_school_1', x: 5400, y: 4600, name: 'Автошкола "SA Driving"', desc: 'Получите лицензии A, B и C. Сдайте экзамены и управляйте транспортом.', icon: '🎓', type: 'driving_school', color: 'bg-green-600' },
   { id: 'gun_range_1', x: 5700, y: 4400, name: 'Тир "Iron Sight"', desc: 'Прокачайте навыки стрельбы. Магазин оружия и лицензий.', icon: '🎯', type: 'gun_range', color: 'bg-amber-700' },
+
+  // ==========================================
+  // 8. БАНКОМАТЫ
+  // ==========================================
+  { id: 'tuning_1', x: 5920, y: 4550, name: 'Тюнинг-мастерская', desc: 'Улучшение двигателя, подвески, тормозов и установка нитро.', icon: '🔧', type: 'tuning', color: 'bg-cyan-600' },
+  { id: 'atm_1', x: 5470, y: 4530, name: 'Банкомат', icon: '🏧', type: 'atm', color: 'bg-orange-500' },
+  { id: 'atm_2', x: 5200, y: 4680, name: 'Банкомат', icon: '🏧', type: 'atm', color: 'bg-orange-500' },
+  { id: 'atm_3', x: 5560, y: 4900, name: 'Банкомат', icon: '🏧', type: 'atm', color: 'bg-orange-500' },
 ];
 // ВРЕМЕННЫЙ СКРИПТ ДЛЯ ПРИВЯЗКИ (Потом удалим)
 import { WAYPOINTS } from './roads';

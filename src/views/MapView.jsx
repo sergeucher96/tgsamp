@@ -30,6 +30,8 @@ import StripClubView from './StripClubView';
 import JobView from './JobView';
 import DrivingSchoolView from './DrivingSchoolView';
 import GunRangeView from './GunRangeView';
+import ATMView from './ATMView';
+import TuningShopView from './TuningShopView';
 // Иконки
 import { 
   Loader2, Crosshair, Navigation, Compass, Target, Search, X 
@@ -116,6 +118,8 @@ export default function MapView() {
   const [showStripClub, setShowStripClub] = useState(false);
   const [showDrivingSchool, setShowDrivingSchool] = useState(false);
   const [showGunRange, setShowGunRange] = useState(false);
+  const [showATM, setShowATM] = useState(false);
+  const [showTuningShop, setShowTuningShop] = useState(false);
   const [activeJobId, setActiveJobId] = useState(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   // Long-press travel marker
@@ -282,6 +286,8 @@ export default function MapView() {
       {showStripClub && <StripClubView onClose={() => setShowStripClub(false)} />}
       {showDrivingSchool && <DrivingSchoolView onClose={() => setShowDrivingSchool(false)} />}
       {showGunRange && <GunRangeView onClose={() => setShowGunRange(false)} />}
+      {showATM && <ATMView onClose={() => setShowATM(false)} />}
+      {showTuningShop && <TuningShopView onClose={() => setShowTuningShop(false)} />}
       {activeJobId && <JobView jobId={activeJobId} onClose={() => setActiveJobId(null)} />}
       {currentShop && <ShopView shopType={currentShop} player={player} onClose={() => setCurrentShop(null)} />}
       {showShowroom && (
@@ -426,8 +432,11 @@ export default function MapView() {
                         else if (getJobByLocation(loc.id)) { if (isNear) setActiveJobId(getJobByLocation(loc.id).id); else { setIsFollowing(true); startRoute(loc.id); } }
                         else if (loc.type === 'nightclub') { if (isNear) setShowStripClub(true); else { setIsFollowing(true); startRoute(loc.id); } }
                         else if (loc.type === 'shop') { if (isNear) setCurrentShop('shop_24_7'); else { setIsFollowing(true); startRoute(loc.id); } }
+                        else if (loc.type === 'clothes') { if (isNear) setCurrentShop('clothes_1'); else { setIsFollowing(true); startRoute(loc.id); } }
                         else if (loc.type === 'driving_school') { if (isNear) setShowDrivingSchool(true); else { setIsFollowing(true); startRoute(loc.id); } }
                         else if (loc.type === 'gun_range') { if (isNear) setShowGunRange(true); else { setIsFollowing(true); startRoute(loc.id); } }
+                        else if (loc.type === 'atm') { if (isNear) setShowATM(true); else { setIsFollowing(true); startRoute(loc.id); } }
+                        else if (loc.type === 'tuning') { if (isNear) setShowTuningShop(true); else { setIsFollowing(true); startRoute(loc.id); } }
                         else { if (!isNear) { setIsFollowing(true); startRoute(loc.id); } }
                       }}
                         className={`relative ${isHouse ? 'w-7 h-7' : 'w-14 h-14'} ${style.color} ${style.border} rounded-xl shadow-2xl flex items-center justify-center transition-all duration-300 active:scale-75 ${isMoving && !isNear ? 'opacity-40 grayscale' : 'opacity-100'} overflow-hidden ${isHighlighted || isDeliveryTarget ? 'ring-4 ring-yellow-400/40 animate-pulse' : ''}`}

@@ -354,5 +354,76 @@ export const useBankStore = create((set, get) => ({
       clearInterval(intervalId);
       set({ interestIntervalId: null });
     }
+  },
+
+  // Банкомат: пополнение счёта (наличные → счёт, без комиссии)
+  atmDeposit: async (amountInput) => {
+    const { player, updateProfile } = usePlayerStore.getState();
+    const amount = get()._normalizeAmount(amountInput);
+    if (!player || amount === null) return false;
+
+    if (Number(player.money || 0) < amount) {
+      get().addNotification({
+        type: 'error',
+        message: 'Недостаточно наличных.',
+      });
+      return false;
+    }
+
+    set({ isUpdatingLocally: true });
+    const newBalance = Number((Number(player.bank_balance || 0) + amount).toFixed(2));
+    const success = await updateProfile({
+      money: Number(player.money || 0) - amount,
+      bank_balance: newBalance
+    });
+    setTimeout(() => set({ isUpdatingLocally: false }), 1000);
+
+    if (success) {
+      set({ _lastBalance: newBalance });
+      await get()._addTransaction('atm_deposit', amount, 'Пополнение через банкомат');
+      await get().loadTransactions();
+      get().addNotification({
+        type: 'success',
+        message: `Банкомат: ${amount.toLocaleString()} ₽ пополнено`,
+      });
+    }
+    return success;
+  },
+
+  // Банкомат: снятие со счёта (счёт → наличные, комиссия 3% вычитается из получаемой суммы)
+  atmWithdraw: async (amountInput) => {
+    const { player, updateProfile } = usePlayerStore.getState();
+    const amount = get()._normalizeAmount(amountInput);
+    if (!player || amount === null) return false;
+
+    const fee = Math.round(amount * 0.03 * 100) / 100;
+    const received = Number((amount - fee).toFixed(2));
+
+    if (Number(player.bank_balance || 0) < amount) {
+      get().addNotification({
+        type: 'error',
+        message: 'На счёте недостаточно средств.',
+      });
+      return false;
+    }
+
+    set({ isUpdatingLocally: true });
+    const newBalance = Number((Number(player.bank_balance || 0) - amount).toFixed(2));
+    const success = await updateProfile({
+      money: Number((Number(player.money || 0) + received).toFixed(2)),
+      bank_balance: newBalance
+    });
+    setTimeout(() => set({ isUpdatingLocally: false }), 1000);
+
+    if (success) {
+      set({ _lastBalance: newBalance });
+      await get()._addTransaction('atm_withdraw', received, `Снятие через банкомат (комиссия ${fee.toLocaleString()} ₽)`);
+      await get().loadTransactions();
+      get().addNotification({
+        type: 'success',
+        message: `Банкомат: ${received.toLocaleString()} ₽ получено (комиссия ${fee.toLocaleString()} ₽)`,
+      });
+    }
+    return success;
   }
 }));

@@ -2,7 +2,12 @@ import { create } from 'zustand';
 import { supabase } from '../api/supabase';
 import { usePlayerStore } from './usePlayerStore';
 import { ITEM_DATABASE } from '../data/items';
+import { CLOTHING_DATABASE } from '../data/clothingConfig';
 import { useNavigationStore } from './useNavigationStore';
+
+function getItemData(itemId) {
+  return ITEM_DATABASE[itemId] || CLOTHING_DATABASE[itemId];
+}
 
 export const useInventoryStore = create((set, get) => ({
   items: [],
@@ -43,7 +48,7 @@ export const useInventoryStore = create((set, get) => ({
     if (isProcessing) return false;
 
     const { player, updateProfile } = usePlayerStore.getState();
-    const itemData = ITEM_DATABASE[itemId];
+    const itemData = getItemData(itemId);
     if (!player) return false;
 
     const totalCost = price * amount;
@@ -98,7 +103,7 @@ export const useInventoryStore = create((set, get) => ({
   // --- ЛОГИКА ИСПОЛЬЗОВАНИЯ ПРЕДМЕТОВ ---
   useItem: async (item) => {
     const { player, updateProfile } = usePlayerStore.getState();
-    const itemData = ITEM_DATABASE[item.item_id];
+    const itemData = getItemData(item.item_id);
     if (!itemData || item.storage_type !== 'player') return;
 
     // 1. ЛОГИКА ЕДЫ

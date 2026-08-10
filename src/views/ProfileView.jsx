@@ -1,10 +1,10 @@
 import React from 'react';
-import { Shield, Award, Heart, TrendingUp, Briefcase, Target, FileText, Clock, AlertCircle } from 'lucide-react';
+import { Shield, Award, Heart, TrendingUp, Briefcase, Target, FileText, Clock, AlertCircle, User } from 'lucide-react';
 import { SKILLS_DATABASE } from '../data/skills';
 import { LICENSES_DATABASE } from '../data/licenses';
 import { getHouseStyle } from '../data/houseStyles';
 
-export default function ProfileView({ player, skills, licenses }) {
+export default function ProfileView({ player, skills, licenses, onOpenCharacter }) {
   const getTimeInState = () => {
     if (!player.registered_at) return "1-й день";
     const days = Math.floor((new Date() - new Date(player.registered_at)) / 86400000);
@@ -35,6 +35,27 @@ export default function ProfileView({ player, skills, licenses }) {
           </div>
         </div>
       </div>
+
+      {/* ПЕРСОНАЖ (Экипировка) */}
+      {onOpenCharacter && (
+        <div className="bg-slate-900/50 border border-white/5 rounded-[28px] overflow-hidden">
+          <button
+            onClick={onOpenCharacter}
+            className="w-full p-5 flex items-center justify-between text-left hover:bg-white/5 transition-colors active:scale-[0.98]"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-purple-500/20 flex items-center justify-center border border-purple-400/20">
+                <User size={24} className="text-purple-400" />
+              </div>
+              <div>
+                <div className="text-[12px] font-black uppercase italic text-purple-400">Персонаж</div>
+                <div className="text-[9px] text-slate-500 font-bold uppercase">Экипировка и характеристики</div>
+              </div>
+            </div>
+            <div className="text-purple-400">→</div>
+          </button>
+        </div>
+      )}
 
       {/* ДОКУМЕНТЫ */}
       <div className="bg-slate-900/50 border border-white/5 rounded-[28px] p-5 text-left">

@@ -12,6 +12,7 @@ import { useTelegram } from './hooks/useTelegram';
 // Dev tools (only in development — won't be bundled in production build)
 const IS_DEV = import.meta.env.DEV;
 const HotspotTool = IS_DEV ? lazy(() => import('./components/HotspotTool')) : null;
+const RoadEditor = IS_DEV ? lazy(() => import('./views/RoadEditor')) : null;
 
 // Views
 import MapView from './views/MapView';
@@ -22,6 +23,7 @@ import HouseInterior from './views/HouseInterior';
 import GarageView from './views/GarageView';
 import QuestView from './views/QuestView';
 import PhoneView from './views/PhoneView';
+import CharacterView from './views/CharacterView';
 
 // Components
 import BankNotifications from './components/BankNotifications';
@@ -35,7 +37,9 @@ function App() {
   const { fetchVehicles } = useVehicleStore();
   const { isTelegram } = useTelegram();
   const [showQuests, setShowQuests] = useState(false);
+  const [showCharacter, setShowCharacter] = useState(false);
   const [showDevTools, setShowDevTools] = useState(false);
+  const [showRoadEditor, setShowRoadEditor] = useState(false);
 
   // Dev keyboard shortcut: Ctrl+Shift+H
   useEffect(() => {
@@ -107,11 +111,17 @@ function App() {
       {/* Quest View */}
       {showQuests && <QuestView onClose={() => setShowQuests(false)} />}
       {showPhone && <PhoneView onClose={closePhone} />}
+      {showCharacter && <CharacterView onClose={() => setShowCharacter(false)} />}
       
       {/* Dev Tools (development only) */}
       {IS_DEV && HotspotTool && showDevTools && (
         <Suspense fallback={null}>
           <HotspotTool onClose={() => setShowDevTools(false)} />
+        </Suspense>
+      )}
+      {IS_DEV && RoadEditor && showRoadEditor && (
+        <Suspense fallback={null}>
+          <RoadEditor onClose={() => setShowRoadEditor(false)} />
         </Suspense>
       )}
       
@@ -143,7 +153,7 @@ function App() {
           <main className="relative flex-grow overflow-hidden">
             <div className="absolute inset-0 overflow-y-auto no-scrollbar">
                 {activeTab === 'map' && <MapView />}
-                {activeTab === 'profile' && <ProfileView player={player} skills={skills} licenses={licenses} />}
+                {activeTab === 'profile' && <ProfileView player={player} skills={skills} licenses={licenses} onOpenCharacter={() => setShowCharacter(true)} />}
                 {activeTab === 'inventory' && <InventoryView />}
             </div>
           </main>
@@ -154,6 +164,7 @@ function App() {
               <NavButton active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} icon="🎒" />
               <NavButton active={showQuests} onClick={() => setShowQuests(true)} icon="📜" />
               {IS_DEV && <NavButton active={showDevTools} onClick={() => setShowDevTools(true)} icon="🛠️" />}
+              {IS_DEV && <NavButton active={showRoadEditor} onClick={() => setShowRoadEditor(true)} icon="🛣️" />}
           </footer>
         </>
       )}

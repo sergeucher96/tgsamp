@@ -15,5 +15,22 @@ export const SHOPS_DATABASE = {
     items: [
       { id: 'pickaxe', price: 2000 }
     ]
+  },
+  'clothes_1': {
+    name: 'Магазин одежды',
+    items: [
+      { id: 'cap_basic', price: 800 },
+      { id: 'helmet_tactical', price: 5000 },
+      { id: 'chain_silver', price: 3000 },
+      { id: 'chain_gold', price: 12000 },
+      { id: 'chain_diamond', price: 50000 },
+      { id: 'tshirt_basic', price: 500 },
+      { id: 'jacket_leather', price: 8000 },
+      { id: 'vest_tactical', price: 25000 },
+      { id: 'gloves_basic', price: 600 },
+      { id: 'pants_cargo', price: 1200 },
+      { id: 'sneakers_basic', price: 1500 },
+      { id: 'boots_heavy', price: 2500 },
+    ]
   }
 };

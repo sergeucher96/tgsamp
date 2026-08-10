@@ -1,65 +1,199 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigationStore } from '../store/useNavigationStore';
 import { useVehicleStore } from '../store/useVehicleStore';
 import { usePlayerStore } from '../store/usePlayerStore';
-import { ArrowLeft, Fuel, Wrench, Gauge, Power, Settings2, CarFront } from 'lucide-react';
+import { VEHICLE_DATABASE, VEHICLE_COLORS } from '../data/vehicleConfig';
+import { ArrowLeft, Fuel, Wrench, Gauge, Power, Paintbrush } from 'lucide-react';
 
 export default function GarageView() {
   const { currentGarage, setGarage } = useNavigationStore();
-  const { myVehicles, setActiveVehicle, isLoading } = useVehicleStore();
+  const { myVehicles, setActiveVehicle, isLoading, repairVehicle } = useVehicleStore();
   const player = usePlayerStore(state => state.player);
+  const [selectedVehicle, setSelectedVehicle] = useState(null);
+  const [paintingVehicle, setPaintingVehicle] = useState(null);
 
   const garageVehicles = (myVehicles || []).filter(v => v.house_id === currentGarage);
 
-  return (
-    <div className="h-full w-full bg-[#050814] flex flex-col text-white font-sans animate-in slide-in-from-right duration-500">
-      
-      <div className="shrink-0 p-8 flex justify-between items-center bg-gradient-to-b from-blue-900/20 to-transparent border-b border-white/5">
-        <div className="text-left">
-          <p className="text-[10px] font-black text-blue-500 uppercase tracking-[0.3em]">Технический сектор</p>
-          <h2 className="text-3xl font-black uppercase italic tracking-tighter">Мой Гараж</h2>
+  const handlePaint = async (veh, color) => {
+    const { supabase } = await import('../api/supabase');
+    const { error } = await supabase.from('vehicles').update({ color }).eq('id', veh.id);
+    if (!error) {
+      await useVehicleStore.getState().fetchVehicles();
+      setPaintingVehicle(null);
+    }
+  };
+
+  // Detailed vehicle view
+  if (selectedVehicle) {
+    const veh = selectedVehicle;
+    const cfg = VEHICLE_DATABASE[veh.model_id];
+    const fuelPercent = cfg?.fuelMax ? Math.round((veh.fuel / cfg.fuelMax) * 100) : 0;
+
+    return (
+      <div className="fixed inset-0 z-[300] bg-[#080c14] flex flex-col text-white">
+        {/* Header */}
+        <div className="flex justify-between items-center px-5 pt-4 pb-2">
+          <button onClick={() => setSelectedVehicle(null)} className="p-2.5 bg-white/5 rounded-xl active:scale-90 transition-all">
+            <ArrowLeft size={20} />
+          </button>
+          <div className="text-center">
+            <div className="text-lg font-black uppercase italic">{cfg?.name || veh.model_id}</div>
+            <div className="text-[10px] text-slate-400 font-bold">{veh.plate}</div>
+          </div>
+          <div className="w-10" />
         </div>
-        <button onClick={() => setGarage(null)} className="p-4 bg-white/5 text-white rounded-3xl border border-white/10 active:scale-90 transition-all">
-          <ArrowLeft size={24} />
-        </button>
-      </div>
 
-      <div className="flex-grow overflow-y-auto no-scrollbar p-6 space-y-6 pb-32">
-        {garageVehicles.map(veh => (
-          <div key={veh.id} className={`bg-slate-900/50 border ${veh.is_active ? 'border-blue-500' : 'border-white/5'} rounded-[40px] p-6 shadow-2xl`}>
-            <div className="flex items-center justify-between mb-6">
-                <div className="text-left">
-                    <h3 className="text-2xl font-black uppercase italic">{veh.model_id}</h3>
-                    <span className="text-[10px] font-bold text-blue-500 uppercase">{veh.plate}</span>
-                </div>
-                <img src={`/vehicles/${veh.model_id}_${veh.color}.webp`} className="w-32 object-contain" onError={(e) => e.target.src='/car.png'} />
+        {/* Car image */}
+        <div className="px-5 mb-4">
+          <div className="bg-gradient-to-b from-white/[0.03] to-transparent rounded-3xl p-6 border border-white/5">
+            <img 
+              src={`/vehicles/${veh.model_id}_${veh.color}.webp`} 
+              className="w-full aspect-[4/3] object-contain drop-shadow-2xl"
+              onError={(e) => e.target.src='/car.png'}
+            />
+          </div>
+        </div>
+
+        {/* Stats */}
+        <div className="px-5 mb-4">
+          <div className="bg-white/[0.03] border border-white/5 rounded-2xl p-3 space-y-2.5">
+            <div className="flex items-center gap-3">
+              <Fuel size={16} className="text-amber-400 shrink-0" />
+              <span className="text-[11px] text-slate-300 w-16">Топливо</span>
+              <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
+                <div className="h-full bg-amber-500 rounded-full" style={{ width: `${fuelPercent}%` }} />
+              </div>
+              <span className="text-[11px] font-bold text-slate-300 w-10 text-right">{fuelPercent}%</span>
             </div>
-
-            <div className="grid grid-cols-3 gap-2 mb-6">
-                <div className="bg-black/40 p-3 rounded-2xl border border-white/5 text-center">
-                    <Fuel size={14} className="mx-auto text-yellow-500 mb-1" />
-                    <span className="text-[10px] font-black block">{Math.round(veh.fuel)}%</span>
-                </div>
-                <div className="bg-black/40 p-3 rounded-2xl border border-white/5 text-center">
-                    <Wrench size={14} className="mx-auto text-red-500 mb-1" />
-                    <span className="text-[10px] font-black block">{veh.health}%</span>
-                </div>
-                <div className="bg-black/40 p-3 rounded-2xl border border-white/5 text-center">
-                    <Gauge size={14} className="mx-auto text-blue-500 mb-1" />
-                    <span className="text-[10px] font-black block">{Math.round(veh.mileage || 0)} км</span>
-                </div>
+            <div className="flex items-center gap-3">
+              <Wrench size={16} className="text-emerald-400 shrink-0" />
+              <span className="text-[11px] text-slate-300 w-16">Состояние</span>
+              <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
+                <div className={`h-full rounded-full ${veh.health > 50 ? 'bg-emerald-500' : veh.health > 20 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${veh.health}%` }} />
+              </div>
+              <span className="text-[11px] font-bold text-slate-300 w-10 text-right">{veh.health}%</span>
             </div>
+            <div className="flex items-center gap-3">
+              <Gauge size={16} className="text-blue-400 shrink-0" />
+              <span className="text-[11px] text-slate-300 w-16">Пробег</span>
+              <div className="flex-1" />
+              <span className="text-[11px] font-bold text-slate-300 w-14 text-right">{Math.round(veh.mileage || 0)} км</span>
+            </div>
+          </div>
+        </div>
 
-            <button disabled={isLoading} onClick={() => setActiveVehicle(veh.is_active ? null : veh.id)}
-                className={`w-full py-4 rounded-2xl font-black uppercase italic text-xs flex items-center justify-center gap-2 transition-all ${veh.is_active ? 'bg-red-600' : 'bg-blue-600 shadow-blue-900/20'}`}
+        {/* Action buttons */}
+        <div className="px-5 mb-4">
+          <div className="grid grid-cols-2 gap-3">
+            <button 
+              onClick={() => setPaintingVehicle(veh)}
+              className="flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 py-3 rounded-2xl font-black uppercase text-xs transition-all active:scale-95"
             >
-                <Power size={16} /> {veh.is_active ? 'Заглушить' : 'Выехать'}
+              <Paintbrush size={16} /> Покрасить
+            </button>
+            <button 
+              onClick={() => repairVehicle(veh.id)}
+              className="flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 py-3 rounded-2xl font-black uppercase text-xs transition-all active:scale-95"
+            >
+              <Wrench size={16} /> Починить
             </button>
           </div>
-        ))}
+        </div>
 
-        {garageVehicles.length === 0 && <div className="py-20 text-center opacity-20"><CarFront size={80} className="mx-auto mb-4" /><p className="font-black uppercase italic">Гараж пуст</p></div>}
+        <div className="flex-1" />
+
+        {/* Drive button */}
+        <div className="px-5 pb-6 pt-3">
+          <button 
+            disabled={isLoading} 
+            onClick={() => setActiveVehicle(veh.is_active ? null : veh.id)}
+            className={`w-full py-4 rounded-2xl font-black uppercase text-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2 ${
+              veh.is_active 
+                ? 'bg-red-600 shadow-lg shadow-red-900/40' 
+                : 'bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-900/40'
+            }`}
+          >
+            <Power size={20} /> {veh.is_active ? 'Заглушить' : 'Выехать'}
+          </button>
+        </div>
+
+        {/* Paint modal */}
+        {paintingVehicle?.id === veh.id && (
+          <div className="absolute inset-0 bg-black/80 z-50 flex items-end">
+            <div className="w-full bg-[#0c1020] rounded-t-3xl p-6">
+              <div className="text-[10px] font-black text-slate-400 uppercase mb-3">Выберите цвет</div>
+              <div className="flex gap-3 flex-wrap mb-6">
+                {cfg?.colors.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => handlePaint(veh, c)}
+                    className={`w-12 h-12 rounded-full border-3 transition-all active:scale-90 ${veh.color === c ? 'border-white scale-110' : 'border-white/20'}`}
+                    style={{ backgroundColor: VEHICLE_COLORS.find(v => v.id === c)?.hex || c }}
+                  />
+                ))}
+              </div>
+              <button onClick={() => setPaintingVehicle(null)} className="w-full py-3 bg-white/5 rounded-2xl font-black uppercase text-sm">Отмена</button>
+            </div>
+          </div>
+        )}
       </div>
+    );
+  }
+
+  // Vehicle list
+  return (
+    <div className="fixed inset-0 z-[300] bg-[#080c14] flex flex-col text-white">
+      {/* Header */}
+      <div className="flex justify-between items-center px-5 pt-5 pb-3">
+        <button onClick={() => setGarage(null)} className="p-2.5 bg-white/5 rounded-xl active:scale-90 transition-all">
+          <ArrowLeft size={20} />
+        </button>
+        <h2 className="text-lg font-black uppercase italic tracking-tight">Мой гараж</h2>
+        <div className="w-10" />
+      </div>
+
+      {garageVehicles.length === 0 ? (
+        <div className="flex-1 flex flex-col items-center justify-center text-slate-600">
+          <Gauge size={48} className="mb-3 opacity-30" />
+          <p className="text-sm font-black uppercase">Гараж пуст</p>
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto no-scrollbar px-5 pb-5 space-y-3">
+          {garageVehicles.map(veh => {
+            const cfg = VEHICLE_DATABASE[veh.model_id];
+            return (
+              <button
+                key={veh.id}
+                onClick={() => setSelectedVehicle(veh)}
+                className={`w-full bg-white/[0.03] border ${veh.is_active ? 'border-blue-500/50' : 'border-white/5'} rounded-2xl p-3 flex items-center gap-4 text-left active:scale-[0.98] transition-all`}
+              >
+                <img 
+                  src={`/vehicles/${veh.model_id}_${veh.color}.webp`} 
+                  className="w-20 h-20 rounded-xl object-contain bg-white/5 shrink-0"
+                  onError={(e) => e.target.src='/car.png'}
+                />
+                <div className="flex-1">
+                  <div className="font-black text-sm uppercase italic">{cfg?.name || veh.model_id}</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">{veh.plate}</div>
+                  <div className="flex items-center gap-3 mt-1">
+                    <div className="flex items-center gap-1">
+                      <Fuel size={10} className="text-amber-400" />
+                      <span className="text-[10px] text-slate-400">{Math.round((veh.fuel / (cfg?.fuelMax || 1)) * 100)}%</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Wrench size={10} className="text-emerald-400" />
+                      <span className="text-[10px] text-slate-400">{veh.health}%</span>
+                    </div>
+                  </div>
+                </div>
+                {veh.is_active && (
+                  <div className="w-2.5 h-2.5 bg-blue-500 rounded-full shrink-0 animate-pulse" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
