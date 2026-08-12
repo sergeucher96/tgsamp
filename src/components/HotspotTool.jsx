@@ -1,11 +1,33 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { X, Copy, Trash2, MapPin, Save } from 'lucide-react';
 import { HOUSE_PREVIEWS_MAP } from '../data/houseStyles';
+import { LOCATION_IMAGES } from '../data/locationStyles';
+
+// Merge house classes + location types into one unified map
+const ALL_CLASSES = {
+  // House classes
+  economy: HOUSE_PREVIEWS_MAP.economy,
+  comfort: HOUSE_PREVIEWS_MAP.comfort,
+  business: HOUSE_PREVIEWS_MAP.business,
+  premium: HOUSE_PREVIEWS_MAP.premium,
+  // Location types (from LOCATION_IMAGES)
+  ...LOCATION_IMAGES
+};
+
+const CLASS_LABELS = {
+  economy: '🏠 Эконом',
+  comfort: '🏠 Комфорт',
+  business: '🏠 Бизнес',
+  premium: '🏠 Премиум',
+  ...Object.entries(LOCATION_IMAGES).reduce((acc, [k, v]) => {
+    acc[k] = v.label || k;
+    return acc;
+  }, {})
+};
 
 /**
  * HotspotTool — dev-инструмент для разметки интерактивных зон на изображениях.
- * Доступен только в режиме разработки (import.meta.env.DEV).
- * Вызывается через Ctrl+Shift+H или программно через props.
+ * Поддерживает дома (economy/comfort/business/premium) и локации (bank/shop/bar и т.д.).
  */
 export default function HotspotTool({ onClose, onExport }) {
   const [houseClass, setHouseClass] = useState('economy');
@@ -22,71 +44,91 @@ export default function HotspotTool({ onClose, onExport }) {
   const [hotspotPositions, setHotspotPositions] = useState(hotspots);
   const containerRef = useRef(null);
   const imgRef = useRef(null);
+  const hotspotsRef = useRef(hotspots);
 
-  // Recalculate hotspot positions on resize (after initial load via onLoad)
+  // Recalculate hotspot positions based on current image layout
+  // Does NOT depend on hotspots state — uses hsList parameter or hotspotsRef
+  const recalcHotspotPositions = useCallback((hsList) => {
+    const img = imgRef.current;
+    const container = containerRef.current;
+    if (!img || !container || !img.complete) return;
+
+    const cRect = container.getBoundingClientRect();
+    const nW = img.naturalWidth;
+    const nH = img.naturalHeight;
+    if (nW === 0 || nH === 0) return;
+
+    const scale = Math.max(cRect.width / nW, cRect.height / nH);
+    const offsetX = (cRect.width - nW * scale) / 2;
+    const offsetY = (cRect.height - nH * scale) / 2;
+
+    const list = hsList ?? hotspotsRef.current;
+    const positions = list.map(hs => {
+      if (hs.type === 'rect') {
+        return {
+          ...hs,
+          _left: offsetX + (hs.x / 100) * nW * scale,
+          _top: offsetY + (hs.y / 100) * nH * scale,
+          _width: (hs.w / 100) * nW * scale,
+          _height: (hs.h / 100) * nH * scale,
+        };
+      }
+      return hs;
+    });
+    setHotspotPositions(positions);
+  }, []);
+
+  // Keep hotspotsRef in sync
   useEffect(() => {
-    if (!imgRef.current || !containerRef.current) return;
-
-    const recalc = () => {
-      const img = imgRef.current;
-      const container = containerRef.current;
-      if (!img || !container || !img.complete) return;
-
-      const cRect = container.getBoundingClientRect();
-      const nW = img.naturalWidth;
-      const nH = img.naturalHeight;
-      if (nW === 0 || nH === 0) return;
-
-      const scale = Math.max(cRect.width / nW, cRect.height / nH);
-      const drawW = nW * scale;
-      const drawH = nH * scale;
-      const offsetX = (cRect.width - drawW) / 2;
-      const offsetY = (cRect.height - drawH) / 2;
-
-      const positions = hotspots.map(hs => {
-        if (hs.type === 'rect') {
-          return {
-            ...hs,
-            _left: offsetX + (hs.x / 100) * nW * scale,
-            _top: offsetY + (hs.y / 100) * nH * scale,
-            _width: (hs.w / 100) * nW * scale,
-            _height: (hs.h / 100) * nH * scale,
-          };
-        }
-        return hs;
-      });
-      setHotspotPositions(positions);
-    };
-
-    window.addEventListener('resize', recalc);
-    return () => window.removeEventListener('resize', recalc);
+    hotspotsRef.current = hotspots;
   }, [hotspots]);
 
-  // Load images from houseStyles for current class
-  const currentClassData = HOUSE_PREVIEWS_MAP[houseClass] || {};
+  // Recalculate on hotspots change and resize
+  useEffect(() => {
+    recalcHotspotPositions();
+
+    const onResize = () => recalcHotspotPositions();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [hotspots, recalcHotspotPositions]);
+
+  // Load images from ALL_CLASSES for current class
+  const currentClassData = ALL_CLASSES[houseClass] || {};
   const imagesList = currentClassData.images || [];
 
   // Load image when class changes
   const handleClassChange = (cls) => {
     setHouseClass(cls);
-    const data = HOUSE_PREVIEWS_MAP[cls];
+    const data = ALL_CLASSES[cls];
     if (data?.images?.[0]) {
       setSelectedImage(data.images[0].src);
     }
     const saved = localStorage.getItem(`hotspot_tool_${cls}`);
-    if (saved) setHotspots(JSON.parse(saved));
-    else setHotspots([]);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      setHotspots(parsed);
+      hotspotsRef.current = parsed;
+    } else setHotspots([]);
   };
+
+  // Recalculate positions when image loads (after class change)
+  useEffect(() => {
+    if (selectedImage) {
+      // Delay to ensure image is rendered
+      const timer = setTimeout(() => recalcHotspotPositions(hotspotsRef.current), 100);
+      return () => clearTimeout(timer);
+    }
+  }, [selectedImage]);
 
   // Load first image on mount
   useEffect(() => {
-    const data = HOUSE_PREVIEWS_MAP[houseClass];
+    const data = ALL_CLASSES[houseClass];
     if (data?.images?.[0] && !selectedImage) {
       setSelectedImage(data.images[0].src);
     }
   }, [houseClass]);
 
-  const getPercentCoords = (e) => {
+  const getPercentCoords = useCallback((e) => {
     const img = imgRef.current;
     const container = containerRef.current;
     if (!img || !container) return { x: 0, y: 0 };
@@ -96,23 +138,20 @@ export default function HotspotTool({ onClose, onExport }) {
     const nH = img.naturalHeight;
     if (nW === 0 || nH === 0) return { x: 0, y: 0 };
     
-    // object-cover scale
     const scale = Math.max(cRect.width / nW, cRect.height / nH);
     const drawW = nW * scale;
     const drawH = nH * scale;
     const offsetX = (cRect.width - drawW) / 2;
     const offsetY = (cRect.height - drawH) / 2;
     
-    // Click position in container
     const clickX = e.clientX - cRect.left;
     const clickY = e.clientY - cRect.top;
     
-    // Convert to image-relative coordinates (%)
     const imgX = ((clickX - offsetX) / drawW) * 100;
     const imgY = ((clickY - offsetY) / drawH) * 100;
     
     return { x: imgX, y: imgY };
-  };
+  }, []);
 
   const handleMouseDown = useCallback((e) => {
     const coords = getPercentCoords(e);
@@ -122,11 +161,15 @@ export default function HotspotTool({ onClose, onExport }) {
     } else if (mode === 'polygon') {
       setPolygonPoints(prev => [...prev, coords]);
     }
-  }, [mode]);
+  }, [mode, getPercentCoords]);
 
-  const handleMouseMove = useCallback((_e) => {
-    // Could add preview cursor
-  }, []);
+  const [drawingRect, setDrawingRect] = useState(null);
+  const handleMouseMove = useCallback((e) => {
+    if (mode === 'rect' && drawing && startPos) {
+      const end = getPercentCoords(e);
+      setDrawingRect({ x: Math.min(startPos.x, end.x), y: Math.min(startPos.y, end.y), w: Math.abs(end.x - startPos.x), h: Math.abs(end.y - startPos.y) });
+    }
+  }, [mode, drawing, startPos, getPercentCoords]);
 
   const handleMouseUp = useCallback((e) => {
     if (mode === 'rect' && drawing && startPos) {
@@ -137,24 +180,36 @@ export default function HotspotTool({ onClose, onExport }) {
       const h = Math.abs(end.y - startPos.y);
       if (w > 1 && h > 1) {
         const id = Date.now();
-        setHotspots(prev => [...prev, { id, type: 'rect', x, y, w, h, name: 'zone' }]);
+        const newHotspot = { id, type: 'rect', x, y, w, h, name: 'zone' };
+        const updated = [...hotspotsRef.current, newHotspot];
+        setHotspots(updated);
+        localStorage.setItem(`hotspot_tool_${houseClass}`, JSON.stringify(updated));
+        // Recalculate positions immediately with the new hotspot list
+        recalcHotspotPositions(updated);
       }
       setDrawing(false);
       setStartPos(null);
+      setDrawingRect(null);
     }
-  }, [mode, drawing, startPos]);
+  }, [mode, drawing, startPos, houseClass, recalcHotspotPositions, getPercentCoords]);
 
   const finishPolygon = () => {
     if (polygonPoints.length >= 3) {
       const id = Date.now();
       const points = polygonPoints.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-      setHotspots(prev => [...prev, { id, type: 'polygon', points, name: 'zone' }]);
+      const updated = [...hotspotsRef.current, { id, type: 'polygon', points, name: 'zone' }];
+      setHotspots(updated);
+      localStorage.setItem(`hotspot_tool_${houseClass}`, JSON.stringify(updated));
+      recalcHotspotPositions(updated);
     }
     setPolygonPoints([]);
   };
 
   const removeHotspot = (id) => {
-    setHotspots(prev => prev.filter(h => h.id !== id));
+    const updated = hotspotsRef.current.filter(h => h.id !== id);
+    setHotspots(updated);
+    localStorage.setItem(`hotspot_tool_${houseClass}`, JSON.stringify(updated));
+    recalcHotspotPositions(updated);
   };
 
   const renameHotspot = (id, name) => {
@@ -181,6 +236,7 @@ export default function HotspotTool({ onClose, onExport }) {
 
   const clearAll = () => {
     setHotspots([]);
+    setHotspotPositions([]);
     setHotspotNames({});
     localStorage.removeItem(`hotspot_tool_${houseClass}`);
   };
@@ -226,32 +282,7 @@ export default function HotspotTool({ onClose, onExport }) {
               className="absolute inset-0 w-full h-full object-cover"
               onLoad={() => {
                 console.log('HotspotTool img loaded:', selectedImage);
-                if (imgRef.current && containerRef.current) {
-                  const img = imgRef.current;
-                  const container = containerRef.current;
-                  const cRect = container.getBoundingClientRect();
-                  const nW = img.naturalWidth;
-                  const nH = img.naturalHeight;
-                  if (nW === 0 || nH === 0) return;
-                  const scale = Math.max(cRect.width / nW, cRect.height / nH);
-                  const drawW = nW * scale;
-                  const drawH = nH * scale;
-                  const offsetX = (cRect.width - drawW) / 2;
-                  const offsetY = (cRect.height - drawH) / 2;
-                  const positions = hotspots.map(hs => {
-                    if (hs.type === 'rect') {
-                      return {
-                        ...hs,
-                        _left: offsetX + (hs.x / 100) * nW * scale,
-                        _top: offsetY + (hs.y / 100) * nH * scale,
-                        _width: (hs.w / 100) * nW * scale,
-                        _height: (hs.h / 100) * nH * scale,
-                      };
-                    }
-                    return hs;
-                  });
-                  setHotspotPositions(positions);
-                }
+                recalcHotspotPositions(hotspotsRef.current);
               }}
               onError={(e) => console.error('HotspotTool img error:', selectedImage, e)}
             />
@@ -262,15 +293,16 @@ export default function HotspotTool({ onClose, onExport }) {
               if (h.type === 'rect') {
                 return (
                   <div key={h.id}
-                    className="absolute border-2 border-orange-500 bg-orange-500/20 rounded-lg cursor-move group"
+                    className="absolute border-2 border-orange-500 bg-orange-500/30 rounded-lg cursor-move group"
                     style={{
                       left: `${h._left}px`,
                       top: `${h._top}px`,
                       width: `${h._width}px`,
                       height: `${h._height}px`,
+                      zIndex: 20,
                     }}
                   >
-                    <span className="absolute -top-5 left-0 text-[9px] font-black text-orange-400 uppercase whitespace-nowrap">
+                    <span className="absolute -top-6 left-0 text-[10px] font-black text-orange-300 uppercase whitespace-nowrap drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]">
                       {name} ({h.x.toFixed(0)}%, {h.y.toFixed(0)}%)
                     </span>
                     <button onClick={(e) => { e.stopPropagation(); removeHotspot(h.id); }}
@@ -282,7 +314,7 @@ export default function HotspotTool({ onClose, onExport }) {
               }
               return (
                 <svg key={h.id}
-                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', }}
+                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 20 }}
                   viewBox="0 0 100 100"
                   preserveAspectRatio="none"
                   className="pointer-events-none"
@@ -291,6 +323,20 @@ export default function HotspotTool({ onClose, onExport }) {
                 </svg>
               );
             })}
+
+            {/* Drawing preview */}
+            {drawingRect && (
+              <div
+                className="absolute border-2 border-dashed border-orange-400 bg-orange-400/40 rounded pointer-events-none"
+                style={{
+                  left: `${drawingRect.x}%`,
+                  top: `${drawingRect.y}%`,
+                  width: `${drawingRect.w}%`,
+                  height: `${drawingRect.h}%`,
+                  zIndex: 30,
+                }}
+              />
+            )}
 
             {/* Drawing polygon preview */}
             {polygonPoints.length > 0 && (
@@ -327,16 +373,23 @@ export default function HotspotTool({ onClose, onExport }) {
         <div className="shrink-0 p-4 space-y-2">
           <div className="flex gap-2 flex-wrap">
             <select value={houseClass} onChange={e => handleClassChange(e.target.value)}
-              className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none">
-              <option value="economy">🏠 Эконом-класс</option>
-              <option value="comfort">🏡 Комфорт-класс</option>
-              <option value="business">🏢 Бизнес-класс</option>
-              <option value="premium">🏰 Премиум-класс</option>
+              className="bg-[#0a0f0a] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none">
+              <optgroup label="🏠 Дома">
+                <option value="economy" className="bg-[#0a0f0a] text-white">🏠 Эконом-класс</option>
+                <option value="comfort" className="bg-[#0a0f0a] text-white">🏡 Комфорт-класс</option>
+                <option value="business" className="bg-[#0a0f0a] text-white">🏢 Бизнес-класс</option>
+                <option value="premium" className="bg-[#0a0f0a] text-white">🏰 Премиум-класс</option>
+              </optgroup>
+              <optgroup label="📍 Локации">
+                {Object.entries(LOCATION_IMAGES).map(([key]) => (
+                  <option key={key} value={key} className="bg-[#0a0f0a] text-white">{CLASS_LABELS[key] || key}</option>
+                ))}
+              </optgroup>
             </select>
             {imagesList.length > 1 && (
               <select value={selectedImage || ''} onChange={e => setSelectedImage(e.target.value)}
-                className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none">
-                {imagesList.map(img => <option key={img.src} value={img.src}>{img.src.split('/').pop()}</option>)}
+                className="bg-[#0a0f0a] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none">
+                {imagesList.map(img => <option key={img.src} value={img.src} className="bg-[#0a0f0a] text-white">{img.src.split('/').pop()}</option>)}
               </select>
             )}
             <button onClick={() => setMode('rect')}

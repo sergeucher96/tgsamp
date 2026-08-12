@@ -32,9 +32,10 @@ import DrivingSchoolView from './DrivingSchoolView';
 import GunRangeView from './GunRangeView';
 import ATMView from './ATMView';
 import TuningShopView from './TuningShopView';
+import LocationView from './LocationView';
 // Иконки
 import { 
-  Loader2, Crosshair, Navigation, Compass, Target, Search, X 
+  Loader2, Crosshair, Navigation, Compass, Target, Search, X, Home 
 } from 'lucide-react';
 
 function TravelOverlay({ player, activeVehicle, isMoving, remainingPath, routeTarget, currentPosition, currentRotation }) {
@@ -121,6 +122,7 @@ export default function MapView() {
   const [showATM, setShowATM] = useState(false);
   const [showTuningShop, setShowTuningShop] = useState(false);
   const [activeJobId, setActiveJobId] = useState(null);
+  const [locationView, setLocationView] = useState(null); // Локация для открытия 2D картинки
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   // Long-press travel marker
   const [travelMarker, setTravelMarker] = useState(null);
@@ -129,6 +131,7 @@ export default function MapView() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [activeFilter, setActiveFilter] = useState('all');
+  const [showHouses, setShowHouses] = useState(true);
   
   // Данные из сторов
   const { player, activeVehicle } = usePlayerStore();
@@ -288,6 +291,43 @@ export default function MapView() {
       {showGunRange && <GunRangeView onClose={() => setShowGunRange(false)} />}
       {showATM && <ATMView onClose={() => setShowATM(false)} />}
       {showTuningShop && <TuningShopView onClose={() => setShowTuningShop(false)} />}
+      {locationView && (
+        <LocationView
+          location={locationView}
+          onClose={() => setLocationView(null)}
+          onAction={(action, label) => {
+            // Route actions to existing views
+            setLocationView(null);
+            if (action === 'default') {
+              // No hotspots configured — open the default menu for this location type
+              if (locationView.type === 'bank') { setShowBank(true); }
+              else if (locationView.type === 'shop') { setCurrentShop('shop_24_7'); }
+              else if (locationView.id === 'pizzeria_1') { setShowPizzeria(true); }
+              else if (locationView.id === 'mine') { setShowMine(true); }
+              else if (locationView.id === 'port_ls') { setShowExport(true); }
+              else if (locationView.type === 'nightclub') { setShowStripClub(true); }
+              else if (locationView.type === 'clothes') { setCurrentShop('clothes_1'); }
+              else if (locationView.type === 'tuning') { setShowTuningShop(true); }
+              else if (locationView.id === 'driving_1') { setShowDrivingSchool(true); }
+              else if (locationView.id === 'guns_1') { setShowGunRange(true); }
+              else if (locationView.type === 'atm') { setShowATM(true); }
+              else if (getJobByLocation(locationView.id)) { setActiveJobId(getJobByLocation(locationView.id).id); }
+            } else {
+              // Hotspot action — same routing
+              if (locationView.type === 'bank') { setShowBank(true); }
+              else if (locationView.type === 'shop') { setCurrentShop('shop_24_7'); }
+              else if (locationView.id === 'pizzeria_1') { setShowPizzeria(true); }
+              else if (locationView.id === 'mine') { setShowMine(true); }
+              else if (locationView.id === 'port_ls') { setShowExport(true); }
+              else if (locationView.type === 'nightclub') { setShowStripClub(true); }
+              else if (locationView.type === 'clothes') { setCurrentShop('clothes_1'); }
+              else if (locationView.type === 'tuning') { setShowTuningShop(true); }
+              else if (locationView.id === 'driving_1') { setShowDrivingSchool(true); }
+              else if (locationView.id === 'guns_1') { setShowGunRange(true); }
+            }
+          }}
+        />
+      )}
       {activeJobId && <JobView jobId={activeJobId} onClose={() => setActiveJobId(null)} />}
       {currentShop && <ShopView shopType={currentShop} player={player} onClose={() => setCurrentShop(null)} />}
       {showShowroom && (
@@ -397,11 +437,14 @@ export default function MapView() {
                 const isHighlighted = q && ((loc.name || '').toLowerCase().includes(q) || (loc.id || '').toLowerCase().includes(q) || searchResults.find(r => r.id === loc.id));
                 const isHouse = loc.type === 'house';
                 const isDeliveryTarget = loc.id === activeDeliveryJob?.targetHouse?.id;
+                // Hide houses when toggle is off
+                if (isHouse && !showHouses) return null;
 
                 const dbData = dbHouses.find(h => h.id_name === loc.id);
                 const hWithD = { ...loc, owner_id: dbData?.owner_id, is_for_sale: dbData?.is_for_sale };
                 const style = isHouse ? getHouseStyle(hWithD, player) : { color: loc.color, border: 'border-white border-[3px]' };
                 const showText = currentScale > 0.8 || isNear;
+                const showLabel = showText;
 
                 return (
                   <div key={loc.id} className="absolute pointer-events-auto" style={{ left: `${loc.x}px`, top: `${loc.y}px`, transform: 'translate(-50%, -50%)', zIndex: isNear ? 100 : 25 }}>
@@ -425,19 +468,12 @@ export default function MapView() {
                         }
                         if (isHouse) setSelectedHouse(hWithD);
                         else if (loc.id === 'showroom_ls') { if (isNear) setShowShowroom(true); else setSelectedShowroom(loc); }
-                        else if (loc.type === 'bank') { if (isNear) setShowBank(true); else { setIsFollowing(true); startRoute(loc.id); } }
-                        else if (loc.id === 'pizzeria_1') { if (isNear) setShowPizzeria(true); else { setIsFollowing(true); startRoute(loc.id); } }
-                        else if (loc.id === 'mine') { if (isNear) setShowMine(true); else { setIsFollowing(true); startRoute(loc.id); } }
-                        else if (loc.id === 'port_ls') { if (isNear) setShowExport(true); else { setIsFollowing(true); startRoute(loc.id); } }
-                        else if (getJobByLocation(loc.id)) { if (isNear) setActiveJobId(getJobByLocation(loc.id).id); else { setIsFollowing(true); startRoute(loc.id); } }
-                        else if (loc.type === 'nightclub') { if (isNear) setShowStripClub(true); else { setIsFollowing(true); startRoute(loc.id); } }
-                        else if (loc.type === 'shop') { if (isNear) setCurrentShop('shop_24_7'); else { setIsFollowing(true); startRoute(loc.id); } }
-                        else if (loc.type === 'clothes') { if (isNear) setCurrentShop('clothes_1'); else { setIsFollowing(true); startRoute(loc.id); } }
-                        else if (loc.type === 'driving_school') { if (isNear) setShowDrivingSchool(true); else { setIsFollowing(true); startRoute(loc.id); } }
-                        else if (loc.type === 'gun_range') { if (isNear) setShowGunRange(true); else { setIsFollowing(true); startRoute(loc.id); } }
-                        else if (loc.type === 'atm') { if (isNear) setShowATM(true); else { setIsFollowing(true); startRoute(loc.id); } }
-                        else if (loc.type === 'tuning') { if (isNear) setShowTuningShop(true); else { setIsFollowing(true); startRoute(loc.id); } }
-                        else { if (!isNear) { setIsFollowing(true); startRoute(loc.id); } }
+                        else if (isNear) {
+                          // Open LocationView for all non-house locations
+                          setLocationView(loc);
+                        } else {
+                          setIsFollowing(true); startRoute(loc.id);
+                        }
                       }}
                         className={`relative ${isHouse ? 'w-7 h-7' : 'w-14 h-14'} ${style.color} ${style.border} rounded-xl shadow-2xl flex items-center justify-center transition-all duration-300 active:scale-75 ${isMoving && !isNear ? 'opacity-40 grayscale' : 'opacity-100'} overflow-hidden ${isHighlighted || isDeliveryTarget ? 'ring-4 ring-yellow-400/40 animate-pulse' : ''}`}
                       >
@@ -446,7 +482,7 @@ export default function MapView() {
                         {isDeliveryTarget && <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-2 h-2 bg-yellow-400 rounded-full shadow-lg animate-pulse" />}
                         {isNear && <div className="absolute inset-0 border-4 border-white animate-marker-pulse rounded-inherit" />}
                       </button>
-                      {showText && (
+                      {showLabel && (
                         <div className="mt-2 px-2 py-0.5 bg-slate-900/90 backdrop-blur-md border border-white/10 rounded-lg shadow-2xl text-[8px] font-black text-white italic whitespace-nowrap">
                           {loc.name}{isDeliveryTarget ? ' — Заказ' : ''}
                         </div>
@@ -484,6 +520,9 @@ export default function MapView() {
               <button onClick={() => setActiveFilter('bank')} className={`px-3 py-2 rounded-2xl ${activeFilter==='bank'?'bg-[#7eff67]/20 text-[#d6ff9f]':'bg-[#111610]/80 text-[#8ebc88]'}`}>Банк</button>
               <button onClick={() => setActiveFilter('nightclub')} className={`px-3 py-2 rounded-2xl ${activeFilter==='nightclub'?'bg-[#7eff67]/20 text-[#d6ff9f]':'bg-[#111610]/80 text-[#8ebc88]'}`}>Клубы</button>
               <button onClick={() => setActiveFilter('job')} className={`px-3 py-2 rounded-2xl ${activeFilter==='job'?'bg-[#7eff67]/20 text-[#d6ff9f]':'bg-[#111610]/80 text-[#8ebc88]'}`}>Работа</button>
+              <button onClick={() => setShowHouses(v => !v)} className={`px-3 py-2 rounded-2xl flex items-center gap-1.5 ${showHouses?'bg-[#7eff67]/20 text-[#d6ff9f]':'bg-[#111610]/80 text-[#5a7a54]'}`}>
+                <Home size={12} /> {showHouses ? 'Дома видны' : 'Дома скрыты'}
+              </button>
             </div>
             {searchResults.length > 0 && (
               <div className="mt-3 max-h-52 overflow-y-auto no-scrollbar">
