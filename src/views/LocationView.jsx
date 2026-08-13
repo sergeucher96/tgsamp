@@ -78,6 +78,7 @@ export default function LocationView({ location, onClose, onAction }) {
   }, [hotspots]);
 
   const handleHotspotClick = (action, label) => {
+    console.log('[ATM DEBUG] handleHotspotClick:', action, label, 'onAction exists:', !!onAction);
     if (onAction) onAction(action, label);
   };
 

@@ -5,13 +5,62 @@
 // Интерактивные зоны (дверь, касса, стойка...)
 // Формат: { locationId: { imageIndex: [ { id, type, x, y, w, h, action, label } ] } }
 // locationId — это ID локации из locations.js (bank_1, shop_1, tuning_1...)
+// Координаты x, y, w, h в процентах (0-100) от изображения
 export const LOCATION_HOTSPOTS = {
-  // Пример:
-  // bank_1: {
-  //   1: [
-  //     { id: 'enter', type: 'rect', x: 22.04, y: 50.70, w: 32.53, h: 18.46, action: 'enter', label: 'Войти в банк' }
-  //   ]
-  // }
+  // === Магазины: "Войти в магазин" + "Купить бизнес" ===
+  shop_1: { 1: [{ id: 'enter_shop', type: 'rect', x: 25, y: 30, w: 50, h: 40, action: 'enter', label: 'Войти в магазин' }, { id: 'buy_business', type: 'rect', x: 25, y: 78, w: 50, h: 12, action: 'buy_business', label: 'Купить бизнес' }] },
+  shop_24_7: { 1: [{ id: 'enter_shop', type: 'rect', x: 25, y: 30, w: 50, h: 40, action: 'enter', label: 'Войти в магазин' }, { id: 'buy_business', type: 'rect', x: 25, y: 78, w: 50, h: 12, action: 'buy_business', label: 'Купить бизнес' }] },
+  shop_2: { 1: [{ id: 'enter_shop', type: 'rect', x: 25, y: 30, w: 50, h: 40, action: 'enter', label: 'Войти в магазин' }, { id: 'buy_business', type: 'rect', x: 25, y: 78, w: 50, h: 12, action: 'buy_business', label: 'Купить бизнес' }] },
+  shop_3: { 1: [{ id: 'enter_shop', type: 'rect', x: 25, y: 30, w: 50, h: 40, action: 'enter', label: 'Войти в магазин' }, { id: 'buy_business', type: 'rect', x: 25, y: 78, w: 50, h: 12, action: 'buy_business', label: 'Купить бизнес' }] },
+  shop_4: { 1: [{ id: 'enter_shop', type: 'rect', x: 25, y: 30, w: 50, h: 40, action: 'enter', label: 'Войти в магазин' }, { id: 'buy_business', type: 'rect', x: 25, y: 78, w: 50, h: 12, action: 'buy_business', label: 'Купить бизнес' }] },
+  shop_5: { 1: [{ id: 'enter_shop', type: 'rect', x: 25, y: 30, w: 50, h: 40, action: 'enter', label: 'Войти в магазин' }, { id: 'buy_business', type: 'rect', x: 25, y: 78, w: 50, h: 12, action: 'buy_business', label: 'Купить бизнес' }] },
+
+  // === Одежда: "Войти в магазин" + "Купить бизнес" ===
+  clothes_1: { 1: [{ id: 'enter_shop', type: 'rect', x: 25, y: 30, w: 50, h: 40, action: 'enter', label: 'Войти в магазин' }, { id: 'buy_business', type: 'rect', x: 25, y: 78, w: 50, h: 12, action: 'buy_business', label: 'Купить бизнес' }] },
+
+  // === Бары: "Войти в бар" + "Купить бизнес" ===
+  bar_1: { 1: [{ id: 'enter_bar', type: 'rect', x: 25, y: 30, w: 50, h: 40, action: 'enter', label: 'Войти в бар' }, { id: 'buy_business', type: 'rect', x: 25, y: 78, w: 50, h: 12, action: 'buy_business', label: 'Купить бизнес' }] },
+  bar_2: { 1: [{ id: 'enter_bar', type: 'rect', x: 25, y: 30, w: 50, h: 40, action: 'enter', label: 'Войти в бар' }, { id: 'buy_business', type: 'rect', x: 25, y: 78, w: 50, h: 12, action: 'buy_business', label: 'Купить бизнес' }] },
+  bar_3: { 1: [{ id: 'enter_bar', type: 'rect', x: 25, y: 30, w: 50, h: 40, action: 'enter', label: 'Войти в бар' }, { id: 'buy_business', type: 'rect', x: 25, y: 78, w: 50, h: 12, action: 'buy_business', label: 'Купить бизнес' }] },
+  bar_4: { 1: [{ id: 'enter_bar', type: 'rect', x: 25, y: 30, w: 50, h: 40, action: 'enter', label: 'Войти в бар' }, { id: 'buy_business', type: 'rect', x: 25, y: 78, w: 50, h: 12, action: 'buy_business', label: 'Купить бизнес' }] },
+
+  // === АЗС: "АЗС (скоро)" + "Банкомат" + "Купить бизнес" ===
+  gas_1: { 1: [
+    { id: 'gas_service', type: 'rect', x: 24.53125317891439, y: 26.323296458362837, w: 42.29166507720948, h: 28.703236560505093, action: 'coming_soon', label: 'АЗС — Скоро открытие' },
+    { id: 'gas_atm', type: 'rect', x: 71.19792302449545, y: 52.94658832140533, w: 21.666677792867006, h: 24.26602147039688, action: 'atm', label: 'Банкомат' }
+  ] },
+  gas_2: { 1: [{ id: 'refuel', type: 'rect', x: 25, y: 30, w: 50, h: 25, action: 'enter', label: 'Заправиться' }, { id: 'atm_gas', type: 'rect', x: 25, y: 60, w: 22, h: 15, action: 'atm', label: 'Банкомат' }, { id: 'buy_gas', type: 'rect', x: 53, y: 60, w: 22, h: 15, action: 'buy_business', label: 'Купить бизнес' }] },
+  gas_3: { 1: [{ id: 'refuel', type: 'rect', x: 25, y: 30, w: 50, h: 25, action: 'enter', label: 'Заправиться' }, { id: 'buy_gas', type: 'rect', x: 25, y: 60, w: 50, h: 15, action: 'buy_business', label: 'Купить бизнес' }] },
+  gas_4: { 1: [{ id: 'refuel', type: 'rect', x: 25, y: 30, w: 50, h: 25, action: 'enter', label: 'Заправиться' }, { id: 'buy_gas', type: 'rect', x: 25, y: 60, w: 50, h: 15, action: 'buy_business', label: 'Купить бизнес' }] },
+  gas_5: { 1: [{ id: 'refuel', type: 'rect', x: 25, y: 30, w: 50, h: 25, action: 'enter', label: 'Заправиться' }, { id: 'buy_gas', type: 'rect', x: 25, y: 60, w: 50, h: 15, action: 'buy_business', label: 'Купить бизнес' }] },
+
+  // === Парковки: "Парковка" + "Купить бизнес" ===
+  parking_1: { 1: [{ id: 'enter_parking', type: 'rect', x: 25, y: 30, w: 50, h: 40, action: 'enter', label: 'Парковка' }, { id: 'buy_business', type: 'rect', x: 25, y: 78, w: 50, h: 12, action: 'buy_business', label: 'Купить бизнес' }] },
+  parking_2: { 1: [{ id: 'enter_parking', type: 'rect', x: 25, y: 30, w: 50, h: 40, action: 'enter', label: 'Парковка' }, { id: 'buy_business', type: 'rect', x: 25, y: 78, w: 50, h: 12, action: 'buy_business', label: 'Купить бизнес' }] },
+  parking_3: { 1: [{ id: 'enter_parking', type: 'rect', x: 25, y: 30, w: 50, h: 40, action: 'enter', label: 'Парковка' }, { id: 'buy_business', type: 'rect', x: 25, y: 78, w: 50, h: 12, action: 'buy_business', label: 'Купить бизнес' }] },
+  parking_4: { 1: [{ id: 'enter_parking', type: 'rect', x: 25, y: 30, w: 50, h: 40, action: 'enter', label: 'Парковка' }, { id: 'buy_business', type: 'rect', x: 25, y: 78, w: 50, h: 12, action: 'buy_business', label: 'Купить бизнес' }] },
+
+  // === Спортзал: "Войти" + "Купить бизнес" ===
+  gym_1: { 1: [{ id: 'enter_gym', type: 'rect', x: 25, y: 30, w: 50, h: 40, action: 'enter', label: 'Войти в спортзал' }, { id: 'buy_business', type: 'rect', x: 25, y: 78, w: 50, h: 12, action: 'buy_business', label: 'Купить бизнес' }] },
+  gym_2: { 1: [{ id: 'enter_gym', type: 'rect', x: 25, y: 30, w: 50, h: 40, action: 'enter', label: 'Войти в спортзал' }, { id: 'buy_business', type: 'rect', x: 25, y: 78, w: 50, h: 12, action: 'buy_business', label: 'Купить бизнес' }] },
+
+  // === Склад: "Войти" + "Купить бизнес" ===
+  warehouse_1: { 1: [{ id: 'enter_warehouse', type: 'rect', x: 25, y: 30, w: 50, h: 40, action: 'enter', label: 'Войти на склад' }, { id: 'buy_business', type: 'rect', x: 25, y: 78, w: 50, h: 12, action: 'buy_business', label: 'Купить бизнес' }] },
+
+  // === Отель: "Заселиться" + "Купить отель" ===
+  hotel_1: { 1: [{ id: 'enter_hotel', type: 'rect', x: 25, y: 30, w: 50, h: 40, action: 'open_hotel', label: 'Отель' }, { id: 'buy_hotel', type: 'rect', x: 25, y: 78, w: 50, h: 12, action: 'buy_business', label: 'Купить отель' }] },
+  hotel_2: { 1: [{ id: 'enter_hotel', type: 'rect', x: 25, y: 30, w: 50, h: 40, action: 'open_hotel', label: 'Отель' }, { id: 'buy_hotel', type: 'rect', x: 25, y: 78, w: 50, h: 12, action: 'buy_business', label: 'Купить отель' }] },
+  hotel_3: { 1: [{ id: 'enter_hotel', type: 'rect', x: 25, y: 30, w: 50, h: 40, action: 'open_hotel', label: 'Отель' }, { id: 'buy_hotel', type: 'rect', x: 25, y: 78, w: 50, h: 12, action: 'buy_business', label: 'Купить отель' }] },
+  hotel_4: { 1: [{ id: 'enter_hotel', type: 'rect', x: 25, y: 30, w: 50, h: 40, action: 'open_hotel', label: 'Отель' }, { id: 'buy_hotel', type: 'rect', x: 25, y: 78, w: 50, h: 12, action: 'buy_business', label: 'Купить отель' }] },
+
+  // === Ночной клуб: "Войти" + "Купить бизнес" ===
+  club_1: { 1: [{ id: 'enter_club', type: 'rect', x: 25, y: 30, w: 50, h: 40, action: 'enter', label: 'Войти в клуб' }, { id: 'buy_business', type: 'rect', x: 25, y: 78, w: 50, h: 12, action: 'buy_business', label: 'Купить бизнес' }] },
+
+  // === Тюнинг: "Войти" + "Купить бизнес" ===
+  tuning_1: { 1: [{ id: 'enter_tuning', type: 'rect', x: 25, y: 30, w: 50, h: 40, action: 'enter', label: 'Войти в тюнинг' }, { id: 'buy_business', type: 'rect', x: 25, y: 78, w: 50, h: 12, action: 'buy_business', label: 'Купить бизнес' }] },
+
+  // === Банк ===
+  bank_1: { 1: [{ id: 'enter_bank', type: 'rect', x: 25, y: 30, w: 50, h: 40, action: 'enter', label: 'Войти в банк' }] },
 };
 
 // Картинки для каждой локации по ID (bank_1, bank_2, shop_1...)
@@ -155,6 +204,20 @@ export const LOCATION_IMAGES = {
     ],
     default: '/locations/hotel_1.webp'
   },
+  hotel_3: {
+    label: '🏨 Отель "Vinewood"',
+    images: [
+      { id: 1, src: '/locations/hotel_vinewood.webp' },
+    ],
+    default: '/locations/hotel_vinewood.webp'
+  },
+  hotel_4: {
+    label: '🏨 Отель "Rockford Hills"',
+    images: [
+      { id: 1, src: '/locations/hotel_rockford.webp' },
+    ],
+    default: '/locations/hotel_rockford.webp'
+  },
 
   // === АЗС ===
   gas_1: {
@@ -190,14 +253,28 @@ export const LOCATION_IMAGES = {
     default: '/locations/gym_1.webp'
   },
 
-  // === Склад ===
-  warehouse_1: {
-    label: '📦 Склад #1',
-    images: [
-      { id: 1, src: '/locations/warehouse_1.webp' },
-    ],
-    default: '/locations/warehouse_1.webp'
-  },
+  // === Дополнительный бизнес ===
+  shop_3: { label: '🛒 Продукты', images: [{ id: 1, src: '/locations/shop_3.webp' }], default: '/locations/shop_3.webp' },
+  shop_4: { label: '🛒 Минимаркет', images: [{ id: 1, src: '/locations/shop_4.webp' }], default: '/locations/shop_4.webp' },
+  shop_5: { label: '🛒 Угловой магазин', images: [{ id: 1, src: '/locations/shop_5.webp' }], default: '/locations/shop_5.webp' },
+  bar_3: { label: '🍺 Ночной бар', images: [{ id: 1, src: '/locations/bar_3.webp' }], default: '/locations/bar_3.webp' },
+  bar_4: { label: '🍺 Бар "Восток"', images: [{ id: 1, src: '/locations/bar_4.webp' }], default: '/locations/bar_4.webp' },
+  club_1: { label: '💃 Клуб "Velvet"', images: [{ id: 1, src: '/locations/club_1.webp' }], default: '/locations/club_1.webp' },
+  hotel_2: { label: '🏨 Мотель "Jefferson"', images: [{ id: 1, src: '/locations/hotel_2.webp' }], default: '/locations/hotel_2.webp' },
+  gas_3: { label: '⛽ АЗС "North"', images: [{ id: 1, src: '/locations/gas_3.webp' }], default: '/locations/gas_3.webp' },
+  gas_4: { label: '⛽ АЗС "HighWay"', images: [{ id: 1, src: '/locations/gas_4.webp' }], default: '/locations/gas_4.webp' },
+  gas_5: { label: '⛽ АЗС "West Side"', images: [{ id: 1, src: '/locations/gas_5.webp' }], default: '/locations/gas_5.webp' },
+  parking_2: { label: '🅿️ Парковка Центр', images: [{ id: 1, src: '/locations/parking_2.webp' }], default: '/locations/parking_2.webp' },
+  parking_3: { label: '�️ Парковка Вост.', images: [{ id: 1, src: '/locations/parking_3.webp' }], default: '/locations/parking_3.webp' },
+  parking_4: { label: '🅿️ Подземный паркинг', images: [{ id: 1, src: '/locations/parking_4.webp' }], default: '/locations/parking_4.webp' },
+  gym_2: { label: '💪 Фитнес-центр', images: [{ id: 1, src: '/locations/gym_2.webp' }], default: '/locations/gym_2.webp' },
+  atm_1: { label: '🏧 Банкомат #1', images: [{ id: 1, src: '/locations/atm_1.webp' }], default: '/locations/atm_1.webp' },
+  atm_2: { label: '🏧 Банкомат #2', images: [{ id: 1, src: '/locations/atm_2.webp' }], default: '/locations/atm_2.webp' },
+  atm_3: { label: '🏧 Банкомат #3', images: [{ id: 1, src: '/locations/atm_3.webp' }], default: '/locations/atm_3.webp' },
+  driving_school_1: { label: '🎓 Автошкола', images: [{ id: 1, src: '/locations/driving_school_1.webp' }], default: '/locations/driving_school_1.webp' },
+  gun_range_1: { label: '🎯 Тир', images: [{ id: 1, src: '/locations/gun_range_1.webp' }], default: '/locations/gun_range_1.webp' },
+  port_ls: { label: '⚓ Порт', images: [{ id: 1, src: '/locations/port_ls.webp' }], default: '/locations/port_ls.webp' },
+  mine: { label: '⛏️ Шахта', images: [{ id: 1, src: '/locations/mine.webp' }], default: '/locations/mine.webp' },
 };
 
 // Получить картинку для локации по ID

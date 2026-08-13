@@ -268,6 +268,8 @@ export const LOCATIONS = [
   { id: 'club_1', x: 5680, y: 4690, name: 'Стрип-клуб "Velvet"', desc: 'Шикарный ночной клуб с VIP-танцовщицами и бонусами репутации.', icon: '💃', type: 'nightclub', color: 'bg-pink-500' },
   { id: 'hotel_1', x: 5942, y: 4623, name: 'Отель "Las Colinas"', icon: '🏨', type: 'hotel', color: 'bg-indigo-600' },
   { id: 'hotel_2', x: 5466, y: 4288, name: 'Мотель "Jefferson"', icon: '🏨', type: 'hotel', color: 'bg-indigo-600' },
+  { id: 'hotel_3', x: 4777, y: 3391, name: 'Отель "Vinewood"', icon: '🏨', type: 'hotel', color: 'bg-indigo-600' },
+  { id: 'hotel_4', x: 4589, y: 3425, name: 'Отель "Rockford Hills"', icon: '🏨', type: 'hotel', color: 'bg-indigo-600' },
 
   // ==========================================
   // 5. ТРАНСПОРТНАЯ ИНФРАСТРУКТУРА
@@ -305,6 +307,14 @@ export const LOCATIONS = [
 ];
 // ВРЕМЕННЫЙ СКРИПТ ДЛЯ ПРИВЯЗКИ (Потом удалим)
 import { WAYPOINTS } from './roads';
+import { BUSINESS_CATEGORIES } from './businessConfig';
+
+export const getCategory = (type) => {
+  if (BUSINESS_CATEGORIES.residential.includes(type)) return 'residential';
+  if (BUSINESS_CATEGORIES.business.includes(type)) return 'business';
+  if (BUSINESS_CATEGORIES.municipal.includes(type)) return 'municipal';
+  return 'municipal';
+};
 
 export const getLinkedLocations = () => {
   return LOCATIONS.map(loc => {
@@ -319,7 +329,7 @@ export const getLinkedLocations = () => {
       }
     });
 
-    return { ...loc, entrance_id: closestId };
+    return { ...loc, entrance_id: closestId, category: getCategory(loc.type) };
   });
 };
 

@@ -26,7 +26,7 @@ export default function ATMView({ onClose }) {
   const fee = withdrawAmount ? (Math.round(Number(withdrawAmount) * 0.03 * 100) / 100) : 0;
 
   return (
-    <div className="fixed inset-0 z-[400] bg-[#020617] flex flex-col text-white font-sans">
+    <div className="fixed inset-0 z-[10001] bg-[#020617] flex flex-col text-white font-sans">
       <div className="w-full bg-[#08101a] flex-1 overflow-y-auto p-4">
         {/* Header */}
         <div className="flex items-start justify-between">

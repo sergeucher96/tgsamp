@@ -676,6 +676,10 @@ export const WAYPOINTS = {
 "732": { x: 4006, y: 4057 },
 "733": { x: 4027, y: 4054 },
 "734": { x: 4052, y: 4053 },
+  "735": { x: 4777, y: 3391},
+  "736": { x: 4783, y: 3319},
+  "737": { x: 4782, y: 3260},
+  "738": { x: 4781, y: 3203},
 };
 
 export const ROAD_NETWORK = [
@@ -1516,4 +1520,9 @@ export const ROAD_NETWORK = [
 { from: "726", to: "725" },
 { from: "725", to: "724" },
 { from: "523", to: "724" },
+  // Отели — Vinewood / Rockford Hills
+  { from: "60", to: "735" },
+  { from: "735", to: "736" },
+  { from: "736", to: "737" },
+  { from: "737", to: "738" },
 ];
