@@ -9,6 +9,7 @@ export const usePlayerStore = create((set, get) => ({
   activeVehicle: null,
   loading: true,
   needsRegistration: false,
+  metabolismInterval: null,
 
   login: async () => {
     set({ loading: true });
@@ -38,16 +39,39 @@ export const usePlayerStore = create((set, get) => ({
         needsRegistration: !profile.first_name 
       });
 
+      // Clean up existing interval if any
+      if (get().metabolismInterval) {
+        clearInterval(get().metabolismInterval);
+      }
+
       // ЗАПУСКАЕМ МЕТАБОЛИЗМ (Раз в 2 минуты -1 энергия)
-      setInterval(() => {
+      const interval = setInterval(() => {
         get().processMetabolism();
       }, 120000);
+
+      set({ metabolismInterval: interval });
 
 
     } catch (err) {
       console.error(err);
       set({ loading: false });
     }
+  },
+
+  logout: () => {
+    // Clean up metabolism interval on logout
+    if (get().metabolismInterval) {
+      clearInterval(get().metabolismInterval);
+      set({ metabolismInterval: null });
+    }
+    set({
+      player: null,
+      skills: [],
+      licenses: [],
+      activeVehicle: null,
+      loading: true,
+      needsRegistration: false
+    });
   },
 
   // ЛОГИКА ПАССИВНОГО ГОЛОДА
@@ -99,10 +123,20 @@ export const usePlayerStore = create((set, get) => ({
         : [...(skills || []), { player_id: player.id, skill_name: skillName, value: nextValue }],
     });
 
-    if (existing) {
-      await supabase.from('player_skills').update({ value: nextValue }).eq('player_id', player.id).eq('skill_name', skillName);
-    } else {
-      await supabase.from('player_skills').insert([{ player_id: player.id, skill_name: skillName, value: nextValue }]);
+    try {
+      if (existing) {
+        const { error } = await supabase.from('player_skills')
+          .update({ value: nextValue })
+          .eq('player_id', player.id)
+          .eq('skill_name', skillName);
+        if (error) console.error('Skill update error:', error);
+      } else {
+        const { error } = await supabase.from('player_skills')
+          .insert([{ player_id: player.id, skill_name: skillName, value: nextValue, category: 'general' }]);
+        if (error) console.error('Skill insert error:', error);
+      }
+    } catch (err) {
+      console.error('Failed to save skill progress:', err);
     }
   },
   
