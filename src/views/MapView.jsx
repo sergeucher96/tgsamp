@@ -1,21 +1,25 @@
-import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import { supabase } from '../api/supabase';
 
 // Конфигурации и Данные
 import { MAP_CONFIG } from '../data/mapConfig';
-import { FINAL_LOCATIONS } from '../data/locations'; 
+import { getMergedLocations } from '../data/locations';
 import { WAYPOINTS } from '../data/roads';
 import { getHouseStyle } from '../data/houseStyles';
 
 // Сторы
 import { usePlayerStore } from '../store/usePlayerStore'; 
 import { useTravelStore } from '../store/useTravelStore'; 
+import { useBusStore } from '../store/useBusStore';
 import { useHouseStore } from '../store/useHouseStore';
 import { useVehicleStore } from '../store/useVehicleStore';
 import { useInventoryStore } from '../store/useInventoryStore';
 import { useDeliveryStore } from '../store/useDeliveryStore';
-import { getJobByLocation } from '../data/jobsConfig';
+import { useLspdStore } from '../store/useLspdStore';
+import { useNavigationStore } from '../store/useNavigationStore';
+import { useJobStore } from '../store/useJobStore';
+import { getJobByLocation, JOBS_DATABASE } from '../data/jobsConfig';
 
 // Компоненты (Интерфейсы локаций)
 import HouseMenu from '../components/HouseMenu';
@@ -24,6 +28,12 @@ import CarShowroom from './CarShowroom';
 import ShopView from './ShopView';
 import PizzeriaView from './PizzeriaView';
 import MineView from './MineView';
+import FishingPortView from './FishingPortView';
+import FarmView from './FarmView';
+import FactoryView from './FactoryView';
+import WorkshopView from './WorkshopView';
+import TruckerView from './TruckerView';
+import CafeteriaView from './CafeteriaView';
 import BankView from './BankView';
 import ExportView from './ExportView'; // Скупщик руды
 import StripClubView from './StripClubView';
@@ -35,6 +45,10 @@ import TuningShopView from './TuningShopView';
 import LocationView from './LocationView';
 import HotelView from './HotelView';
 import BusinessView from './BusinessView';
+import BusDepotView from './BusDepotView';
+import LspdView from './LspdView';
+import MafiaView from './MafiaView';
+import { OrganizationPanel } from './OrganizationView';
 // Иконки
 import { 
   Loader2, Crosshair, Navigation, Compass, Target, Search, X, Home 
@@ -43,6 +57,11 @@ import {
 function TravelOverlay({ player, activeVehicle, isMoving, remainingPath, routeTarget, currentPosition, currentRotation }) {
   const animatedPosition = useTravelStore(state => state.animatedPosition);
   const animatedRotation = useTravelStore(state => state.animatedRotation);
+  const busRouteRunning = useBusStore(state => state.routeRunning);
+  const busAwaitingRepeat = useBusStore(state => state.awaitingRepeat);
+  const patrolRouteRunning = useLspdStore(state => state.patrolRouteRunning);
+  const patrolAwaitingRepeat = useLspdStore(state => state.awaitingRepeat);
+  const garbageShift = useJobStore(state => state.activeShift);
 
   const displayPosition = isMoving && animatedPosition ? animatedPosition : currentPosition;
   const displayRotation = isMoving && animatedRotation != null ? animatedRotation : currentRotation;
@@ -55,6 +74,11 @@ function TravelOverlay({ player, activeVehicle, isMoving, remainingPath, routeTa
       ...(routeTarget ? [`${routeTarget.x},${routeTarget.y}`] : []),
     ].filter(Boolean).join(' ');
   }, [isMoving, remainingPath, routeTarget, displayPosition.x, displayPosition.y]);
+
+  const isGarbageActive = garbageShift?.kind === 'garbage';
+  const garbageCapacity = isGarbageActive ? garbageShift.capacity : 0;
+  const garbageMax = isGarbageActive ? (JOBS_DATABASE[garbageShift.jobId]?.capacity || 1000) : 1000;
+  const garbagePercent = Math.min(100, (garbageCapacity / garbageMax) * 100);
 
   return (
     <>
@@ -84,7 +108,26 @@ function TravelOverlay({ player, activeVehicle, isMoving, remainingPath, routeTa
       <div id="player-car-hub" className="absolute pointer-events-none z-150" style={{ left: `${displayPosition.x}px`, top: `${displayPosition.y}px`, transform: `translate(-50%, -50%) rotate(${displayRotation}deg)` }}>
         <div className="relative flex items-center justify-center">
           <div className="absolute w-16 h-16 bg-blue-500/20 blur-xl rounded-full -z-10" />
-          {activeVehicle ? (
+          {busRouteRunning || busAwaitingRepeat ? (
+            <div className="w-16 h-16 bg-yellow-500 rounded-full flex items-center justify-center text-3xl shadow-2xl">
+              🚌
+            </div>
+          ) : patrolRouteRunning || patrolAwaitingRepeat ? (
+            <div className="w-20 h-20 relative flex items-center justify-center shadow-2xl">
+              <div className="absolute inset-0 bg-blue-500/30 rounded-full animate-ping" />
+              <div className="w-16 h-16 bg-gradient-to-br from-blue-600 to-blue-800 rounded-full flex items-center justify-center text-3xl border-2 border-blue-400 relative z-10">
+                🚔
+              </div>
+              <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-8 h-3 flex gap-2 z-20">
+                <div className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]" />
+                <div className="w-2.5 h-2.5 bg-blue-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.8)]" style={{ animationDelay: '0.5s' }} />
+              </div>
+            </div>
+          ) : isGarbageActive ? (
+            <div className="w-16 h-16 bg-lime-600 rounded-full flex items-center justify-center text-3xl shadow-2xl border-2 border-lime-300">
+              🗑️
+            </div>
+          ) : activeVehicle ? (
             <img src={`/vehicles/${activeVehicle.model_id}_${activeVehicle.color}_map.png`} className="w-16 h-16 object-contain drop-shadow-2xl" onError={(e) => e.target.src = '/car.png'} />
           ) : (
             <div className="w-10 h-10 bg-blue-600 rounded-full border-4 border-white shadow-2xl flex items-center justify-center text-white">👤</div>
@@ -92,6 +135,16 @@ function TravelOverlay({ player, activeVehicle, isMoving, remainingPath, routeTa
           <div className="absolute -top-12 bg-blue-600/90 backdrop-blur-md px-3 py-1 rounded-lg border border-white/20 shadow-xl" style={{ transform: `rotate(-${displayRotation}deg)` }}>
             <span className="text-[10px] font-black uppercase text-white italic">{player?.username}</span>
           </div>
+          {isGarbageActive && (
+            <div className="absolute -top-24 left-1/2 -translate-x-1/2 whitespace-nowrap">
+              <div className="bg-lime-900/90 backdrop-blur-md border border-lime-500/30 rounded-xl px-3 py-2 shadow-xl flex flex-col items-center gap-1">
+                <span className="text-[9px] font-black uppercase text-lime-300 italic">{garbageCapacity} / {garbageMax} кг</span>
+                <div className="w-16 h-1.5 bg-black/40 rounded-full overflow-hidden">
+                  <div className="h-full bg-lime-500 transition-all duration-700" style={{ width: `${garbagePercent}%` }} />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </>
@@ -99,15 +152,26 @@ function TravelOverlay({ player, activeVehicle, isMoving, remainingPath, routeTa
 }
 
 export default function MapView() {
+  const { setInterior } = useNavigationStore();
+
   // --- СОСТОЯНИЯ ---
   const [isImgLoading, setIsImgLoading] = useState(true);
   const [currentScale, setCurrentScale] = useState(0.15);
   const currentScaleRef = useRef(0.15);
   const [isFollowing, setIsFollowing] = useState(true);
+  const isFollowingRef = useRef(true);
+  useEffect(() => { isFollowingRef.current = isFollowing; }, [isFollowing]);
   const [viewportSize, setViewportSize] = useState({
     width: typeof window !== 'undefined' ? window.innerWidth : 0,
     height: typeof window !== 'undefined' ? window.innerHeight : 0,
   });
+  const [mergedLocations, setMergedLocations] = useState(() => getMergedLocations());
+
+  useEffect(() => {
+    const handler = () => setMergedLocations(getMergedLocations());
+    window.addEventListener('roadEditorLocationsUpdated', handler);
+    return () => window.removeEventListener('roadEditorLocationsUpdated', handler);
+  }, []);
 
   // Модальные окна
   const [selectedHouse, setSelectedHouse] = useState(null);
@@ -117,6 +181,13 @@ export default function MapView() {
   const [showBank, setShowBank] = useState(false);
   const [showPizzeria, setShowPizzeria] = useState(false);
   const [showMine, setShowMine] = useState(false);
+  const [showFishingPort, setShowFishingPort] = useState(false);
+  const [showFarm, setShowFarm] = useState(false);
+  const [showFactory, setShowFactory] = useState(false);
+  const [showWorkshop, setShowWorkshop] = useState(false);
+  const [showTrucker, setShowTrucker] = useState(false);
+  const [showCafeteria, setShowCafeteria] = useState(false);
+  const [cafeteriaBusinessId, setCafeteriaBusinessId] = useState(null);
   const [showExport, setShowExport] = useState(false); // Скупка
   const [showStripClub, setShowStripClub] = useState(false);
   const [showDrivingSchool, setShowDrivingSchool] = useState(false);
@@ -124,6 +195,10 @@ export default function MapView() {
   const [showATM, setShowATM] = useState(false);
   const [showTuningShop, setShowTuningShop] = useState(false);
   const [activeJobId, setActiveJobId] = useState(null);
+  const [showBusDepot, setShowBusDepot] = useState(false);
+  const [showLspd, setShowLspd] = useState(false);
+  const [showMafia, setShowMafia] = useState(false);
+  const [showHospital, setShowHospital] = useState(false);
   const [locationView, setLocationView] = useState(null); // Локация для открытия 2D картинки
   const [selectedHotel, setSelectedHotel] = useState(null); // Выбранный отель (hotel_3, hotel_4)
   const [selectedBusiness, setSelectedBusiness] = useState(null); // Выбранный бизнес
@@ -136,22 +211,115 @@ export default function MapView() {
   const [searchResults, setSearchResults] = useState([]);
   const [activeFilter, setActiveFilter] = useState('all');
   const [showHouses, setShowHouses] = useState(true);
+  const [showEmptyTruck, setShowEmptyTruck] = useState(false);
   
+  // Bus route completion popup
+  const busAwaitingRepeat = useBusStore(state => state.awaitingRepeat);
+  const busCurrentRoute = useBusStore(state => state.currentRoute);
+  const busRouteRunning = useBusStore(state => state.routeRunning);
+  const busRepeatRoute = useBusStore(state => state.repeatRoute);
+  const busStopRoute = useBusStore(state => state.stopRoute);
+  const [showBusPopup, setShowBusPopup] = useState(false);
+
+  useEffect(() => {
+    if (busAwaitingRepeat) setShowBusPopup(true);
+  }, [busAwaitingRepeat]);
+
+  // Patrol route completion popup
+  const patrolAwaitingRepeat = useLspdStore(state => state.awaitingRepeat);
+  const patrolRouteRunning = useLspdStore(state => state.patrolRouteRunning);
+  const patrolCurrentRoute = useLspdStore(state => state.patrolRoute);
+  const patrolRepeatRoute = useLspdStore(state => state.repeatPatrolRoute);
+  const patrolStopRoute = useLspdStore(state => state.stopPatrolRoute);
+  const [showPatrolPopup, setShowPatrolPopup] = useState(false);
+
+  useEffect(() => {
+    if (patrolAwaitingRepeat && !patrolRouteRunning) setShowPatrolPopup(true);
+  }, [patrolAwaitingRepeat, patrolRouteRunning]);
+
+  const patrolLocationRef = useRef(null);
+
+  // When bus route starts, close all overlays and follow the bus on the map
+  useEffect(() => {
+    if (busRouteRunning) {
+      if (locationView && locationView.id === 'bus_depot') {
+        busDepotLocationRef.current = locationView;
+      }
+      setShowBusDepot(false);
+      setLocationView(null);
+      setIsFollowing(true);
+    } else if (busDepotLocationRef.current) {
+      // Route completed or stopped - do NOT restore LocationView,
+      // keep player on the map so the popup is visible
+      busDepotLocationRef.current = null;
+    }
+  }, [busRouteRunning]);
+
+  // Keep camera following when bus route is awaiting repeat
+  useEffect(() => {
+    if (busAwaitingRepeat && !busRouteRunning) {
+      setIsFollowing(true);
+    }
+  }, [busAwaitingRepeat, busRouteRunning]);
+
+  // When patrol route starts, close overlays and follow on the map
+  useEffect(() => {
+    if (patrolRouteRunning) {
+      if (locationView && locationView.id === 'lspd') {
+        patrolLocationRef.current = locationView;
+      }
+      setShowLspd(false);
+      setLocationView(null);
+      setIsFollowing(true);
+    } else if (patrolLocationRef.current) {
+      patrolLocationRef.current = null;
+    }
+  }, [patrolRouteRunning]);
+
+  // Keep camera following when patrol route is awaiting repeat
+  useEffect(() => {
+    if (patrolAwaitingRepeat && !patrolRouteRunning) {
+      setIsFollowing(true);
+    }
+  }, [patrolAwaitingRepeat, patrolRouteRunning]);
+
   // Данные из сторов
   const { player, activeVehicle } = usePlayerStore();
   const isMoving = useTravelStore(state => state.isMoving);
   const startRoute = useTravelStore(state => state.startRoute);
   const remainingPath = useTravelStore(state => state.remainingPath);
   const routeTarget = useTravelStore(state => state.routeTarget);
+  const garbageShift = useJobStore(state => state.activeShift);
+  const selectBin = useJobStore(state => state.selectBin);
+  const collectGarbage = useJobStore(state => state.collectGarbage);
+  const skipBin = useJobStore(state => state.skipBin);
+  const freeDrive = useJobStore(state => state.freeDrive);
   const { dbHouses, buyHouse, fetchDbHouses } = useHouseStore();
   const { fetchVehicles } = useVehicleStore();
   const { fetchPlayerInventory } = useInventoryStore();
   const { activeDeliveryJob, goToCustomer, deliverPizza, deliveryMessage } = useDeliveryStore();
+  const { cameras, loadCameras } = useLspdStore();
   const [showDeliveryCard, setShowDeliveryCard] = useState(true);
+  
+  // Load cameras on mount
+  useEffect(() => {
+    loadCameras();
+  }, []);
+
+  // При прибытии на базу мусорщиков (через «Вернуться на базу») — открываем локацию базы,
+  // где находится хотспот «Разгрузить».
+  useEffect(() => {
+    if (garbageShift?.kind === 'garbage' && garbageShift.status === 'at_base') {
+      const loc = FINAL_LOCATIONS.find((l) => l.id === 'garbage_depot');
+      if (loc) setLocationView(loc);
+      useJobStore.setState({ activeShift: { ...useJobStore.getState().activeShift, status: 'selecting' } });
+    }
+  }, [garbageShift?.status]);
 
   const positionRef = useRef(player ? { x: player.pos_x, y: player.pos_y } : { x: 0, y: 0 });
   const rotationRef = useRef(player?.rotation || 0);
   const pinchRef = useRef();
+  const busDepotLocationRef = useRef(null);
 
   const currentPosition = positionRef.current;
   const currentRotation = rotationRef.current;
@@ -171,7 +339,7 @@ export default function MapView() {
       return;
     }
 
-    const matches = FINAL_LOCATIONS.filter(loc => {
+    const matches = mergedLocations.filter(loc => {
       if (activeFilter !== 'all' && loc.type !== activeFilter) return false;
       return (loc.name || '').toLowerCase().includes(q) || (loc.id || '').toLowerCase().includes(q) || (loc.desc || '').toLowerCase().includes(q);
     }).slice(0, 12);
@@ -221,7 +389,14 @@ export default function MapView() {
 
   // Handle long-press on map to set travel destination
   const handleMapLongPress = (e) => {
-    if (isMoving) return;
+    if (isMoving) {
+      // Во время смены мусорщика можно прервать текущий маршрут
+      if (garbageShift?.kind === 'garbage' && garbageShift.status !== 'selecting') {
+        freeDrive();
+      } else {
+        return;
+      }
+    }
     const scale = currentScaleRef.current;
     const transform = pinchRef.current?.state;
     if (!transform) return;
@@ -242,45 +417,57 @@ export default function MapView() {
     setTravelMarker(null);
   };
 
-  // --- ЛОГИКА КАМЕРЫ (60 FPS) ---
-  const syncCamera = useCallback(() => {
-    if (!pinchRef.current || !isFollowing) return;
-    const { setTransform } = pinchRef.current;
-    const targetScale = isMoving ? 0.8 : 1.2;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-
-    const newX = (vw / 2) - (positionRef.current.x * targetScale);
-    const newY = (vh / 2) - (positionRef.current.y * targetScale);
-
-    setTransform(newX, newY, targetScale, 0);
-  }, [isFollowing, isMoving]);
-
+  // --- CAMERA FOLLOW (60 FPS) ---
+  // Continuous camera loop — always reads latest state via refs and store.getState()
   useEffect(() => {
-    if (player) {
-      positionRef.current = { x: player.pos_x, y: player.pos_y };
-      rotationRef.current = player.rotation || 0;
-      if (isFollowing) syncCamera();
-    }
-  }, [player?.pos_x, player?.pos_y, player?.rotation, isFollowing, syncCamera]);
-
-  useEffect(() => {
+    // Keep positionRef in sync with player
     const unsubPosition = useTravelStore.subscribe(state => state.animatedPosition, (value) => {
-      if (value) {
-        positionRef.current = value;
-        if (isFollowing) syncCamera();
-      }
+      if (value) positionRef.current = value;
     });
-
     const unsubRotation = useTravelStore.subscribe(state => state.animatedRotation, (value) => {
       if (value != null) rotationRef.current = value;
     });
 
+    let animFrameId;
+    function cameraLoop() {
+      if (isFollowingRef.current && pinchRef.current) {
+        const travelState = useTravelStore.getState();
+        const busRunning = useBusStore.getState().routeRunning;
+        const busWaiting = useBusStore.getState().awaitingRepeat;
+        const patrolRunning = useLspdStore.getState().patrolRouteRunning;
+        const patrolWaiting = useLspdStore.getState().awaitingRepeat;
+
+        const isAnimating = travelState.isMoving || busRunning || patrolRunning;
+        const targetPos = (travelState.animatedPosition && isAnimating)
+          ? travelState.animatedPosition
+          : positionRef.current;
+        const targetScale = isAnimating ? 0.8 : 1.2;
+
+        const { setTransform } = pinchRef.current;
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const newX = (vw / 2) - (targetPos.x * targetScale);
+        const newY = (vh / 2) - (targetPos.y * targetScale);
+        setTransform(newX, newY, targetScale, 0);
+      }
+      animFrameId = requestAnimationFrame(cameraLoop);
+    }
+    animFrameId = requestAnimationFrame(cameraLoop);
+
     return () => {
       unsubPosition();
       unsubRotation();
+      cancelAnimationFrame(animFrameId);
     };
-  }, [isFollowing, syncCamera]);
+  }, []);
+
+  // Keep refs in sync when player profile updates
+  useEffect(() => {
+    if (player) {
+      positionRef.current = { x: player.pos_x, y: player.pos_y };
+      rotationRef.current = player.rotation || 0;
+    }
+  }, [player?.pos_x, player?.pos_y, player?.rotation]);
 
   return (
     <div className="relative w-full h-screen bg-[#050805] overflow-x-hidden select-none touch-auto text-white font-sans">
@@ -288,6 +475,12 @@ export default function MapView() {
       {/* --- СЛОЙ ИНТЕРФЕЙСОВ (MODALS) --- */}
       {showExport && <ExportView onClose={() => setShowExport(false)} />}
       {showMine && <MineView onClose={() => setShowMine(null)} />}
+      {showFishingPort && <FishingPortView onClose={() => setShowFishingPort(false)} />}
+      {showFarm && <FarmView onClose={() => setShowFarm(false)} />}
+      {showFactory && <FactoryView onClose={() => setShowFactory(false)} />}
+      {showWorkshop && <WorkshopView onClose={() => setShowWorkshop(false)} />}
+      {showTrucker && <TruckerView onClose={() => setShowTrucker(false)} />}
+      {showCafeteria && cafeteriaBusinessId && <CafeteriaView businessId={cafeteriaBusinessId} onClose={() => { setShowCafeteria(false); setCafeteriaBusinessId(null); }} />}
       {showBank && <BankView onClose={() => setShowBank(false)} />}
       {showPizzeria && <PizzeriaView onClose={() => setShowPizzeria(false)} />}
       {showStripClub && <StripClubView onClose={() => setShowStripClub(false)} />}
@@ -296,34 +489,92 @@ export default function MapView() {
       {showTuningShop && <TuningShopView onClose={() => setShowTuningShop(false)} />}
       {selectedHotel && <HotelView hotelId={selectedHotel} onClose={() => setSelectedHotel(null)} />}
       {selectedBusiness && <BusinessView businessId={selectedBusiness} onClose={() => setSelectedBusiness(null)} />}
+      {showBusDepot && <BusDepotView onClose={() => setShowBusDepot(false)} />}
+      {showLspd && <LspdView onClose={() => setShowLspd(false)} />}
+      {showMafia && <MafiaView onClose={() => setShowMafia(false)} />}
+      {showHospital && <OrganizationPanel orgId='hospital' onClose={() => setShowHospital(false)} />}
       {locationView && (
         <LocationView
           location={locationView}
           onClose={() => setLocationView(null)}
-          onAction={(action, label) => {
-            // "Скоро открытие" — не закрываем LocationView
-            if (action === 'coming_soon') { alert('🚧 Скоро открытие!'); return; }
-            const loc = locationView;
-            // Действия поверх LocationView (не закрываем картинку локаций)
-            if (action === 'atm' || action === 'open_atm') { setShowATM(true); return; }
-            // Закрываем LocationView и открываем от(Me) по типу хотспота
-            setLocationView(null);
+            onAction={(action) => {
+              const loc = locationView;
+              if (action === 'unload_garbage') {
+                setLocationView(null);
+                const shift = useJobStore.getState().activeShift;
+                if (shift?.kind === 'garbage' && shift.capacity > 0) {
+                  useJobStore.getState().performUnload();
+                } else {
+                  setShowEmptyTruck(true);
+                }
+                return;
+              }
+             // Действия поверх LocationView (не закрываем картинку локации)
+             if (action === 'atm' || action === 'open_atm') { setShowATM(true); return; }
             if (action === 'buy_business') { setSelectedBusiness(loc.id); return; }
             if (action === 'open_hotel') { setSelectedHotel(loc.id); return; }
-            // Маршрутизация по типу локации (default, enter, и без хотспотов)
-            if (loc.type === 'bank') { setShowBank(true); }
-            else if (loc.type === 'shop') { setCurrentShop(loc.id); }
-            else if (loc.id === 'pizzeria_1') { setShowPizzeria(true); }
-            else if (loc.id === 'mine') { setShowMine(true); }
-            else if (loc.id === 'port_ls') { setShowExport(true); }
-            else if (loc.type === 'nightclub') { setShowStripClub(true); }
-            else if (loc.type === 'clothes') { setCurrentShop(loc.id); }
-            else if (loc.type === 'tuning') { setShowTuningShop(true); }
-            else if (loc.id === 'driving_1' || loc.id === 'driving_school_1') { setShowDrivingSchool(true); }
-            else if (loc.id === 'guns_1' || loc.id === 'gun_range_1') { setShowGunRange(true); }
-            else if (loc.type === 'atm') { setShowATM(true); }
-            else if (loc.type === 'hotel') { setSelectedHotel(loc.id); }
-            else if (getJobByLocation(loc.id)) { setActiveJobId(getJobByLocation(loc.id).id); }
+            // Enter/Default — маршрутизация по типу локации
+            if (action === 'enter' || action === 'default' || action === 'refuel') {
+              if (loc.type === 'bank') { setShowBank(true); }
+              else if (loc.type === 'shop') { setCurrentShop(loc.id); }
+              else if (loc.id === 'pizzeria_1') { setShowPizzeria(true); }
+              else if (loc.id === 'mine') { setShowMine(true); }
+              else if (loc.id === 'fishing_port') { setShowFishingPort(true); }
+              else if (loc.type === 'farm') { setShowFarm(true); }
+              else if (loc.type === 'factory') { setShowFactory(true); }
+              else if (loc.type === 'workshop') { setShowWorkshop(true); }
+              else if (loc.type === 'trucker') { setShowTrucker(true); }
+              else if (loc.id === 'port_ls') { setShowExport(true); }
+              else if (loc.type === 'nightclub') { setShowStripClub(true); }
+              else if (loc.type === 'clothes') { setCurrentShop(loc.id); }
+              else if (loc.type === 'tuning') { setShowTuningShop(true); }
+              else if (loc.id === 'driving_1' || loc.id === 'driving_school_1') { setShowDrivingSchool(true); }
+              else if (loc.id === 'guns_1' || loc.id === 'gun_range_1') { setShowGunRange(true); }
+              else if (loc.type === 'atm') { setShowATM(true); }
+              else if (loc.type === 'hotel') { setSelectedHotel(loc.id); }
+              else if (loc.type === 'bar') { setCurrentShop(loc.id); }
+              else if (loc.type === 'gas') { setCurrentShop(loc.id); }
+              else if (loc.type === 'parking') { alert('Парковка — скоро открытие'); }
+              else if (loc.type === 'gym') { alert('Спортзал — скоро открытие'); }
+               else if (loc.id === 'bus_depot') { setShowBusDepot(true); }
+               else if (loc.type === 'lspd') { setShowLspd(true); }
+               else if (loc.type === 'mafia') { setShowMafia(true); }
+               else if (loc.type === 'hospital') { setShowHospital(true); }
+               else if (loc.type === 'farm') { setShowFarm(true); }
+              else if (loc.type === 'cafeteria') { setShowCafeteria(true); setCafeteriaBusinessId(loc.id); }
+              else if (loc.type === 'showroom' || loc.id === 'showroom_ls') { setShowShowroom(true); }
+              else if (getJobByLocation(loc.id)) { setActiveJobId(getJobByLocation(loc.id).id); }
+              return;
+            }
+            // Fallback: try type-based routing for any other action
+            if (loc.id === 'bus_depot') { setShowBusDepot(true); return; }
+            if (loc.type === 'bank') { setShowBank(true); return; }
+            else if (loc.type === 'shop') { setCurrentShop(loc.id); return; }
+            else if (loc.id === 'pizzeria_1') { setShowPizzeria(true); return; }
+            else if (loc.id === 'mine') { setShowMine(true); return; }
+            else if (loc.id === 'fishing_port') { setShowFishingPort(true); return; }
+            else if (loc.type === 'farm') { setShowFarm(true); }
+            else if (loc.type === 'factory') { setShowFactory(true); }
+            else if (loc.type === 'workshop') { setShowWorkshop(true); }
+            else if (loc.type === 'trucker') { setShowTrucker(true); }
+            else if (loc.id === 'port_ls') { setShowExport(true); return; }
+            else if (loc.type === 'nightclub') { setShowStripClub(true); return; }
+            else if (loc.type === 'clothes') { setCurrentShop(loc.id); return; }
+            else if (loc.type === 'tuning') { setShowTuningShop(true); return; }
+            else if (loc.id === 'driving_1' || loc.id === 'driving_school_1') { setShowDrivingSchool(true); return; }
+            else if (loc.id === 'guns_1' || loc.id === 'gun_range_1') { setShowGunRange(true); return; }
+            else if (loc.type === 'atm') { setShowATM(true); return; }
+            else if (loc.type === 'hotel') { setSelectedHotel(loc.id); return; }
+             else if (loc.type === 'lspd') { setShowLspd(true); return; }
+             else if (loc.type === 'mafia') { setShowMafia(true); return; }
+             else if (loc.type === 'hospital') { setShowHospital(true); return; }
+             else if (loc.type === 'farm') { setShowFarm(true); return; }
+            else if (loc.type === 'factory') { setShowFactory(true); return; }
+            else if (loc.type === 'workshop') { setShowWorkshop(true); return; }
+            else if (loc.type === 'trucker') { setShowTrucker(true); return; }
+            else if (loc.type === 'cafeteria') { setShowCafeteria(true); setCafeteriaBusinessId(loc.id); return; }
+            else if (loc.type === 'showroom' || loc.id === 'showroom_ls') { setShowShowroom(true); return; }
+            else if (getJobByLocation(loc.id)) { setActiveJobId(getJobByLocation(loc.id).id); return; }
           }}
         />
       )}
@@ -379,13 +630,17 @@ export default function MapView() {
           setCurrentScale(ref.state.scale);
           currentScaleRef.current = ref.state.scale;
         }}
-        onPinchingStart={() => setIsFollowing(false)}
-        onPanningStart={() => setIsFollowing(false)}
+        onPinchingStart={() => {
+          if (!useBusStore.getState().routeRunning) setIsFollowing(false);
+        }}
+        onPanningStart={() => {
+          if (!useBusStore.getState().routeRunning) setIsFollowing(false);
+        }}
         doubleClick={{ disabled: true }}
       >
         <TransformComponent wrapperStyle={{ width: "100%", height: "100%", touchAction: 'none' }}>
           <div className="relative" style={{ width: `${MAP_CONFIG.width}px`, height: `${MAP_CONFIG.height}px` }}>
-            <img src="/map.webp" className="absolute inset-0 w-full h-full opacity-60" style={{ filter: 'brightness(0.5) contrast(1.2)', pointerEvents: 'none' }} onLoad={() => setIsImgLoading(false)} />
+            <img src="/map.webp" className="absolute inset-0 w-full h-full opacity-60" style={{ filter: 'brightness(0.5) contrast(1.2)', pointerEvents: 'none' }} onLoad={() => setIsImgLoading(false)} onError={() => setIsImgLoading(false)} />
 
             {/* Travel marker from long-press */}
             {travelMarker && (
@@ -431,12 +686,13 @@ export default function MapView() {
 
             {/* МАРКЕРЫ ОБЪЕКТОВ */}
             <div className="absolute inset-0" style={{ zIndex: 20 }}>
-              {FINAL_LOCATIONS.map((loc) => {
+              {mergedLocations.map((loc) => {
                 const isNear = Math.abs(currentPosition.x - loc.x) < 30 && Math.abs(currentPosition.y - loc.y) < 30;
                 const q = (searchQuery || '').toLowerCase().trim();
                 const isHighlighted = q && ((loc.name || '').toLowerCase().includes(q) || (loc.id || '').toLowerCase().includes(q) || searchResults.find(r => r.id === loc.id));
                 const isHouse = loc.type === 'house';
                 const isDeliveryTarget = loc.id === activeDeliveryJob?.targetHouse?.id;
+                const hasCamera = cameras.some(cam => cam.location_id === loc.id);
                 // Hide houses when toggle is off
                 if (isHouse && !showHouses) return null;
 
@@ -450,7 +706,7 @@ export default function MapView() {
                   <div key={loc.id} className="absolute pointer-events-auto" style={{ left: `${loc.x}px`, top: `${loc.y}px`, transform: 'translate(-50%, -50%)', zIndex: isNear ? 100 : 25 }}>
                     <div className="flex flex-col items-center">
                       <button
-                        disabled={isMoving}
+                        disabled={isMoving && !garbageShift?.kind}
                         onClick={(e) => {
                         e.stopPropagation();
                         if (isDeliveryTarget) {
@@ -468,13 +724,27 @@ export default function MapView() {
                             return;
                           }
                         }
-                        if (isHouse) setSelectedHouse(hWithD);
-                        else if (loc.id === 'showroom_ls') { if (isNear) setShowShowroom(true); else setSelectedShowroom(loc); }
-                        else if (loc.type === 'hotel') { if (isNear) { setLocationView(loc); } else { setIsFollowing(true); startRoute(loc.id); } }
-                        else if (loc.type === 'shop') { if (isNear) { setLocationView(loc); } else { setIsFollowing(true); startRoute(loc.id); } }
-                        else if (loc.type === 'clothes') { if (isNear) { setLocationView(loc); } else { setIsFollowing(true); startRoute(loc.id); } }
+                        if (isHouse) {
+                          const isMyHouse = hWithD.owner_id === player?.id;
+                          if (isMyHouse && isNear) {
+                            setInterior(hWithD.id);
+                          } else {
+                            setSelectedHouse(hWithD);
+                          }
+                         }
+                         else if (garbageShift?.kind === 'garbage' && garbageShift.status !== 'selecting') {
+                          // Если мусорщик находится у контейнера или едет к нему — сбрасываем статус и едем куда надо
+                          if (isNear) {
+                            freeDrive(loc.id);
+                            setLocationView(loc);
+                          } else {
+                            freeDrive(loc.id);
+                            setIsFollowing(true);
+                            startRoute(loc.id);
+                          }
+                        }
                         else if (isNear) {
-                          // Open LocationView for all non-house locations
+                          // Open LocationView for ALL non-house locations
                           setLocationView(loc);
                         } else {
                           setIsFollowing(true); startRoute(loc.id);
@@ -484,6 +754,11 @@ export default function MapView() {
                       >
                         <div className="absolute inset-0 glass-shine pointer-events-none" />
                         {isHouse ? <img src="/iconHouse.png" className="w-4 h-4 brightness-200" /> : <span className="text-2xl">{loc.icon}</span>}
+                        {hasCamera && !isHouse && (
+                          <div className="absolute -top-2 -right-2 w-6 h-6 bg-blue-600 rounded-full border-2 border-white shadow-lg flex items-center justify-center z-10">
+                            <span className="text-xs">📹</span>
+                          </div>
+                        )}
                         {isDeliveryTarget && <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-2 h-2 bg-yellow-400 rounded-full shadow-lg animate-pulse" />}
                         {isNear && <div className="absolute inset-0 border-4 border-white animate-marker-pulse rounded-inherit" />}
                       </button>
@@ -497,6 +772,34 @@ export default function MapView() {
                 );
               })}
             </div>
+             {/* МАРКЕРЫ МУСОРОК */}
+            {garbageShift?.kind === 'garbage' && garbageShift.activeBins && (
+              <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 22 }}>
+                {garbageShift.activeBins.map((binId, index) => {
+                  const wp = WAYPOINTS[binId];
+                  if (!wp) return null;
+                  const isCurrent = garbageShift.status === 'selecting' || garbageShift.status === 'driving_to_bin' || garbageShift.status === 'at_bin';
+                  const isPassed = binId !== garbageShift.selectedBinId && (garbageShift.status === 'to_base' || garbageShift.status === 'driving_to_base');
+                  const canSelect = garbageShift.status === 'selecting' && !isPassed && garbageShift.capacity < (JOBS_DATABASE[garbageShift.jobId]?.capacity || 1000);
+                  return (
+                    <div key={binId} className="absolute pointer-events-auto" style={{ left: `${wp.x}px`, top: `${wp.y}px`, transform: 'translate(-50%, -50%)', zIndex: isCurrent ? 25 : 20 }}>
+                      <button
+                        onClick={() => canSelect && selectBin(binId)}
+                        disabled={!canSelect}
+                        className={`w-10 h-10 rounded-full border-2 border-white shadow-xl flex items-center justify-center text-lg transition-all ${isCurrent ? 'bg-lime-500 animate-pulse' : canSelect ? 'bg-lime-500 hover:bg-lime-400 active:scale-90 cursor-pointer' : isPassed ? 'bg-lime-700/60 cursor-not-allowed' : 'bg-lime-900/80 cursor-not-allowed'}`}
+                      >
+                        🗑️
+                      </button>
+                      <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap">
+                        <div className="bg-black/80 backdrop-blur-md border border-white/10 rounded-lg px-2 py-1">
+                          <span className="text-[8px] font-black uppercase text-lime-300 italic">#{index + 1}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </TransformComponent>
       </TransformWrapper>
@@ -564,6 +867,87 @@ export default function MapView() {
         {isFollowing ? <Target size={28} /> : <Crosshair size={28} />}
       </button>
 
+      {/* Модалка: машина пустая */}
+      {showEmptyTruck && (
+        <div className="fixed inset-0 z-[999] bg-black/60 flex items-center justify-center p-6">
+          <div className="w-[min(92vw,360px)] bg-[#071006]/98 backdrop-blur-xl border border-white/10 p-6 rounded-[32px] shadow-[0_30px_80px_rgba(0,0,0,0.5)] space-y-4">
+            <p className="text-sm font-black uppercase text-slate-200 text-center">Ваша машина пустая</p>
+            <button onClick={() => setShowEmptyTruck(false)} className="w-full py-4 rounded-2xl bg-white/10 hover:bg-white/20 text-white text-sm font-black uppercase active:scale-95">ОК</button>
+          </div>
+        </div>
+      )}
+
+      {/* Подсказка для мусорщика */}
+      {garbageShift?.kind === 'garbage' && garbageShift.status === 'selecting' && garbageShift.capacity < (JOBS_DATABASE[garbageShift.jobId]?.capacity || 1000) && (
+        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-50 w-[min(92vw,360px)] bg-lime-900/95 backdrop-blur-xl border border-lime-500/30 p-4 rounded-[28px] shadow-[0_20px_80px_rgba(0,0,0,0.5)] text-center space-y-2">
+          <p className="text-sm font-black uppercase text-lime-200">Выберите мусорку, подъедьте и соберите мусор</p>
+          <p className="text-[11px] text-lime-300/80">Кузов: {garbageShift.capacity || 0} / {JOBS_DATABASE[garbageShift.jobId]?.capacity || 1000} кг. Для движения нажмите и держите на карте.</p>
+        </div>
+      )}
+
+      {/* Попап сбора мусора */}
+      {garbageShift?.kind === 'garbage' && garbageShift.status === 'at_bin' && (
+        <div className="fixed inset-0 z-[999] bg-black/60 flex items-center justify-center p-6">
+          <div className="w-[min(92vw,400px)] bg-[#071006]/98 backdrop-blur-xl border border-lime-500/20 p-6 rounded-[32px] shadow-[0_30px_80px_rgba(0,0,0,0.5)] space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-lime-500/20 rounded-2xl flex items-center justify-center text-2xl">🗑️</div>
+                <div>
+                  <p className="text-sm font-black uppercase text-lime-200">Контейнер найден</p>
+                  <p className="text-xs text-slate-400">Подъезд выполнен</p>
+                </div>
+              </div>
+            </div>
+            <div className="bg-black/30 rounded-2xl p-4 space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-400">В контейнере</span>
+                <span className="text-base font-black text-lime-400 italic">{garbageShift.lastBinAmount || 0} кг</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-400">В кузове</span>
+                <span className="text-sm font-black text-slate-300">{garbageShift.capacity || 0} / {JOBS_DATABASE[garbageShift.jobId]?.capacity || 1000} кг</span>
+              </div>
+            </div>
+            {garbageShift.collecting ? (
+              <div className="space-y-2">
+                <p className="text-xs text-lime-300 text-center">Сбор мусора...</p>
+                <div className="h-3 bg-black/40 rounded-full overflow-hidden">
+                  <div className="h-full bg-lime-500 transition-all duration-100" style={{ width: `${garbageShift.collectProgress || 0}%` }} />
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <button onClick={collectGarbage} className="w-full bg-lime-600 hover:bg-lime-500 text-white py-5 rounded-2xl font-black uppercase italic text-base transition active:scale-95">
+                  Собрать мусор
+                </button>
+                <button onClick={skipBin} className="w-full bg-white/10 hover:bg-white/20 text-white py-3 rounded-2xl font-black uppercase text-sm transition active:scale-95">
+                  Пропустить
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Таймер разгрузки мусоровоза */}
+      {garbageShift?.kind === 'garbage' && garbageShift.unloading && (
+        <div className="fixed inset-0 z-[998] flex items-center justify-center pointer-events-none p-6">
+          <div className="w-[min(92vw,400px)] bg-[#071006]/95 backdrop-blur-xl border border-amber-500/30 p-6 rounded-[32px] shadow-[0_30px_80px_rgba(0,0,0,0.5)] flex flex-col items-center gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-amber-500/20 rounded-2xl flex items-center justify-center text-2xl animate-pulse">🗑️</div>
+              <div>
+                <p className="text-sm font-black uppercase text-amber-200">Разгрузка мусоровоза</p>
+                <p className="text-xs text-slate-400">Подождите, идёт выгрузка...</p>
+              </div>
+            </div>
+            <div className="w-full h-4 bg-black/40 rounded-full overflow-hidden">
+              <div className="h-full bg-amber-500 transition-all duration-100" style={{ width: `${garbageShift.unloadProgress || 0}%` }} />
+            </div>
+            <p className="text-xs text-slate-400">Осталось: {Math.max(0, Math.ceil((100 - (garbageShift.unloadProgress || 0)) / 10))} с</p>
+          </div>
+        </div>
+      )}
+
       {/* Travel marker confirm button */}
       {travelMarker && (
         <div className="absolute bottom-28 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2">
@@ -615,6 +999,103 @@ export default function MapView() {
           {isMoving ? <Navigation size={20} className="animate-bounce" /> : <Compass size={20} />}
         </div>
       </div>
+
+      {/* Bus route completion popup */}
+      {showBusPopup && busCurrentRoute && (
+        <div className="fixed inset-0 z-[400] bg-black/60 flex items-center justify-center p-6">
+          <div className="w-[min(92vw,400px)] bg-[#071006]/98 backdrop-blur-xl border border-[#7eff67]/20 p-6 rounded-[32px] shadow-[0_30px_80px_rgba(0,0,0,0.5)] space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-emerald-500/20 rounded-2xl flex items-center justify-center text-2xl">✅</div>
+                <div>
+                  <p className="text-sm font-black uppercase text-emerald-200">{busCurrentRoute.name}</p>
+                  <p className="text-xs text-slate-400">Маршрут завершён!</p>
+                </div>
+              </div>
+              <button onClick={() => { setShowBusPopup(false); useBusStore.getState().dismissRoutePopup(); }}
+                className="p-2 rounded-xl bg-white/5 text-slate-400 hover:text-white active:scale-90">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="bg-black/30 rounded-2xl p-4 space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-400">Заработано</span>
+                <span className="text-base font-black text-emerald-400 italic">+{busCurrentRoute.pay[0].toLocaleString()}$–{busCurrentRoute.pay[1].toLocaleString()}$</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-400">Опыт</span>
+                <span className="text-sm font-black text-blue-400">+{busCurrentRoute.exp} XP</span>
+              </div>
+            </div>
+            <p className="text-xs text-slate-400 text-center">Едем ещё раз?</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => { busRepeatRoute(); setShowBusPopup(false); }}
+                disabled={(player?.energy || 0) < 2}
+                className={`flex-1 py-5 rounded-2xl text-base font-black uppercase italic transition-all ${
+                  (player?.energy || 0) < 2
+                    ? 'bg-slate-800 opacity-50 cursor-not-allowed'
+                    : 'bg-emerald-600 active:scale-95'
+                }`}
+              >
+                Да, едем
+              </button>
+              <button
+                onClick={() => { busStopRoute(); setShowBusPopup(false); }}
+                className="flex-1 py-5 rounded-2xl text-base font-black uppercase italic border border-white/10 bg-white/[0.05] active:scale-95 transition-all text-slate-300"
+              >
+                Нет, хватит
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Patrol route completion popup */}
+      {showPatrolPopup && patrolCurrentRoute && (
+        <div className="fixed inset-0 z-[400] bg-black/60 flex items-center justify-center p-6">
+          <div className="w-[min(92vw,400px)] bg-[#071006]/98 backdrop-blur-xl border border-blue-500/20 p-6 rounded-[32px] shadow-[0_30px_80px_rgba(0,0,0,0.5)] space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-blue-500/20 rounded-2xl flex items-center justify-center text-2xl">🚔</div>
+                <div>
+                  <p className="text-sm font-black uppercase text-blue-200">{patrolCurrentRoute.name}</p>
+                  <p className="text-xs text-slate-400">Патрульный маршрут завершён!</p>
+                </div>
+              </div>
+              <button onClick={() => { setShowPatrolPopup(false); }}
+                className="p-2 rounded-xl bg-white/5 text-slate-400 hover:text-white active:scale-90">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="bg-black/30 rounded-2xl p-4 space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-400">Репутация</span>
+                <span className="text-base font-black text-blue-400 italic">+10</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-400">Остановок</span>
+                <span className="text-sm font-black text-slate-300">{patrolCurrentRoute.stops.length}</span>
+              </div>
+            </div>
+            <p className="text-xs text-slate-400 text-center">Продолжить патруль?</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => { patrolRepeatRoute(); setShowPatrolPopup(false); }}
+                className="flex-1 py-5 rounded-2xl text-base font-black uppercase italic bg-blue-600 active:scale-95 transition-all"
+              >
+                Продолжить
+              </button>
+              <button
+                onClick={() => { patrolStopRoute(); setShowPatrolPopup(false); }}
+                className="flex-1 py-5 rounded-2xl text-base font-black uppercase italic border border-white/10 bg-white/[0.05] active:scale-95 transition-all text-slate-300"
+              >
+                Закончить смену
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

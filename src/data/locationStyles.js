@@ -59,6 +59,9 @@ export const LOCATION_HOTSPOTS = {
   // === Тюнинг: "Войти" + "Купить бизнес" ===
   tuning_1: { 1: [{ id: 'enter_tuning', type: 'rect', x: 25, y: 30, w: 50, h: 40, action: 'enter', label: 'Войти в тюнинг' }, { id: 'buy_business', type: 'rect', x: 25, y: 78, w: 50, h: 12, action: 'buy_business', label: 'Купить бизнес' }] },
 
+  // === Мусорная база ===
+  // (hotspots managed via HotspotTool)
+
   // === Банк ===
   bank_1: { 1: [{ id: 'enter_bank', type: 'rect', x: 25, y: 30, w: 50, h: 40, action: 'enter', label: 'Войти в банк' }] },
 };
@@ -67,6 +70,12 @@ export const LOCATION_HOTSPOTS = {
 // Каждая отдельная локация на карте имеет свой ID и свою картинку
 // Положите файлы в public/locations/
 export const LOCATION_IMAGES = {
+  // === Мусорная база ===
+  garbage_depot: {
+    label: '🗑️ Мусорная база',
+    default: '/locations/garbage_depot.svg'
+  },
+
   // === Банки ===
   bank_1: {
     label: '🏦 Банк #1',
@@ -274,11 +283,34 @@ export const LOCATION_IMAGES = {
   driving_school_1: { label: '🎓 Автошкола', images: [{ id: 1, src: '/locations/driving_school_1.webp' }], default: '/locations/driving_school_1.webp' },
   gun_range_1: { label: '🎯 Тир', images: [{ id: 1, src: '/locations/gun_range_1.webp' }], default: '/locations/gun_range_1.webp' },
   port_ls: { label: '⚓ Порт', images: [{ id: 1, src: '/locations/port_ls.webp' }], default: '/locations/port_ls.webp' },
-  mine: { label: '⛏️ Шахта', images: [{ id: 1, src: '/locations/mine.webp' }], default: '/locations/mine.webp' },
+  mine: { label: '�️ Шахта', images: [{ id: 1, src: '/locations/mine.webp' }], default: '/locations/mine.webp' },
+  // Without images yet — will show "Load image" message
+  lspd: { label: '🚔 LSPD HQ', images: [], default: null },
+  hospital_1: { label: '🏥 Больница', images: [], default: null },
+  mafia_hideout: { label: '🕴️ Мафия "Коза Ностра"', images: [], default: null },
+  bus_depot: { label: '� Автобусный парк', images: [{ id: 1, src: '/locations/bus_depot.webp' }], default: '/locations/bus_depot.webp' },
+  showroom_ls: { label: '🚗 Premium Motors', images: [], default: null },
+  cafe_1: { label: '☕ Кафе', images: [], default: null },
+  warehouse_1: { label: '📦 Склад', images: [], default: null },
+  shop_24_7: { label: '🛒 24/7 Market', images: [{ id: 1, src: '/locations/shop_2.webp' }], default: '/locations/shop_2.webp' },
+  
+  // === Рыболовный порт ===
+  fishing_port: { label: '� Рыболовный порт', images: [], default: null },
 };
 
 // Получить картинку для локации по ID
+// Checks localStorage first (HotspotTool saves blob URLs there), falls back to static data
 export const getLocationImage = (locationId, imageIndex) => {
+  // Check if HotspotTool saved a custom image for this location
+  const saved = localStorage.getItem(`hotspot_tool_${locationId}`);
+  if (saved) {
+    try {
+      const data = JSON.parse(saved);
+      // If data has 'default' or 'images' field (image was saved via editor)
+      if (data?.default) return data.default;
+      if (data?.images?.length > 0) return data.images[imageIndex - 1]?.src || data.default || null;
+    } catch (e) {}
+  }
   const category = LOCATION_IMAGES[locationId];
   if (!category) return null;
   const img = category.images?.find(i => i.id === imageIndex);
@@ -291,6 +323,50 @@ export const getLocationLabel = (locationId) => {
 };
 
 // Получить hotspots для локации
+// Prioritizes localStorage data (HotspotTool saves hotspots there), falls back to static data
 export const getLocationHotspots = (locationId, imageIndex) => {
+  // Check localStorage for editor-saved hotspots
+  const saved = localStorage.getItem(`hotspot_tool_${locationId}`);
+  if (saved) {
+    try {
+      const data = JSON.parse(saved);
+      // If it's an array of hotspots and not empty — use it
+      if (Array.isArray(data) && data.length > 0) return data;
+      // If it has a hotspots field and it's not empty
+      if (Array.isArray(data?.hotspots) && data.hotspots.length > 0) return data.hotspots;
+    } catch (e) {}
+  }
+  // Fall back to static data
   return LOCATION_HOTSPOTS[locationId]?.[imageIndex] || [];
 };
+
+// Подлокации (сублокации) — картинка + хотспоты для каждой части локации
+// Формат: { parentId: { subLocationKey: { image: '/path.webp', hotspots: [...], label: 'Имя' } } }
+// Merges static data with localStorage data (HotspotTool saves sublocations there)
+export function getLocationSublocations(locationId) {
+  const staticData = LOCATION_SUBLOCATIONS[locationId] || {};
+  // Check localStorage for editor-saved sublocations
+  const saved = localStorage.getItem('hotspot_tool_sublocations');
+  if (saved) {
+    try {
+      const data = JSON.parse(saved);
+      // Filter entries that belong to this locationId
+      // Key format: "locationId__subLocationLabel"
+      if (data && typeof data === 'object') {
+        const result = { ...staticData };
+        for (const [key, value] of Object.entries(data)) {
+          // Check if key starts with locationId__ (locationId followed by __ and label)
+          if (key.startsWith(locationId + '__')) {
+            const label = key.substring(locationId.length + 2);
+            result[label] = value;
+          }
+        }
+        return result;
+      }
+    } catch (e) {}
+  }
+  return staticData;
+}
+
+// Keep the export for backward compatibility
+export const LOCATION_SUBLOCATIONS = {};

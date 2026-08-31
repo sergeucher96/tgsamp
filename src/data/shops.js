@@ -8,6 +8,9 @@ export const SHOPS_DATABASE = {
       { id: 'phone', price: 1500 },
       { id: 'repair_kit', price: 500 },
       { id: 'sim_card', price: 100 },
+      { id: 'cucumber', price: 100 },
+      { id: 'tomato', price: 100 },
+      { id: 'salt', price: 50 },
     ]
   },
   'hardware_store': {

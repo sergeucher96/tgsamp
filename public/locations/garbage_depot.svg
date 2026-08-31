@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="700" viewBox="0 0 1000 700">
+  <rect width="1000" height="700" fill="#0c140c"/>
+  <rect x="0" y="520" width="1000" height="180" fill="#16241a"/>
+  <rect x="120" y="180" width="760" height="360" rx="10" fill="#1f3326" stroke="#3f6b48" stroke-width="6"/>
+  <rect x="170" y="120" width="660" height="80" rx="8" fill="#274634" stroke="#3f6b48" stroke-width="4"/>
+  <text x="500" y="175" font-family="Arial, sans-serif" font-size="40" font-weight="bold" fill="#9bffb0" text-anchor="middle">МУСОРНАЯ БАЗА</text>
+  <rect x="210" y="300" width="240" height="200" rx="6" fill="#0f1a13" stroke="#3f6b48" stroke-width="3"/>
+  <rect x="550" y="300" width="240" height="200" rx="6" fill="#0f1a13" stroke="#3f6b48" stroke-width="3"/>
+  <text x="330" y="410" font-family="Arial, sans-serif" font-size="34" fill="#7fd18f" text-anchor="middle">🚛</text>
+  <text x="670" y="410" font-family="Arial, sans-serif" font-size="34" fill="#7fd18f" text-anchor="middle">🗑️</text>
+  <rect x="430" y="560" width="140" height="60" rx="6" fill="#2c4a36" stroke="#5fa873" stroke-width="3"/>
+  <text x="500" y="598" font-family="Arial, sans-serif" font-size="24" fill="#cfe9d6" text-anchor="middle">ВЫЕЗД</text>
+</svg>

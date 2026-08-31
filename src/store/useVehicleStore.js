@@ -4,7 +4,7 @@ import { usePlayerStore } from './usePlayerStore';
 import { useInventoryStore } from './useInventoryStore';
 import { useQuestStore } from './useQuestStore';
 import { HOUSE_CLASSES } from '../data/houseConfig';
-import { VEHICLE_DATABASE, TUNING_CONFIG, HEALTH_PENALTIES } from '../data/vehicleConfig';
+import { VEHICLE_DATABASE, TUNING_CONFIG, HEALTH_PENALTIES, REPAIR_COST_PER_PERCENT } from '../data/vehicleConfig';
 
 // Calculate effective speed based on tuning and health
 export function calculateEffectiveSpeed(vehicle) {
@@ -76,6 +76,46 @@ export function calculateEffectiveHandling(vehicle) {
 export const useVehicleStore = create((set, get) => ({
   myVehicles: [],
   isLoading: false,
+  carInGarage: null, // house_id of the house where the active vehicle is parked, or null
+
+  parkInGarage: (houseId) => {
+    const { player } = usePlayerStore.getState();
+    const vehicle = player?.activeVehicle;
+    if (!vehicle) return;
+
+    // Teleport car to the house position
+    const houseLocations = {
+      house_1: { x: 1200, y: 2200 },
+      house_2: { x: 1500, y: 2000 },
+      house_3: { x: 1800, y: 2300 },
+      house_51: { x: 670, y: 4500 },
+    };
+    const pos = houseLocations[houseId] || { x: 0, y: 0 };
+
+    supabase.from('vehicles')
+      .update({ x: pos.x, y: pos.y })
+      .eq('id', vehicle.id)
+      .then(() => {});
+
+    usePlayerStore.getState().setLocalActiveVehicle(null);
+    set({ carInGarage: houseId });
+  },
+
+  retrieveFromGarage: (houseId) => {
+    const vehicles = get().myVehicles || [];
+    const garageVehicles = vehicles.filter(v => v.house_id === houseId);
+    if (garageVehicles.length === 0) return;
+
+    // Set first available vehicle as active
+    const vehicle = garageVehicles[0];
+    usePlayerStore.getState().setLocalActiveVehicle(vehicle);
+    set({ carInGarage: null });
+  },
+
+  hasCarInGarage: (houseId) => {
+    const { carInGarage } = get();
+    return carInGarage === houseId;
+  },
 
   fetchVehicles: async () => {
     const player = usePlayerStore.getState().player;
@@ -234,6 +274,121 @@ export const useVehicleStore = create((set, get) => ({
       await removeItem(hasKit.id, 1);
       await get().fetchVehicles();
       alert("Машина как новая!");
+    }
+  },
+
+  // Quick health update without full fetch (used during travel)
+  updateVehicleHealth: async (vehicleId, newHealth) => {
+    try {
+      const { error } = await supabase
+        .from('vehicles')
+        .update({ health: Math.round(newHealth) })
+        .eq('id', vehicleId);
+
+      if (error) throw error;
+      // Update local state immediately
+      const roundedHealth = Math.round(newHealth * 100) / 100;
+      const vehicles = get().myVehicles.map(v =>
+        v.id === vehicleId ? { ...v, health: roundedHealth } : v
+      );
+      set({ myVehicles: vehicles });
+      // Update active vehicle in player store
+      const activeVehicle = usePlayerStore.getState().activeVehicle;
+      if (activeVehicle && activeVehicle.id === vehicleId) {
+        usePlayerStore.getState().setLocalActiveVehicle({ ...activeVehicle, health: roundedHealth });
+      }
+    } catch (e) {
+      console.error('Vehicle health update error:', e);
+    }
+  },
+
+  /**
+   * Park the currently active vehicle into the house garage.
+   * Sets vehicle's house_id and clears activeVehicle.
+   */
+  parkVehicle: async (vehicleId, houseId) => {
+    if (!vehicleId || !houseId) return false;
+    try {
+      const { error } = await supabase
+        .from('vehicles')
+        .update({ house_id: houseId })
+        .eq('id', vehicleId);
+
+      if (error) throw error;
+      usePlayerStore.getState().setLocalActiveVehicle(null);
+      await get().fetchVehicles();
+      return true;
+    } catch (e) {
+      console.error('Park vehicle error:', e);
+      alert('Ошибка при парковке!');
+      return false;
+    }
+  },
+
+  /**
+   * Leave the garage: set the vehicle as active (keep it tied to its house_id).
+   */
+  leaveGarage: async (vehicleId) => {
+    if (!vehicleId) return false;
+    try {
+      // First fetch the vehicle to get its data
+      const { data, error } = await supabase
+        .from('vehicles')
+        .select()
+        .eq('id', vehicleId)
+        .single();
+
+      if (error || !data) {
+        alert('Машина не найдена в гараже!');
+        return false;
+      }
+
+      // Set as active vehicle (keep house_id so it still shows in garage list)
+      usePlayerStore.getState().setLocalActiveVehicle(data);
+      await get().fetchVehicles();
+      return true;
+    } catch (e) {
+      console.error('Leave garage error:', e);
+      return false;
+    }
+  },
+
+  // Repair vehicle for money at the service station
+  repairVehicleForMoney: async (vehicleId) => {
+    const { player, updateProfile } = usePlayerStore.getState();
+    const vehicles = get().myVehicles;
+    const vehicle = vehicles.find(v => v.id === vehicleId);
+    if (!vehicle) return alert("Машина не найдена!");
+
+    const currentHealth = vehicle.health || 100;
+    if (currentHealth >= 100) return alert("Машина в идеальном состоянии!");
+
+    // Cost: REPAIR_COST_PER_PERCENT per 1% health to restore
+    const damagePercent = Math.round(100 - currentHealth);
+    const cost = damagePercent * REPAIR_COST_PER_PERCENT;
+
+    if (Number(player.money) < cost) {
+      alert(`Недостаточно денег! Нужно ${cost.toLocaleString()} ₽`);
+      return false;
+    }
+
+    set({ isLoading: true });
+    try {
+      const { error } = await supabase
+        .from('vehicles')
+        .update({ health: 100 })
+        .eq('id', vehicleId);
+
+      if (error) throw error;
+      await updateProfile({ money: Number(player.money) - cost });
+      await get().fetchVehicles();
+      return true;
+    } catch (e) {
+      console.error(e);
+      alert("Ошибка при ремонте!");
+      return false;
+    } finally {
+      set({ isLoading: false });
     }
   },
 

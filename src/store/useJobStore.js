@@ -3,6 +3,7 @@ import { usePlayerStore } from './usePlayerStore';
 import { useTravelStore } from './useTravelStore';
 import { FINAL_LOCATIONS } from '../data/locations';
 import { JOBS_DATABASE } from '../data/jobsConfig';
+import { WAYPOINTS } from '../data/roads';
 
 const POI_TYPES = ['shop', 'bar', 'hotel', 'gym', 'clothes', 'nightclub', 'parking'];
 
@@ -76,12 +77,39 @@ const labelForPool = (job, pool, index) => {
   return `Точка ${index}`;
 };
 
+const generateSingleBin = (baseWaypointId, excludeIds = new Set()) => {
+  const allIds = Object.keys(WAYPOINTS);
+  const base = WAYPOINTS[baseWaypointId];
+  let safety = 0;
+  while (safety < allIds.length * 3) {
+    safety++;
+    const id = allIds[Math.floor(Math.random() * allIds.length)];
+    if (excludeIds.has(id)) continue;
+    const wp = WAYPOINTS[id];
+    if (base && Math.hypot(wp.x - base.x, wp.y - base.y) < 300) continue;
+    excludeIds.add(id);
+    return id;
+  }
+  return null;
+};
+
+const generateBins = (baseWaypointId, count) => {
+  const used = new Set();
+  const bins = [];
+  for (let i = 0; i < count; i++) {
+    const bin = generateSingleBin(baseWaypointId, used);
+    if (bin) bins.push(bin);
+  }
+  return bins;
+};
+
 export const useJobStore = create((set, get) => ({
   activeShift: null, // { jobId, kind, stops, currentStop, earned, exp, status, cargo }
   isProcessing: false,
   jobMessage: null,
   taskProgress: 0,
   lastTask: null,
+  showUnloadConfirm: false,
 
   // ---------- ОБЩЕЕ ----------
 
@@ -116,8 +144,31 @@ export const useJobStore = create((set, get) => ({
     const previousVehicle = usePlayerStore.getState().activeVehicle;
     if (job.vehicle) usePlayerStore.getState().setLocalActiveVehicle(job.vehicle);
 
-    set({
-      activeShift: {
+    let activeShift;
+    if (job.kind === 'garbage') {
+      const baseWp = FINAL_LOCATIONS.find((l) => l.id === job.locationId)?.entrance_id || '1';
+      const activeBins = generateBins(baseWp, 5);
+      activeShift = {
+        jobId,
+        kind: job.kind,
+        status: 'selecting',
+        activeBins,
+        selectedBinId: null,
+        capacity: 0,
+        earned: 0,
+        exp: 0,
+        tips: 0,
+        tasksDone: 0,
+        cargo: null,
+        previousVehicle,
+        lastBinAmount: 0,
+        collecting: false,
+        collectProgress: 0,
+        unloading: false,
+        unloadProgress: 0,
+      };
+    } else {
+      activeShift = {
         jobId,
         kind: job.kind,
         status: job.kind === 'route' ? 'assigned' : 'working',
@@ -129,7 +180,11 @@ export const useJobStore = create((set, get) => ({
         tasksDone: 0,
         cargo: job.cargo ? job.cargo[Math.floor(Math.random() * job.cargo.length)] : null,
         previousVehicle,
-      },
+      };
+    }
+
+    set({
+      activeShift,
       jobMessage: null,
       lastTask: null,
     });
@@ -140,7 +195,123 @@ export const useJobStore = create((set, get) => ({
     const shift = get().activeShift;
     if (!shift) return;
     usePlayerStore.getState().setLocalActiveVehicle(shift.previousVehicle || null);
-    set({ activeShift: null, isProcessing: false, jobMessage: 'Смена отменена, оплата не начислена.', taskProgress: 0 });
+    set({ activeShift: null, isProcessing: false, jobMessage: 'Смена отменена, оплата не начислена.', taskProgress: 0, showUnloadConfirm: false });
+  },
+
+  requestUnload: () => {
+    const shift = get().activeShift;
+    if (!shift || shift.kind !== 'garbage' || shift.capacity <= 0 || get().isProcessing) return;
+    set({ showUnloadConfirm: true });
+  },
+
+  // Свободное движение — игнорирует работу и едет куда угодно
+  freeDrive: async (_targetLocId) => {
+    const shift = get().activeShift;
+    if (!shift || shift.kind !== 'garbage' || get().isProcessing) return;
+    useTravelStore.getState().stopRoute();
+    set({ activeShift: { ...shift, status: 'selecting' } });
+  },
+
+  cancelUnload: () => {
+    set({ showUnloadConfirm: false });
+  },
+
+  // Уехать на свалку/базу в любой момент смены мусорщика.
+  // Прерывает текущий маршрут и либо разгружает кузов, либо просто едет на базу.
+  goToDump: async () => {
+    const shift = get().activeShift;
+    if (!shift || shift.kind !== 'garbage' || get().isProcessing) return;
+    useTravelStore.getState().stopRoute();
+    if (shift.capacity > 0) {
+      await get().performUnload();
+    } else {
+      await get().returnToBase();
+    }
+  },
+
+  confirmUnload: async () => {
+    set({ showUnloadConfirm: false });
+    await get().performUnload();
+  },
+
+  skipBin: () => {
+    const shift = get().activeShift;
+    if (!shift || shift.status !== 'at_bin') return;
+    set({
+      activeShift: {
+        ...shift,
+        selectedBinId: null,
+        status: 'selecting',
+        collecting: false,
+        collectProgress: 0,
+      },
+      jobMessage: 'Контейнер пропущен.',
+    });
+  },
+
+  selectBin: async (binId) => {
+    const shift = get().activeShift;
+    if (!shift || shift.kind !== 'garbage' || shift.status !== 'selecting' || get().isProcessing) return;
+    const job = JOBS_DATABASE[shift.jobId];
+
+    if (shift.capacity >= job.capacity) {
+      set({ activeShift: { ...shift, status: 'full' }, jobMessage: 'Мусоровоз полон! Возвращайтесь на базу для выгрузки.' });
+      return;
+    }
+
+    if (!shift.activeBins.includes(binId)) return;
+
+    set({ isProcessing: true, activeShift: { ...shift, status: 'driving_to_bin', selectedBinId: binId } });
+    await useTravelStore.getState().startRoute(binId);
+    set({ isProcessing: false });
+    get().arriveAtBin();
+  },
+
+  // Поездка на базу мусорщиков — как к обычному контейнеру.
+  // По прибытии открывается кнопка «Разгрузить» (status 'at_base').
+  goToBase: async () => {
+    const shift = get().activeShift;
+    if (!shift || shift.kind !== 'garbage' || get().isProcessing) return;
+    const job = JOBS_DATABASE[shift.jobId];
+
+    const baseLocation = FINAL_LOCATIONS.find((l) => l.id === job.locationId);
+    const playerPos = usePlayerStore.getState().player;
+    const baseWp = baseLocation ? (WAYPOINTS[baseLocation.entrance_id] || { x: baseLocation.x, y: baseLocation.y }) : null;
+    const distToBase = playerPos && baseWp && baseLocation
+      ? Math.min(
+          Math.hypot((playerPos.pos_x || 0) - baseWp.x, (playerPos.pos_y || 0) - baseWp.y),
+          Math.hypot((playerPos.pos_x || 0) - baseLocation.x, (playerPos.pos_y || 0) - baseLocation.y),
+        )
+      : Infinity;
+
+    // Уже на базе — не «едем на ту же точку», сразу открываем разгрузку
+    if (distToBase < 150) {
+      useTravelStore.getState().stopRoute();
+      get().arriveAtBase();
+      return;
+    }
+
+    useTravelStore.getState().stopRoute();
+    set({ isProcessing: true, activeShift: { ...shift, status: 'driving_to_base' } });
+    await useTravelStore.getState().startRoute(job.locationId);
+    set({ isProcessing: false });
+    get().arriveAtBase();
+  },
+
+  arriveAtBase: () => {
+    const shift = get().activeShift;
+    if (!shift || shift.status !== 'driving_to_base') return;
+    if (shift.capacity > 0) {
+      set({
+        activeShift: { ...shift, status: 'at_base' },
+        jobMessage: 'База мусорщиков. Разгрузите мусоровоз.',
+      });
+    } else {
+      set({
+        activeShift: { ...shift, status: 'selecting' },
+        jobMessage: 'Кузов пуст — соберите мусор у контейнеров.',
+      });
+    }
   },
 
   // ---------- РАБОТЫ С ПОЕЗДКАМИ (автобус / такси / дальнобой) ----------
@@ -198,7 +369,23 @@ export const useJobStore = create((set, get) => ({
 
   returnToBase: async () => {
     const shift = get().activeShift;
-    if (!shift || shift.status !== 'toBase' || get().isProcessing) return;
+    if (!shift || get().isProcessing) return;
+
+    if (shift.kind === 'garbage') {
+      if (shift.status === 'driving_to_base') return;
+      const job = JOBS_DATABASE[shift.jobId];
+      set({ isProcessing: true, activeShift: { ...shift, status: 'driving_to_base' } });
+      await useTravelStore.getState().startRoute(job.locationId);
+      set({ isProcessing: false });
+      if (shift.capacity > 0) {
+        await get().performUnload(true); // skipDrive=true since we already drove
+      } else {
+        get().finishGarbageShift();
+      }
+      return;
+    }
+
+    if (shift.status !== 'toBase' || get().isProcessing) return;
     const job = JOBS_DATABASE[shift.jobId];
 
     set({ isProcessing: true, activeShift: { ...shift, status: 'returning' } });
@@ -226,6 +413,189 @@ export const useJobStore = create((set, get) => ({
     set({
       activeShift: null,
       jobMessage: `Смена закрыта. Начислено ${total.toLocaleString()}$ и ${shift.exp} XP.`,
+    });
+  },
+
+  // ---------- МУСОРЩИК ----------
+
+  arriveAtBin: () => {
+    const shift = get().activeShift;
+    if (!shift || shift.status !== 'driving_to_bin') return;
+    const job = JOBS_DATABASE[shift.jobId];
+    const binAmount = rand(job.garbagePerBin);
+    const realAmount = Math.min(binAmount, job.capacity - shift.capacity);
+    set({
+      activeShift: { ...shift, status: 'at_bin', lastBinAmount: binAmount, collecting: false, collectProgress: 0 },
+      jobMessage: `Контейнер найден. В нём ${binAmount} кг. Можно собрать ${realAmount} кг.`,
+    });
+  },
+
+  collectGarbage: async () => {
+    const shift = get().activeShift;
+    if (!shift || shift.status !== 'at_bin' || get().isProcessing) return;
+    const job = JOBS_DATABASE[shift.jobId];
+
+    set({ isProcessing: true, activeShift: { ...shift, collecting: true, collectProgress: 0 } });
+    const currentShift = get().activeShift;
+
+    await runProgress(5000, (value) => {
+      const fresh = get().activeShift;
+      if (fresh) {
+        set({ activeShift: { ...fresh, collecting: true, collectProgress: value } });
+      }
+    });
+
+    const binAmount = currentShift.lastBinAmount || rand(job.garbagePerBin);
+    const realAmount = Math.min(binAmount, job.capacity - currentShift.capacity);
+    const newCapacity = currentShift.capacity + realAmount;
+    const isFull = newCapacity >= job.capacity;
+
+    let message = `Собрано ${realAmount} кг. В кузове ${newCapacity}/${job.capacity}.`;
+    if (isFull) message = `Кузов полон (${newCapacity}/${job.capacity})!`;
+
+    const baseWp = FINAL_LOCATIONS.find((l) => l.id === job.locationId)?.entrance_id || '1';
+    const usedIds = new Set(currentShift.activeBins);
+    const newBin = generateSingleBin(baseWp, usedIds);
+    const nextActiveBins = newBin
+      ? [...currentShift.activeBins.filter(id => id !== currentShift.selectedBinId), newBin]
+      : currentShift.activeBins.filter(id => id !== currentShift.selectedBinId);
+
+    set({
+      activeShift: {
+        ...currentShift,
+        activeBins: nextActiveBins,
+        selectedBinId: null,
+        capacity: newCapacity,
+        status: 'selecting',
+        collecting: false,
+        collectProgress: 0,
+      },
+      jobMessage: message,
+      isProcessing: false,
+    });
+  },
+
+  performUnload: async (skipDrive = false) => {
+    const shift = get().activeShift;
+    if (!shift || shift.kind !== 'garbage' || shift.capacity <= 0 || get().isProcessing) return;
+    const job = JOBS_DATABASE[shift.jobId];
+
+    // Прерываем текущую поездку (например, к контейнеру), чтобы можно было
+    // уехать на свалку прямо в пути.
+    useTravelStore.getState().stopRoute();
+
+    const baseLocation = FINAL_LOCATIONS.find((l) => l.id === job.locationId);
+    if (!baseLocation) return;
+
+    // Если игрок уже у базы (приехал сам, кликнув локацию), едем не нужно
+    const playerPos = usePlayerStore.getState().player;
+    const baseWp = WAYPOINTS[baseLocation.entrance_id] || { x: baseLocation.x, y: baseLocation.y };
+    const distToBase = playerPos
+      ? Math.min(
+          Math.hypot((playerPos.pos_x || 0) - baseWp.x, (playerPos.pos_y || 0) - baseWp.y),
+          Math.hypot((playerPos.pos_x || 0) - baseLocation.x, (playerPos.pos_y || 0) - baseLocation.y),
+        )
+      : Infinity;
+    const alreadyAtBase = distToBase < 150;
+
+    if (!skipDrive && !alreadyAtBase) {
+      set({ isProcessing: true, activeShift: { ...shift, status: 'driving_to_base' } });
+      await useTravelStore.getState().startRoute(job.locationId);
+      set({ isProcessing: false });
+    }
+
+    // Запоминаем объём ДО очистки и сразу закрываем попап,
+    // показывая видимый таймер разгрузки.
+    const unloadCapacity = shift.capacity;
+    set({
+      activeShift: {
+        ...get().activeShift,
+        status: 'selecting',
+        unloading: true,
+        unloadProgress: 0,
+      },
+      isProcessing: true,
+    });
+
+    const player = usePlayerStore.getState().player;
+    if (player) {
+      try {
+        await usePlayerStore.getState().updateProfile({ pos_x: baseWp.x, pos_y: baseWp.y, last_node_id: baseLocation.entrance_id });
+      } catch (e) {
+        console.error('Garbage unload position DB error:', e);
+      }
+    }
+
+    // Таймер разгрузки (10 сек) с видимым прогрессом
+    const DURATION = 10000;
+    const startTime = Date.now();
+    await new Promise((resolve) => {
+      const timer = setInterval(() => {
+        const p = Math.min(100, ((Date.now() - startTime) / DURATION) * 100);
+        set({ activeShift: { ...get().activeShift, unloadProgress: p } });
+        if (p >= 100) {
+          clearInterval(timer);
+          resolve();
+        }
+      }, 100);
+    });
+
+    const currentShift = get().activeShift;
+    const pay = unloadCapacity * job.payPerUnit;
+    const exp = Math.floor(unloadCapacity / 50);
+    const { updateProfile, addSkillProgress } = usePlayerStore.getState();
+    const fresh = usePlayerStore.getState().player;
+
+    try {
+      await updateProfile({
+        money: Number(fresh.money || 0) + pay,
+        exp: (fresh.exp || 0) + exp,
+      });
+      await addSkillProgress(job.skillId, 1);
+    } catch (e) {
+      // Ошибки БД не должны оставлять попап открытым
+      console.error('Garbage unload DB error:', e);
+    }
+
+    // Всегда закрываем таймер и сбрасываем состояние, даже при ошибке БД
+    set({
+      activeShift: {
+        ...currentShift,
+        capacity: 0,
+        status: 'selecting',
+        unloading: false,
+        unloadProgress: 0,
+      },
+      jobMessage: `Разгружено. Заработано ${pay.toLocaleString()}$, +${exp} XP.`,
+      isProcessing: false,
+    });
+  },
+
+  finishGarbageShift: async () => {
+    const shift = get().activeShift;
+    if (!shift) return;
+    const job = JOBS_DATABASE[shift.jobId];
+    const { player, updateProfile, setLocalActiveVehicle, addSkillProgress } = usePlayerStore.getState();
+
+    const pay = shift.capacity * job.payPerUnit;
+    const exp = Math.floor(shift.capacity / 50);
+
+    if (shift.capacity > 0) {
+      await updateProfile({
+        money: Number(player.money || 0) + pay,
+        exp: (player.exp || 0) + exp,
+        energy: Math.max(0, (player.energy || 100) - job.energyCost),
+      });
+      await addSkillProgress(job.skillId, 1);
+    }
+
+    setLocalActiveVehicle(shift.previousVehicle || null);
+    set({
+      activeShift: null,
+      jobMessage: shift.capacity > 0
+        ? `Смена закрыта. Выгружено ${shift.capacity} кг, заработано ${pay.toLocaleString()}$, +${exp} XP.`
+        : 'Смена закрыта.',
+      isProcessing: false,
     });
   },
 

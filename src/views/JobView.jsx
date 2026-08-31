@@ -1,6 +1,6 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import { X, Navigation, MapPin, Zap, Wallet, Award, CheckCircle2, Wrench } from 'lucide-react';
+import { X, Navigation, MapPin, Zap, Wallet, Award, CheckCircle2, Wrench, Trash2 } from 'lucide-react';
 import { JOBS_DATABASE } from '../data/jobsConfig';
 import { useJobStore } from '../store/useJobStore';
 import { usePlayerStore } from '../store/usePlayerStore';
@@ -26,6 +26,10 @@ export default function JobView({ jobId, onClose }) {
     availableTasks,
     skillValue,
     hasLicenseFor,
+    selectBin,
+    collectGarbage,
+    goToBase,
+    unloadGarbage,
   } = useJobStore();
 
   if (!job) return null;
@@ -37,6 +41,13 @@ export default function JobView({ jobId, onClose }) {
   const busy = isProcessing || isMoving;
 
   const stop = shift?.stops?.[shift.currentStop];
+
+  const handleStartGarbage = async () => {
+    const success = await startShift(jobId);
+    if (success && job.kind === 'garbage') {
+      onClose();
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-[999] bg-[#020617] flex flex-col text-white font-sans animate-in fade-in duration-300">
@@ -84,6 +95,8 @@ export default function JobView({ jobId, onClose }) {
 
         {job.kind === 'route'
           ? <RouteBody job={job} shift={shift} stop={stop} busy={busy} onStart={() => startShift(jobId)} onGo={goToCurrentStop} onComplete={completeStop} onReturn={returnToBase} onCancel={cancelShift} disabled={!licensed || otherShift} />
+          : job.kind === 'garbage'
+          ? <GarbageBody job={job} shift={shift} busy={busy} onCollect={collectGarbage} onReturn={goToBase} onCancel={cancelShift} onGo={selectBin} onStart={handleStartGarbage} disabled={!licensed || otherShift} />
           : <StationBody job={job} shift={shift} busy={busy} progress={taskProgress} lastTask={lastTask} tasks={availableTasks(jobId)} onStart={() => startShift(jobId)} onRun={runTask} onEnd={endStationShift} disabled={otherShift} />}
       </div>
     </div>
@@ -163,6 +176,99 @@ function RouteBody({ job, shift, stop, busy, onStart, onGo, onComplete, onReturn
 
       {shift.status === 'returning' && (
         <div className="w-full py-6 rounded-[32px] bg-slate-800/60 text-center text-lg font-black uppercase italic animate-pulse">Возвращение...</div>
+      )}
+
+      <button onClick={onCancel} disabled={busy} className="w-full py-3 rounded-3xl border border-white/10 text-xs font-black uppercase text-slate-400 active:scale-95">
+        Отменить смену
+      </button>
+    </div>
+  );
+}
+
+function GarbageBody({ job, shift, busy, onCollect, onReturn, onCancel, onGo, onStart, disabled }) {
+  if (!shift) {
+    return (
+      <div className="space-y-4">
+        <div className="bg-white/[0.03] border border-white/10 rounded-[32px] p-5">
+          <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500 font-black mb-2">Оплата</p>
+          <p className="text-lg font-black uppercase">${job.payPerUnit} за кг мусора</p>
+          <p className="text-slate-400 text-sm mt-2">Вместимость кузова: {job.capacity} кг. Контейнеров за смену: {job.binsPerShift}.</p>
+          <p className="text-slate-400 text-sm">Транспорт выдаётся на смену.</p>
+        </div>
+        <button onClick={onStart} disabled={disabled}
+          className={`w-full py-6 rounded-[32px] text-xl font-black uppercase italic transition-all ${disabled ? 'bg-slate-800 opacity-50' : 'bg-emerald-600 active:scale-95'}`}>
+          Начать смену
+        </button>
+      </div>
+    );
+  }
+
+  const capacity = shift.capacity || 0;
+  const maxCapacity = job.capacity;
+  const percent = Math.min(100, (capacity / maxCapacity) * 100);
+
+  const canCollect = shift.status === 'at_bin' && !busy && !shift.collecting;
+  const canSelect = shift.status === 'selecting' && !busy;
+  const canReturn = shift.status === 'selecting' && !busy;
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white/[0.03] border border-white/10 rounded-[32px] p-5 space-y-3">
+        <div className="flex justify-between items-center">
+          <span className="text-[10px] uppercase tracking-[0.3em] text-slate-500 font-black">Кузов</span>
+          <span className="font-black italic text-lime-400">{capacity} / {maxCapacity} кг</span>
+        </div>
+        <div className="h-3 bg-black/40 rounded-full overflow-hidden">
+          <div className="h-full bg-lime-500 transition-all duration-700" style={{ width: `${percent}%` }} />
+        </div>
+        {shift.status === 'at_bin' && shift.collecting && (
+          <div className="space-y-1">
+            <p className="text-xs text-slate-400">Сбор мусора...</p>
+            <div className="h-2 bg-black/40 rounded-full overflow-hidden">
+              <div className="h-full bg-lime-400 transition-all duration-100" style={{ width: `${shift.collectProgress || 0}%` }} />
+            </div>
+          </div>
+        )}
+        {shift.lastBinAmount > 0 && shift.status === 'at_bin' && !shift.collecting && (
+          <p className="text-xs text-slate-400">В этом контейнере: {shift.lastBinAmount} кг</p>
+        )}
+      </div>
+
+      <div className="bg-white/[0.03] border border-white/10 rounded-[32px] p-5 space-y-3">
+        <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500 font-black mb-2">Контейнеры</p>
+        {shift.activeBins && shift.activeBins.map((binId, index) => {
+          const isCurrent = binId === shift.selectedBinId && shift.status !== 'to_base' && shift.status !== 'driving_to_base';
+          const isPassed = binId !== shift.selectedBinId && (shift.status === 'to_base' || shift.status === 'driving_to_base');
+          return (
+            <div key={binId} className={`flex items-center gap-3 ${isCurrent ? 'text-white' : isPassed ? 'text-lime-400/70' : 'text-slate-500'}`}>
+              {isPassed ? <CheckCircle2 size={16} /> : <MapPin size={16} />}
+              <div className="flex-grow text-left">
+                <p className="text-sm font-black uppercase">Контейнер {index + 1}</p>
+                <p className="text-[11px] opacity-70">Точка {binId}</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 text-center">
+        <Stat icon={<Wallet size={14} className="text-emerald-400" />} label="Заработано" value={`$${shift.earned.toLocaleString()}`} />
+        <Stat icon={<Award size={14} className="text-sky-400" />} label="Опыт" value={`${shift.exp} XP`} />
+      </div>
+
+      {shift.status === 'driving_to_bin' && (
+        <div className="w-full py-6 rounded-[32px] bg-slate-800/60 text-center text-lg font-black uppercase italic animate-pulse">В пути к контейнеру...</div>
+      )}
+
+      {shift.status === 'selecting' && (
+        <button onClick={onReturn} disabled={!canReturn}
+          className={`w-full py-6 rounded-[32px] text-lg font-black uppercase italic ${canReturn ? 'bg-amber-600 active:scale-95' : 'bg-slate-800 opacity-50'}`}>
+          <Navigation size={20} /> Вернуться на базу
+        </button>
+      )}
+
+      {shift.status === 'driving_to_base' && (
+        <div className="w-full py-6 rounded-[32px] bg-slate-800/60 text-center text-lg font-black uppercase italic animate-pulse">Возвращение на базу...</div>
       )}
 
       <button onClick={onCancel} disabled={busy} className="w-full py-3 rounded-3xl border border-white/10 text-xs font-black uppercase text-slate-400 active:scale-95">

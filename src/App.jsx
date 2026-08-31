@@ -7,6 +7,7 @@ import { useBankStore } from './store/useBankStore';
 import { useWeaponStore } from './store/useWeaponStore';
 import { useQuestStore } from './store/useQuestStore';
 import { useSmsStore } from './store/useSmsStore';
+import { useLspdStore } from './store/useLspdStore';
 import { useTelegram } from './hooks/useTelegram';
 
 // Dev tools (only in development — won't be bundled in production build)
@@ -27,11 +28,12 @@ import CharacterView from './views/CharacterView';
 
 // Components
 import BankNotifications from './components/BankNotifications';
+import VehicleInfoMenu from './components/VehicleInfoMenu';
 
 import { Loader2 } from 'lucide-react';
 
 function App() {
-  const { player, loading, login, needsRegistration, skills, licenses } = usePlayerStore();
+  const { player, loading, login, needsRegistration, skills, licenses, activeVehicle } = usePlayerStore();
   const { activeTab, setActiveTab, currentInterior, currentGarage, showPhone, closePhone } = useNavigationStore();
   const { fetchDbHouses } = useHouseStore();
   const { fetchVehicles } = useVehicleStore();
@@ -40,6 +42,7 @@ function App() {
   const [showCharacter, setShowCharacter] = useState(false);
   const [showDevTools, setShowDevTools] = useState(false);
   const [showRoadEditor, setShowRoadEditor] = useState(false);
+  const [showVehicleInfo, setShowVehicleInfo] = useState(false);
 
   // Dev keyboard shortcut: Ctrl+Shift+H
   useEffect(() => {
@@ -65,6 +68,12 @@ function App() {
         useQuestStore.getState().startQuestTimer();
         useSmsStore.getState().startRealtimeSubscription();
     });
+    
+    // Load LSPD status when player loads
+    const unsubLspd = usePlayerStore.subscribe(state => state.player, (p) => {
+      if (p?.id) useLspdStore.getState().loadLspdStatus(p.id);
+    });
+    return () => unsubLspd();
   }, []);
 
   // Handle Telegram back button
@@ -112,6 +121,7 @@ function App() {
       {showQuests && <QuestView onClose={() => setShowQuests(false)} />}
       {showPhone && <PhoneView onClose={closePhone} />}
       {showCharacter && <CharacterView onClose={() => setShowCharacter(false)} />}
+      {showVehicleInfo && activeVehicle && <VehicleInfoMenu vehicle={activeVehicle} onClose={() => setShowVehicleInfo(false)} />}
       
       {/* Dev Tools (development only) */}
       {IS_DEV && HotspotTool && showDevTools && (
@@ -163,6 +173,17 @@ function App() {
               <NavButton active={activeTab === 'profile'} onClick={() => setActiveTab('profile')} icon="👤" />
               <NavButton active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} icon="🎒" />
               <NavButton active={showQuests} onClick={() => setShowQuests(true)} icon="📜" />
+              <button
+                onClick={() => activeVehicle && setShowVehicleInfo(true)}
+                disabled={!activeVehicle}
+                className={`w-14 h-14 rounded-2xl flex items-center justify-center text-xl transition-all duration-300 gta-button ${
+                  activeVehicle
+                    ? 'border border-[#7eff63]/40 text-[#e8ffc4] shadow-[0_0_20px_rgba(130,255,100,0.22)] active:scale-105'
+                    : 'border border-white/10 text-[#8ebc88] opacity-40 cursor-not-allowed'
+                }`}
+              >
+                🚙
+              </button>
               {IS_DEV && <NavButton active={showDevTools} onClick={() => setShowDevTools(true)} icon="🛠️" />}
               {IS_DEV && <NavButton active={showRoadEditor} onClick={() => setShowRoadEditor(true)} icon="🛣️" />}
           </footer>

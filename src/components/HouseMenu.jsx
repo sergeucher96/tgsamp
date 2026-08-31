@@ -1,11 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { X, DoorOpen, BadgeDollarSign, Navigation, Lock, Box, CarFront, Heart, Share2, Home, MapPin, BedDouble } from 'lucide-react';
 import { HOUSE_CLASSES } from '../data/houseConfig';
 import { getHousePreview } from '../data/houseStyles';
 import { useNavigationStore } from '../store/useNavigationStore';
+import { usePlayerStore } from '../store/usePlayerStore';
+import { supabase } from '../api/supabase';
 
 export default function HouseMenu({ house, player, onBuy, onGPS, onClose }) {
   const setInterior = useNavigationStore(state => state.setInterior);
+  const activeVehicle = usePlayerStore(state => state.activeVehicle);
   
   const houseClass = HOUSE_CLASSES[house.class] || HOUSE_CLASSES.economy;
   const isOwner = house.owner_id === player?.id;
@@ -126,10 +129,13 @@ export default function HouseMenu({ house, player, onBuy, onGPS, onClose }) {
             ) : (
               isOwner ? (
                 isAtHouse ? (
-                  <button 
-                    onClick={() => { setInterior(house.id); onClose(); }} 
-                    className="w-full bg-teal-600 hover:bg-teal-500 text-white py-4 rounded-2xl font-black uppercase italic text-base shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
-                  >
+                  <button onClick={() => {
+                    if (activeVehicle) {
+                      usePlayerStore.getState().setLocalActiveVehicle(null);
+                    }
+                    setInterior(house.id);
+                    onClose();
+                  }} className="w-full bg-teal-600 hover:bg-teal-500 text-white py-4 rounded-2xl font-black uppercase italic text-base shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">
                     <DoorOpen size={20} /> Войти в дом
                   </button>
                 ) : (

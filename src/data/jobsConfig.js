@@ -110,6 +110,25 @@ export const JOBS_DATABASE = {
     ],
     desc: 'Заказ-наряды в автосервисе. Ремонт клиентских машин без выезда в город.',
   },
+
+  garbage_man: {
+    id: 'garbage_man',
+    kind: 'garbage',
+    name: 'Мусорщик',
+    short: 'Мусорная база',
+    icon: '🗑️',
+    accent: 'text-lime-400',
+    locationId: 'garbage_depot',
+    skillId: 'garbage',
+    vehicle: { model_id: 'garbage_truck', color: 'green', name: 'Мусоровоз' },
+    energyCost: 8,
+    minEnergy: 10,
+    capacity: 1000,
+    payPerUnit: 2,
+    binsPerShift: 15,
+    garbagePerBin: [50, 200],
+    desc: 'Сбор мусора по городским контейнерам. Оплата за каждый кг выгруженного мусора.',
+  },
 };
 
 export const JOBS_LIST = Object.values(JOBS_DATABASE);

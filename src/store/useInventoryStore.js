@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { supabase } from '../api/supabase';
 import { usePlayerStore } from './usePlayerStore';
 import { ITEM_DATABASE } from '../data/items';
+import { RESOURCE_PRICES } from '../data/economy';
 import { CLOTHING_DATABASE } from '../data/clothingConfig';
 import { useNavigationStore } from './useNavigationStore';
 

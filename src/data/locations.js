@@ -16,6 +16,9 @@ export const LOCATIONS = [
     color: 'bg-orange-800', 
     type: 'public' 
   },
+  { id: 'lspd', x: 5350, y: 4650, name: 'LSPD HQ', icon: '🚔', color: 'bg-blue-700', type: 'lspd' },
+  { id: 'hospital_1', x: 5420, y: 4620, name: 'Больница', icon: '🏥', color: 'bg-red-600', type: 'hospital' },
+  { id: 'mafia_hideout', x: 4500, y: 4800, name: 'Мафия "Коза Ностра"', icon: '🕴️', color: 'bg-red-900', type: 'mafia' },
   { 
   id: 'port_ls', 
   x: 5200, 
@@ -29,7 +32,8 @@ export const LOCATIONS = [
   // ==========================================
   // 1.1 РАБОТЫ (профессии)
   // ==========================================
-  { id: 'bus_depot', x: 5252, y: 4982, name: 'Автопарк', desc: 'Работа водителем автобуса: рейс по городским остановкам.', icon: '🚌', color: 'bg-yellow-600', type: 'job' },
+  { id: 'bus_depot', x: 5252, y: 4982, name: 'Автобусный парк', desc: 'Арендуйте автобус и выполняйте маршруты по городу.', icon: '🚌', color: 'bg-yellow-600', type: 'bus_depot' },
+  { id: 'garbage_depot', x: 5200, y: 4900, name: 'Мусорная база', desc: 'Работа мусорщиком: собирайте мусор по контейнерам и вывозите на базу.', icon: '🗑️', color: 'bg-lime-700', type: 'job' },
   { id: 'taxi_park', x: 5432, y: 4522, name: 'Таксопарк', desc: 'Работа таксистом: подача к клиенту и поездка по счётчику.', icon: '🚖', color: 'bg-amber-500', type: 'job' },
   { id: 'truck_depot', x: 5158, y: 5602, name: 'Грузовой терминал', desc: 'Работа дальнобойщиком: дальние рейсы с грузом.', icon: '🚛', color: 'bg-cyan-700', type: 'job' },
   { id: 'factory', x: 4902, y: 5304, name: 'Завод "SA Industrial"', desc: 'Работа мастером на заводе: сменные наряды у станка.', icon: '🏭', color: 'bg-orange-700', type: 'job' },
@@ -304,6 +308,36 @@ export const LOCATIONS = [
   { id: 'atm_1', x: 5470, y: 4530, name: 'Банкомат', icon: '🏧', type: 'atm', color: 'bg-orange-500' },
   { id: 'atm_2', x: 5200, y: 4680, name: 'Банкомат', icon: '🏧', type: 'atm', color: 'bg-orange-500' },
   { id: 'atm_3', x: 5560, y: 4900, name: 'Банкомат', icon: '🏧', type: 'atm', color: 'bg-orange-500' },
+
+  // ==========================================
+  // 9. РЫБАЛКА
+  // ==========================================
+  { id: 'fishing_port', x: 5450, y: 4750, name: 'Рыболовный порт', icon: '🎣', type: 'fishing_port', color: 'bg-cyan-600' },
+
+  // ==========================================
+  // 10. СЕЛЬСКОЕ ХОЗЯЙСТВО
+  // ==========================================
+  { id: 'farm_1', x: 4800, y: 4200, name: 'Ферма', icon: '🌾', type: 'farm', color: 'bg-green-600' },
+
+  // ==========================================
+  // 11. ПИТАНИЕ (СТОЛОВАЯ)
+  // ==========================================
+  { id: 'cafeteria_1', x: 5500, y: 4650, name: 'Столовая "The Bowl"', icon: '🍲', type: 'cafeteria', color: 'bg-orange-600' },
+
+  // ==========================================
+  // 12. ПРОМЫШЛЕННОСТЬ (ЗАВОД)
+  // ==========================================
+  { id: 'factory_1', x: 4700, y: 4500, name: 'Завод "Metal Works"', icon: '🏭', type: 'factory', color: 'bg-stone-600' },
+
+  // ==========================================
+  // 13. ПРОМЫШЛЕННОСТЬ (ФАБРИКА)
+  // ==========================================
+  { id: 'workshop_1', x: 4600, y: 4400, name: 'Фабрика "Parts & Assembly"', icon: '⚙️', type: 'workshop', color: 'bg-blue-600' },
+
+  // ==========================================
+  // 14. ЛОГИСТИКА (ДАЛЬНОБОЙЩИК)
+  // ==========================================
+  { id: 'trucker_depot', x: 5400, y: 4900, name: 'Грузовой терминал "Trade Hub"', icon: '🚛', type: 'trucker', color: 'bg-cyan-700' },
 ];
 // ВРЕМЕННЫЙ СКРИПТ ДЛЯ ПРИВЯЗКИ (Потом удалим)
 import { WAYPOINTS } from './roads';
@@ -333,4 +367,58 @@ export const getLinkedLocations = () => {
   });
 };
 
-export const FINAL_LOCATIONS = getLinkedLocations();
+const getNearestWaypoint = (x, y) => {
+  let closestId = "1";
+  let minDistance = Infinity;
+  Object.entries(WAYPOINTS).forEach(([id, pt]) => {
+    const dist = Math.hypot(x - pt.x, y - pt.y);
+    if (dist < minDistance) {
+      minDistance = dist;
+      closestId = id;
+    }
+  });
+  return closestId;
+};
+
+const EDITOR_LOCATIONS_KEY = 'road_editor_locations';
+
+export const getSavedEditorLocations = () => {
+  try {
+    const raw = localStorage.getItem(EDITOR_LOCATIONS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+export const saveEditorLocations = (locList) => {
+  localStorage.setItem(EDITOR_LOCATIONS_KEY, JSON.stringify(locList));
+  FINAL_LOCATIONS = getMergedLocations();
+};
+
+export const resetEditorLocations = () => {
+  localStorage.removeItem(EDITOR_LOCATIONS_KEY);
+};
+
+export const getMergedLocations = () => {
+  const base = getLinkedLocations();
+  const saved = getSavedEditorLocations();
+  if (!saved.length) return base;
+  const savedMap = new Map(saved.map(l => [l.id, l]));
+  return base.map(loc => {
+    const edit = savedMap.get(loc.id);
+    if (edit) {
+      const { id: _id, ...rest } = edit;
+      return { ...loc, ...rest, entrance_id: getNearestWaypoint(rest.x ?? loc.x, rest.y ?? loc.y) };
+    }
+    return loc;
+  }).concat(
+    saved.filter(l => !base.some(b => b.id === l.id)).map(l => ({ ...l, entrance_id: getNearestWaypoint(l.x, l.y) }))
+  );
+};
+
+export let FINAL_LOCATIONS = getLinkedLocations();
+
+export const refreshFinalLocations = () => {
+  FINAL_LOCATIONS = getMergedLocations();
+};

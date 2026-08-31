@@ -66,6 +66,19 @@ export const VEHICLE_DATABASE = {
     fuelMax: 300,
     colors: ['white', 'black', 'red']
   },
+  'garbage_truck': {
+    id: 'garbage_truck',
+    name: 'Мусоровоз',
+    desc: 'Служебный мусоровоз для уборки города. Выдается на время смены.',
+    price: 0,
+    baseSpeed: 40,
+    speed: 200,
+    acceleration: 25,
+    handling: 35,
+    fuelType: '92',
+    fuelMax: 150,
+    colors: ['green', 'white']
+  },
   'sentinel': {
     id: 'sentinel',
     name: 'Sentinel',
@@ -133,10 +146,15 @@ export const TUNING_CONFIG = {
 
 // Штрафы за состояние авто
 export const HEALTH_PENALTIES = [
-  { threshold: 30, speedPenalty: 0.70 },  // 30% health → -70% speed
-  { threshold: 40, speedPenalty: 0.25 },  // 40% health → -25% speed
-  { threshold: 50, speedPenalty: 0.10 },  // 50% health → -10% speed
+  { threshold: 30, speedPenalty: 0.50 },  // <30% health → -50% speed
+  { threshold: 50, speedPenalty: 0.20 },  // <50% health → -20% speed
 ];
+
+// Стоимость ремонта за 1% здоровья
+export const REPAIR_COST_PER_PERCENT = 50;
+
+// Скорость износа авто (потеря % здоровья за 1000 единиц расстояния)
+export const HEALTH_WEAR_RATE = 0.5;
 
 export const VEHICLE_COLORS = [
   { id: 'white', name: 'Белый', hex: '#FFFFFF' },

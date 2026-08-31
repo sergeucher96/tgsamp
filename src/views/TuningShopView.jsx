@@ -2,11 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { X, Gauge, Zap, Disc, Flame, Wrench, Shield, Check } from 'lucide-react';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useVehicleStore, calculateEffectiveSpeed, calculateEffectiveAcceleration, calculateEffectiveHandling } from '../store/useVehicleStore';
-import { TUNING_CONFIG, VEHICLE_DATABASE, HEALTH_PENALTIES } from '../data/vehicleConfig';
+import { TUNING_CONFIG, VEHICLE_DATABASE, HEALTH_PENALTIES, REPAIR_COST_PER_PERCENT } from '../data/vehicleConfig';
 
 export default function TuningShopView({ onClose }) {
   const player = usePlayerStore(state => state.player);
-  const { myVehicles, fetchVehicles, tuneVehicle, repairVehicle, isLoading } = useVehicleStore();
+  const { myVehicles, fetchVehicles, tuneVehicle, repairVehicle, repairVehicleForMoney, isLoading } = useVehicleStore();
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   const [activeTab, setActiveTab] = useState('engine');
 
@@ -70,6 +70,14 @@ export default function TuningShopView({ onClose }) {
 
   const handleRepair = async () => {
     await repairVehicle(selectedVehicle.id);
+  };
+
+  const handleRepairForMoney = async () => {
+    const currentHealth = selectedVehicle.health || 100;
+    const damagePercent = Math.round(100 - currentHealth);
+    const cost = damagePercent * REPAIR_COST_PER_PERCENT;
+    if (Number(player.money) < cost) return;
+    await repairVehicleForMoney(selectedVehicle.id);
   };
 
   const healthColor = health > 60 ? 'bg-emerald-500' : health > 30 ? 'bg-amber-500' : 'bg-red-500';
@@ -158,10 +166,17 @@ export default function TuningShopView({ onClose }) {
             </div>
           )}
           {health < 100 && (
-            <button onClick={handleRepair}
-              className="mt-3 w-full bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-400 py-2 rounded-xl text-xs font-black uppercase transition-all">
-              <Wrench size={12} className="inline mr-1" /> Починить (ремкомплект)
-            </button>
+            <div className="mt-3 space-y-2">
+              <button onClick={handleRepairForMoney}
+                className="w-full bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-400 py-2 rounded-xl text-xs font-black uppercase transition-all"
+                disabled={isLoading}>
+                � Отремонтировать ({(Math.round(100 - health) * REPAIR_COST_PER_PERCENT).toLocaleString()} ₽)
+              </button>
+              <button onClick={handleRepair}
+                className="w-full bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-400 py-2 rounded-xl text-xs font-black uppercase transition-all">
+                <Wrench size={12} className="inline mr-1" /> Починить (ремкомплект)
+              </button>
+            </div>
           )}
         </div>
       </div>

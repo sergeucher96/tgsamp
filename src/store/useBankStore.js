@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { supabase } from '../api/supabase';
 import { usePlayerStore } from './usePlayerStore';
 import { useQuestStore } from './useQuestStore';
+import { useHouseStore } from './useHouseStore';
+import { HOUSE_CLASSES } from '../data/houseConfig';
 
 const BANK_INTEREST_RATE = 0.001; // 0.1% в час (только на депозит)
 
@@ -425,5 +427,134 @@ export const useBankStore = create((set, get) => ({
       });
     }
     return success;
+  },
+
+  // Получение информации о налоговой задолженности по домам игрока
+  getHouseTaxInfo: async () => {
+    const { player } = usePlayerStore.getState();
+    if (!player) return [];
+
+    const { data: houses, error } = await supabase
+      .from('houses')
+      .select('*')
+      .eq('owner_id', player.id);
+
+    if (error || !houses) return [];
+
+    return houses.map(house => {
+      const hConfig = HOUSE_CLASSES[house.class] || HOUSE_CLASSES.economy;
+      const taxAmount = Math.round(hConfig.price * 0.01);
+      const taxPaidUntil = house.tax_paid_until ? new Date(house.tax_paid_until) : null;
+      const isPaid = taxPaidUntil && taxPaidUntil > new Date();
+      const daysLeft = isPaid ? Math.ceil((taxPaidUntil - new Date()) / (1000 * 60 * 60 * 24)) : 0;
+
+      return {
+        id: house.id_name,
+        name: house.name || house.id_name,
+        class: hConfig.name,
+        taxAmount,
+        isPaid,
+        daysLeft,
+        taxPaidUntil: isPaid ? taxPaidUntil.toLocaleDateString('ru-RU') : null
+      };
+    });
+  },
+
+  // Оплата налога (с банковского счета)
+  payTax: async (amountInput) => {
+    const { player, updateProfile } = usePlayerStore.getState();
+    const amount = get()._normalizeAmount(amountInput);
+    if (!player || amount === null) return false;
+
+    if (Number(player.bank_balance || 0) < amount) {
+      get().addNotification({
+        type: 'error',
+        message: 'На счёте недостаточно средств для оплаты налога.',
+      });
+      return false;
+    }
+
+    set({ isUpdatingLocally: true });
+    const newBalance = Number((Number(player.bank_balance || 0) - amount).toFixed(2));
+    const success = await updateProfile({
+      bank_balance: newBalance
+    });
+    setTimeout(() => set({ isUpdatingLocally: false }), 1000);
+    
+    if (success) {
+      set({ _lastBalance: newBalance });
+      await get()._addTransaction('tax_payment', amount, 'Оплата налога');
+      await get().loadTransactions();
+      get().addNotification({
+        type: 'success',
+        message: `Налог ${amount.toLocaleString()} ₽ успешно оплачен`,
+      });
+    }
+    return success;
+  },
+
+  // Оплата налога на дом (с банковского счета)
+  payHouseTax: async (houseId) => {
+    const { player, updateProfile } = usePlayerStore.getState();
+    if (!player) return false;
+
+    // Найти дом игрока
+    const { data: house, error: houseError } = await supabase
+      .from('houses')
+      .select('*')
+      .eq('id_name', houseId)
+      .eq('owner_id', player.id)
+      .single();
+
+    if (houseError || !house) {
+      get().addNotification({
+        type: 'error',
+        message: 'Дом не найден или принадлежит другому игроку.',
+      });
+      return false;
+    }
+
+    const hConfig = HOUSE_CLASSES[house.class] || HOUSE_CLASSES.economy;
+    const taxAmount = Math.round(hConfig.price * 0.01); // 1% от стоимости дома
+
+    if (Number(player.bank_balance || 0) < taxAmount) {
+      get().addNotification({
+        type: 'error',
+        message: `На счёте недостаточно средств. Нужно ${taxAmount.toLocaleString()} ₽ за налог на дом.`,
+      });
+      return false;
+    }
+
+    set({ isUpdatingLocally: true });
+    const newBalance = Number((Number(player.bank_balance || 0) - taxAmount).toFixed(2));
+
+    // Обновить баланс игрока
+    const success = await updateProfile({ bank_balance: newBalance });
+    if (!success) {
+      setTimeout(() => set({ isUpdatingLocally: false }), 1000);
+      return false;
+    }
+
+    // Обновить дату оплаты налога в доме
+    const { error: updateError } = await supabase
+      .from('houses')
+      .update({ tax_paid_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() }) // +30 дней
+      .eq('id_name', houseId);
+
+    setTimeout(() => set({ isUpdatingLocally: false }), 1000);
+
+    if (updateError) {
+      console.error('Failed to update house tax:', updateError);
+    }
+
+    set({ _lastBalance: newBalance });
+    await get()._addTransaction('tax_payment', taxAmount, `Налог на дом: ${house.name || house.id_name}`);
+    await get().loadTransactions();
+    await useHouseStore.getState().fetchDbHouses();
+    get().addNotification({
+      type: 'success',
+      message: `Налог на дом ${house.name || house.id_name} оплачен: ${taxAmount.toLocaleString()} ₽ (на 30 дней)`,
+    });
+    return true;
   }
 }));

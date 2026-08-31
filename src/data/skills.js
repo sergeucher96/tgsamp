@@ -8,6 +8,7 @@ export const SKILLS_DATABASE = [
   { id: 'bus', name: 'Водитель Автобуса', category: 'job', icon: '🚌' },
   { id: 'factory', name: 'Мастер на заводе', category: 'job', icon: '🏭' },
   { id: 'mechanic', name: 'Автомеханик', category: 'job', icon: '🔧' },
+  { id: 'garbage', name: 'Мусорщик', category: 'job', icon: '🗑️' },
 
   // ОРУЖИЕ
   { id: 'deagle', name: 'Desert Eagle', category: 'weapon', icon: '🔫' },

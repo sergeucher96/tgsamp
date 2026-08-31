@@ -3,14 +3,21 @@ import { useNavigationStore } from '../store/useNavigationStore';
 import { useVehicleStore } from '../store/useVehicleStore';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { VEHICLE_DATABASE, VEHICLE_COLORS } from '../data/vehicleConfig';
-import { ArrowLeft, Fuel, Wrench, Gauge, Power, Paintbrush } from 'lucide-react';
+import { ArrowLeft, Fuel, Wrench, Gauge, Power, Paintbrush, ParkingCircle } from 'lucide-react';
 
 export default function GarageView() {
-  const { currentGarage, setGarage } = useNavigationStore();
-  const { myVehicles, setActiveVehicle, isLoading, repairVehicle } = useVehicleStore();
+  const { currentGarage, setGarage, exitHouse, exitGarage } = useNavigationStore();
+  const { myVehicles, setActiveVehicle, isLoading, repairVehicle, parkVehicle } = useVehicleStore();
+  const activeVehicle = usePlayerStore(state => state.activeVehicle);
   const player = usePlayerStore(state => state.player);
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   const [paintingVehicle, setPaintingVehicle] = useState(null);
+
+  const handleDriveAway = async (vehicleId) => {
+    await useVehicleStore.getState().leaveGarage(vehicleId);
+    exitHouse();
+    exitGarage();
+  };
 
   const garageVehicles = (myVehicles || []).filter(v => v.house_id === currentGarage);
 
@@ -98,6 +105,17 @@ export default function GarageView() {
               <Wrench size={16} /> Починить
             </button>
           </div>
+          {activeVehicle && activeVehicle.id !== veh.id && (
+            <button 
+              onClick={() => {
+                parkVehicle(activeVehicle.id, currentGarage);
+                setSelectedVehicle(null);
+              }}
+              className="w-full mt-3 flex items-center justify-center gap-2 bg-blue-600/20 border border-blue-500/30 py-3 rounded-2xl font-black uppercase text-xs transition-all active:scale-95"
+            >
+              <ParkingCircle size={16} /> Запарковать "{VEHICLE_DATABASE[activeVehicle.model_id]?.name || activeVehicle.model_id}" сюда
+            </button>
+          )}
         </div>
 
         <div className="flex-1" />
@@ -106,14 +124,22 @@ export default function GarageView() {
         <div className="px-5 pb-6 pt-3">
           <button 
             disabled={isLoading} 
-            onClick={() => setActiveVehicle(veh.is_active ? null : veh.id)}
+            onClick={() => {
+              if (veh.is_active) handleDriveAway(veh.id);
+              else {
+                setActiveVehicle(veh.id);
+                // After setting active, open garage so user can choose to drive
+                exitHouse();
+                exitGarage();
+              }
+            }}
             className={`w-full py-4 rounded-2xl font-black uppercase text-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2 ${
               veh.is_active 
-                ? 'bg-red-600 shadow-lg shadow-red-900/40' 
+                ? 'bg-emerald-600 shadow-lg shadow-emerald-900/40' 
                 : 'bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-900/40'
             }`}
           >
-            <Power size={20} /> {veh.is_active ? 'Заглушить' : 'Выехать'}
+            <Power size={20} /> {veh.is_active ? 'Выехать' : 'Выставить'}
           </button>
         </div>
 

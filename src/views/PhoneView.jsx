@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, Banknote, MessageSquare, Inbox, Send } from 'lucide-react';
+import { X, Banknote, MessageSquare, Inbox, Send, Users } from 'lucide-react';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useSmsStore } from '../store/useSmsStore';
 import BankView from './BankView';
+import OrganizationsList, { OrganizationPanel } from './OrganizationView';
 
 export default function PhoneView({ onClose }) {
   const player = usePlayerStore(state => state.player);
@@ -10,6 +11,7 @@ export default function PhoneView({ onClose }) {
   const unread = getUnreadCount();
 
   const [showBank, setShowBank] = useState(false);
+  const [showOrg, setShowOrg] = useState(false);
   const [smsTab, setSmsTab] = useState(null);
   const [smsPhone, setSmsPhone] = useState('');
   const [smsMessage, setSmsMessage] = useState('');
@@ -23,6 +25,13 @@ export default function PhoneView({ onClose }) {
 
   if (showBank) {
     return <BankView onClose={() => setShowBank(false)} />;
+  }
+
+  if (showOrg) {
+    if (player?.organization_id) {
+      return <OrganizationPanel orgId={player.organization_id} onClose={() => setShowOrg(false)} />;
+    }
+    return <OrganizationsList onClose={() => setShowOrg(false)} />;
   }
 
   const handleSendSms = async () => {
@@ -47,6 +56,7 @@ export default function PhoneView({ onClose }) {
   const apps = [
     { icon: <Banknote size={24} />, label: 'Банк', color: 'from-teal-500 to-emerald-600', onClick: () => setShowBank(true) },
     { icon: <MessageSquare size={24} />, label: 'SMS', color: 'from-blue-500 to-indigo-600', badge: unread, onClick: () => setSmsTab('inbox') },
+    { icon: <Users size={24} />, label: 'Организации', color: 'from-purple-500 to-pink-600', onClick: () => setShowOrg(true) },
   ];
 
   return (

@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useEffect, flushSync, Fragment } 
 import { X, Plus, Minus, Link, Save, Trash2, MapPin, RotateCcw, Check, AlertCircle, Building2, MousePointer2 } from 'lucide-react';
 import { WAYPOINTS, ROAD_NETWORK } from '../data/roads';
 import { MAP_CONFIG } from '../data/mapConfig';
-import { getLinkedLocations } from '../data/locations';
+import { getLinkedLocations, saveEditorLocations, resetEditorLocations, getSavedEditorLocations, refreshFinalLocations } from '../data/locations';
 import { LOCATION_IMAGES } from '../data/locationStyles';
 import { HOUSE_PREVIEWS_MAP } from '../data/houseStyles';
 
@@ -10,7 +10,10 @@ export default function RoadEditor({ onClose }) {
   const [waypoints, setWaypoints] = useState({ ...WAYPOINTS });
   const [roads, setRoads] = useState([...ROAD_NETWORK]);
   const existingLocations = getLinkedLocations();
-  const [locations, setLocations] = useState([]);
+  const [locations, setLocations] = useState(() => {
+    const saved = getSavedEditorLocations();
+    return saved.map(l => ({ ...l, moved: true }));
+  });
   const [locationName, setLocationName] = useState('');
   const [locationType, setLocationType] = useState('house');
 
@@ -26,6 +29,12 @@ export default function RoadEditor({ onClose }) {
   });
   const locationImgRef = useRef(null);
   const [renderKey, setRenderKey] = useState(0);
+  const [mode, setMode] = useState('point');
+
+  // Location drag state
+  const [dragging, setDragging] = useState(false);
+  const [dragTarget, setDragTarget] = useState(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
 
   // Save hotspots to localStorage whenever they change
   useEffect(() => {
@@ -81,12 +90,50 @@ export default function RoadEditor({ onClose }) {
     mine: 'Шахта', pizzeria: 'Пиццерия', showroom: 'Автосалон', guns: 'Стрелковый',
     driving: 'Автошкола', export: 'Экспорт', strip: 'Стрип-клуб',
   };
-  const [mode, setMode] = useState('point');
   const [selectedPoint, setSelectedPoint] = useState(null);
   const [hoveredPoint, setHoveredPoint] = useState(null);
   const [previewLine, setPreviewLine] = useState(null);
   const [saved, setSaved] = useState(false);
   const [notification, setNotification] = useState(null);
+  
+  // Bus route builder state
+  const [routeName, setRouteName] = useState('');
+  const [routePayMin, setRoutePayMin] = useState(500);
+  const [routePayMax, setRoutePayMax] = useState(800);
+  const [routeExp, setRouteExp] = useState(10);
+  const [routeDescription, setRouteDescription] = useState('');
+  const [routeStops, setRouteStops] = useState([]);
+  const [savedRoutes, setSavedRoutes] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('roadEditorBusRoutes') || '[]'); }
+    catch { return []; }
+  });
+
+  // Save bus routes to localStorage
+  useEffect(() => {
+    localStorage.setItem('roadEditorBusRoutes', JSON.stringify(savedRoutes));
+  }, [savedRoutes]);
+  
+  // LSPD patrol route builder state
+  const [patrolName, setPatrolName] = useState('');
+  const [patrolDescription, setPatrolDescription] = useState('');
+  const [patrolStops, setPatrolStops] = useState([]);
+  const [savedPatrols, setSavedPatrols] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('roadEditorPatrolRoutes') || '[]'); }
+    catch { return []; }
+  });
+
+  // Save patrol routes to localStorage
+  useEffect(() => {
+    localStorage.setItem('roadEditorPatrolRoutes', JSON.stringify(savedPatrols));
+  }, [savedPatrols]);
+  
+  // Route tab: 'bus' | 'patrol' — organizations can be added later
+  const [routeTab, setRouteTab] = useState('bus');
+  
+  // Alias helpers — pick state from active tab
+  const activeStops = routeTab === 'bus' ? routeStops : patrolStops;
+  const setActiveStops = routeTab === 'bus' ? setRouteStops : setPatrolStops;
+  
   const [scale, setScale] = useState(0.15);
   const [offset, setOffset] = useState(() => {
     // Center the map in viewport initially
@@ -164,8 +211,20 @@ export default function RoadEditor({ onClose }) {
         setRoads(p => p.filter(r => r.from !== clickedPoint && r.to !== clickedPoint));
         notify(`Точка ${clickedPoint} удалена`);
       }
+    } else if (mode === 'busroute') {
+      if (clickedPoint) {
+        if (routeTab === 'bus') {
+          const newLen = routeStops.length + 1;
+          setRouteStops(prev => [...prev, clickedPoint]);
+          notify(`Остановка ${clickedPoint} добавлена (${newLen})`);
+        } else {
+          const newLen = patrolStops.length + 1;
+          setPatrolStops(prev => [...prev, clickedPoint]);
+          notify(`Точка патруля ${clickedPoint} добавлена (${newLen})`);
+        }
+      }
     }
-  }, [getMapCoords, scale, mode, selectedPoint, waypoints, roads, locations, locationName, locationType, findNearestPoint, notify, setWaypoints, setRoads, setLocations, setSelectedPoint]);
+  }, [getMapCoords, scale, mode, selectedPoint, waypoints, roads, locations, locationName, locationType, findNearestPoint, notify, setWaypoints, setRoads, setLocations, setSelectedPoint, routeStops, patrolStops, routeTab, setRouteStops, setPatrolStops]);
 
   const handleDoubleClick = (e) => {
     processDoubleClick(e);
@@ -244,6 +303,14 @@ export default function RoadEditor({ onClose }) {
     }, 300);
   };
   const handleMouseMove = (e) => {
+    if (dragging && dragTarget) {
+      const coords = getMapCoords(e);
+      if (!coords) return;
+      const newX = Math.round(coords.x - dragOffset.x);
+      const newY = Math.round(coords.y - dragOffset.y);
+      setLocations(prev => prev.map(l => l.id === dragTarget.id ? { ...l, x: newX, y: newY } : l));
+      return;
+    }
     // If panning or if there was significant movement (start panning early)
     if (isPanning) {
       setOffset({ x: e.clientX - panStart.x, y: e.clientY - panStart.y });
@@ -265,6 +332,12 @@ export default function RoadEditor({ onClose }) {
     if (mode === 'road' && selectedPoint) setPreviewLine({ from: waypoints[selectedPoint], to: nearest ? waypoints[nearest] : coords });
   };
   const handleMouseUp = () => {
+    if (dragging) {
+      setDragging(false);
+      setDragTarget(null);
+      notify('Координаты локации обновлены');
+      return;
+    }
     clearTimeout(panTimerRef.current);
     pendingPanStart.current = null;
     setIsPanning(false);
@@ -276,6 +349,40 @@ export default function RoadEditor({ onClose }) {
     setHoveredPoint(null);
     setPreviewLine(null);
   };
+
+  const handleLocationMouseDown = (e, loc, type, index) => {
+    if (mode !== 'move') return;
+    e.stopPropagation();
+    e.preventDefault();
+
+    const coords = getMapCoords(e);
+    if (!coords) return;
+
+    clearTimeout(panTimerRef.current);
+    pendingPanStart.current = null;
+    setIsPanning(false);
+
+    if (type === 'existing') {
+      const exists = locations.find(l => l.id === loc.id);
+      if (!exists) {
+        setLocations(prev => [...prev, {
+          id: loc.id,
+          name: loc.name,
+          type: loc.type,
+          x: loc.x,
+          y: loc.y,
+          nearestWaypoint: '—',
+          icon: loc.icon,
+          moved: true,
+        }]);
+      }
+    }
+
+    setDragging(true);
+    setDragTarget({ type, id: loc.id, index });
+    setDragOffset({ x: coords.x - loc.x, y: coords.y - loc.y });
+  };
+
   const handleWheel = (e) => {
     const factor = e.deltaY > 0 ? 0.9 : 1.1;
     const newScale = Math.max(0.05, Math.min(3, scale * factor));
@@ -315,18 +422,49 @@ export default function RoadEditor({ onClose }) {
     setScale(newScale);
   };
 
+  const copyToClipboard = (text) => {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(() => {
+        fallbackCopy(text);
+      });
+    } else {
+      fallbackCopy(text);
+    }
+  };
+
+  const fallbackCopy = (text) => {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand('copy');
+    } catch (err) {
+      console.error('Copy failed:', err);
+    }
+    document.body.removeChild(textarea);
+  };
+
   const exportChanges = () => {
     const wp = Object.entries(waypoints).filter(([id]) => !WAYPOINTS[id]).map(([id, pt]) => `  "${id}": { x: ${pt.x}, y: ${pt.y }},`).join('\n');
     const rd = roads.filter(r => !ROAD_NETWORK.some(o => o.from === r.from && o.to === r.to)).map(r => `{ from: "${r.from}", to: "${r.to}" },`).join('\n');
-    const locs = locations.map(l => `{ id: '${l.id}', x: ${l.x}, y: ${l.y}, name: '${l.name}', type: '${l.type}', nearestWaypoint: '${l.nearestWaypoint}' },`).join('\n');
+    const locs = locations.filter(l => !l.moved).map(l => `{ id: '${l.id}', x: ${l.x}, y: ${l.y}, name: '${l.name}', type: '${l.type}', nearestWaypoint: '${l.nearestWaypoint}' },`).join('\n');
+    const movedLocs = locations.filter(l => l.moved).map(l => `{ id: '${l.id}', x: ${l.x}, y: ${l.y}, name: '${l.name}', type: '${l.type}' },`).join('\n');
     const hs = hotspots.map(h => `{ id: '${h.locationId}', img: ${h.imageIndex}, x: ${h.x.toFixed(2)}, y: ${h.y.toFixed(2)}, w: ${h.w.toFixed(2)}, h: ${h.h.toFixed(2)}, action: '${h.action}', label: '${h.label}' }`).join(',\n      ');
+    const busRoutes = savedRoutes.length > 0 ? savedRoutes.map(r => `  {\n    id: '${r.id}',\n    name: '${r.name}',\n    stops: ${JSON.stringify(r.stops)},\n    pay: ${JSON.stringify(r.pay)},\n    exp: ${r.exp},\n    description: '${(r.description || '').replace(/'/g, "\\'")}',\n  }`).join(',\n') : '';
+    const patrolRoutes = savedPatrols.length > 0 ? savedPatrols.map(p => `  {\n    id: '${p.id}',\n    name: '${p.name}',\n    stops: ${JSON.stringify(p.stops)},\n    description: '${(p.description || '').replace(/'/g, "\\'")}',\n  }`).join(',\n') : '';
     let out = '';
     if (wp) out += `// Новые точки\n${wp}\n\n`;
     if (rd) out += `// Новые дороги\n${rd}\n\n`;
+    if (movedLocs) out += `// Перемещённые локации (новые координаты)\n${movedLocs}\n\n`;
     if (locs) out += `// Новые локации (ID, координаты, ближайшая точка)\n${locs}\n\n`;
-    if (hs) out += `// Hotspots для locationStyles.js (проценты от изображения)\n      ${hs}\n`;
+    if (hs) out += `// Hotspots для locationStyles.js (проценты от изображения)\n      ${hs}\n\n`;
+    if (busRoutes) out += `// Маршруты автобусов для useBusStore.js → BUS_ROUTES\n${busRoutes}\n`;
+    if (patrolRoutes) out += `\n// Патрульные маршруты LSPD для useLspdStore.js → PATROL_ROUTES\n${patrolRoutes}\n`;
     if (!out) out = 'Нет новых изменений.\n';
-    navigator.clipboard.writeText(out); setSaved(true); notify('Скопировано!'); setTimeout(() => setSaved(false), 3000);
+    copyToClipboard(out); setSaved(true); notify('Скопировано!'); setTimeout(() => setSaved(false), 3000);
   };
 
   const undoLast = () => {
@@ -335,7 +473,22 @@ export default function RoadEditor({ onClose }) {
     else if (roads.length > ROAD_NETWORK.length) { setRoads(p => p.slice(0, -1)); notify('Дорога отменена'); }
   };
 
-  const resetAll = () => { setWaypoints({ ...WAYPOINTS }); setRoads([...ROAD_NETWORK]); setSelectedPoint(null); notify('Сброшено'); };
+  const resetAll = () => { setWaypoints({ ...WAYPOINTS }); setRoads([...ROAD_NETWORK]); setSelectedPoint(null); setDragging(false); setDragTarget(null); notify('Сброшено'); };
+
+  const handleSaveLocations = () => {
+    saveEditorLocations(locations);
+    refreshFinalLocations();
+    window.dispatchEvent(new Event('roadEditorLocationsUpdated'));
+    notify('Изменения сохранены и применены в игре!');
+  };
+
+  const handleResetSavedLocations = () => {
+    resetEditorLocations();
+    setLocations([]);
+    refreshFinalLocations();
+    window.dispatchEvent(new Event('roadEditorLocationsUpdated'));
+    notify('Сохранённые изменения сброшены');
+  };
 
   const newPts = Object.keys(waypoints).filter(id => !WAYPOINTS[id]).length;
   const newRds = roads.length - ROAD_NETWORK.length;
@@ -364,11 +517,17 @@ export default function RoadEditor({ onClose }) {
             <div className="flex-1" />
             <button onClick={undoLast} className="flex items-center gap-1 px-3 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-black uppercase"><RotateCcw size={12} /> Отмена</button>
             <button onClick={resetAll} className="flex items-center gap-1 px-3 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-black uppercase"><AlertCircle size={12} /> Сброс</button>
+            <button onClick={handleResetSavedLocations} className="flex items-center gap-1 px-3 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 rounded-xl text-[10px] font-black uppercase text-red-400"><Trash2 size={12} /> Сбросить сохранённые</button>
           </div>
           <div className="flex gap-2 flex-wrap">
             <ModeButton active={mode === 'location'} onClick={() => { setMode('location'); setSelectedPoint(null); }} icon={<Building2 size={14} />} label="Локация" color="bg-purple-600" />
+            <ModeButton active={mode === 'move'} onClick={() => { setMode('move'); setSelectedPoint(null); }} icon={<MousePointer2 size={14} />} label="Перемещение" color="bg-pink-600" />
             <ModeButton active={mode === 'zone'} onClick={() => { setMode('zone'); setDrawingZone(false); }} icon={<MousePointer2 size={14} />} label="Зона" color="bg-orange-600" />
+            <ModeButton active={mode === 'busroute'} onClick={() => { setMode('busroute'); setSelectedPoint(null); setPreviewLine(null); }} icon={<span className="text-sm">🗺️</span>} label="Маршрут" color="bg-yellow-600" />
             <div className="flex-1" />
+            <button onClick={handleSaveLocations} className="flex items-center gap-1 px-3 py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 rounded-xl text-[10px] font-black uppercase text-blue-400">
+              <Save size={12} /> Сохранить
+            </button>
             <button onClick={exportChanges} className="flex items-center gap-1 px-3 py-2 bg-[#7eff67]/20 hover:bg-[#7eff67]/30 border border-[#7eff67]/30 rounded-xl text-[10px] font-black uppercase text-[#7eff67]">
               {saved ? <Check size={12} /> : <Save size={12} />} {saved ? 'Готово!' : 'Экспорт'}
             </button>
@@ -379,8 +538,32 @@ export default function RoadEditor({ onClose }) {
           {mode === 'road' && (selectedPoint ? `🔗 Выбрана ${selectedPoint}. Двойной клик по второй` : '🔗 Двойной клик по первой, затем по второй')}
           {mode === 'delete' && '🗑️ Двойной клик по точке — удалить'}
           {mode === 'location' && `📍 Двойной клик — добавить локацию (${locations.length} добавлено)`}
+          {mode === 'move' && '✋ Перетащите маркер локации на новое место'}
           {mode === 'zone' && (drawingZone ? '✅ Кликните ещё раз для завершения зоны' : '🖱️ Нажмите и потяните для рисования зоны входа')}
+          {mode === 'busroute' && `🗺️ Двойной клик по waypoint — добавить точку маршрута (${activeStops.length} точек)`}
         </div>
+        {mode === 'move' && (() => {
+          const moved = locations.filter(l => l.moved);
+          if (moved.length === 0) return null;
+          return (
+            <div className="mt-2 p-2 bg-pink-900/20 border border-pink-500/30 rounded-xl">
+              <div className="text-[9px] text-pink-400 font-black uppercase mb-1">Перемещённые локации ({moved.length})</div>
+              <div className="space-y-1 max-h-32 overflow-y-auto">
+                {moved.map(l => (
+                  <div key={l.id} className="flex items-center justify-between px-2 py-1 bg-white/5 rounded-lg">
+                    <span className="text-[9px] text-pink-200">{l.icon || '📌'} {l.name}: ({l.x}, {l.y})</span>
+                    <button onClick={() => { setLocations(prev => prev.filter(x => x.id !== l.id)); notify('Удалено из списка'); }} className="text-[9px] text-red-400 hover:text-red-300">×</button>
+                  </div>
+                ))}
+              </div>
+              <button onClick={() => {
+                const txt = moved.map(l => `{ id: '${l.id}', x: ${l.x}, y: ${l.y}, name: '${l.name}', type: '${l.type}' },`).join('\n');
+                copyToClipboard(txt);
+                notify('Координаты скопированы!');
+              }} className="mt-2 w-full px-3 py-2 bg-pink-600/20 hover:bg-pink-600/30 border border-pink-500/30 rounded-xl text-[10px] font-black uppercase text-pink-400">📋 Скопировать координаты</button>
+            </div>
+          );
+        })()}
         {mode === 'zone' && (
           <div className="mt-2 flex flex-col gap-1">
             <div className="flex gap-2">
@@ -420,6 +603,150 @@ export default function RoadEditor({ onClose }) {
               <option value="warehouse">📦 Склад</option>
               <option value="other">📌 Другое</option>
             </select>
+          </div>
+        )}
+        {mode === 'busroute' && (
+          <div className="mt-2 flex flex-col gap-2">
+            {/* Route organization tabs */}
+            <div className="flex gap-2">
+              <button onClick={() => setRouteTab('bus')} className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${routeTab === 'bus' ? 'bg-yellow-600 text-white' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}>🚌 Автобус</button>
+              <button onClick={() => setRouteTab('patrol')} className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${routeTab === 'patrol' ? 'bg-blue-600 text-white' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}>� LSPD</button>
+            </div>
+            
+            {/* === BUS ROUTE TAB === */}
+            {routeTab === 'bus' && (
+            <>
+            <div className="flex gap-2 flex-wrap">
+              <input value={routeName} onChange={e => setRouteName(e.target.value)} placeholder="Название маршрута" className="flex-1 min-w-[120px] px-2 py-1 bg-white/5 border border-white/20 rounded-lg text-[10px] text-white placeholder-slate-500" />
+              <input type="number" value={routePayMin} onChange={e => setRoutePayMin(Number(e.target.value))} className="w-20 px-2 py-1 bg-white/5 border border-white/20 rounded-lg text-[10px] text-white" title="Мин. оплата" />
+              <input type="number" value={routePayMax} onChange={e => setRoutePayMax(Number(e.target.value))} className="w-20 px-2 py-1 bg-white/5 border border-white/20 rounded-lg text-[10px] text-white" title="Макс. оплата" />
+              <input type="number" value={routeExp} onChange={e => setRouteExp(Number(e.target.value))} className="w-16 px-2 py-1 bg-white/5 border border-white/20 rounded-lg text-[10px] text-white" title="XP" />
+            </div>
+            <input value={routeDescription} onChange={e => setRouteDescription(e.target.value)} placeholder="Описание маршрута" className="px-2 py-1 bg-white/5 border border-white/20 rounded-lg text-[10px] text-white placeholder-slate-500" />
+            
+            <div className="flex flex-wrap gap-1 items-center">
+              <span className="text-[9px] text-yellow-400">Остановки:</span>
+              {routeStops.map((stop, idx) => (
+                <span key={idx} className="inline-flex items-center gap-1 px-2 py-0.5 bg-yellow-500/20 border border-yellow-500/30 rounded-lg text-[9px] text-yellow-200">
+                  {idx + 1}. {stop}
+                  <button onClick={() => setRouteStops(prev => prev.filter((_, i) => i !== idx))} className="text-yellow-400 hover:text-red-400">×</button>
+                </span>
+              ))}
+              {routeStops.length > 0 && (
+                <button onClick={() => { setRouteStops([]); setRouteName(''); setRouteDescription(''); }} className="px-2 py-0.5 bg-red-500/20 border border-red-500/30 rounded-lg text-[9px] text-red-400">Очистить</button>
+              )}
+            </div>
+            
+            {routeStops.length >= 2 && routeName && (
+              <div className="flex gap-2">
+                <button onClick={() => {
+                  const route = {
+                    id: `route_custom_${Date.now()}`,
+                    name: routeName,
+                    stops: [...routeStops],
+                    pay: [routePayMin, routePayMax],
+                    exp: routeExp,
+                    description: routeDescription || 'Пользовательский маршрут',
+                  };
+                  setSavedRoutes(prev => [...prev, route]);
+                  setRouteStops([]); setRouteName(''); setRouteDescription(''); setRoutePayMin(500); setRoutePayMax(800); setRouteExp(10);
+                  notify(`Маршрут "${routeName}" сохранён!`);
+                }} className="flex-1 px-3 py-2 bg-yellow-600 hover:bg-yellow-500 rounded-xl text-[10px] font-black uppercase">💾 Сохранить маршрут</button>
+              </div>
+            )}
+            
+            {savedRoutes.length > 0 && (
+              <div className="space-y-1 max-h-24 overflow-y-auto">
+                <span className="text-[9px] text-slate-500">Сохранённые маршруты:</span>
+                {savedRoutes.map((r, i) => (
+                  <div key={i} className="flex items-center justify-between px-2 py-1 bg-white/5 rounded-lg">
+                    <span className="text-[9px] text-yellow-200">🚌 {r.name} ({r.stops.length} остановок)</span>
+                    <button onClick={() => setSavedRoutes(prev => prev.filter((_, idx) => idx !== i))} className="text-[9px] text-red-400">×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            {savedRoutes.length > 0 && (
+              <button onClick={() => {
+                const exportText = savedRoutes.map(r => `  {
+    id: '${r.id}',
+    name: '${r.name}',
+    stops: ${JSON.stringify(r.stops)},
+    pay: ${JSON.stringify(r.pay)},
+    exp: ${r.exp},
+    description: '${(r.description || '').replace(/'/g, "\\'")}',
+  }`).join(',\n') + '\n';
+                copyToClipboard(exportText);
+                notify('Маршруты скопированы! Добавьте в useBusStore.js → BUS_ROUTES');
+              }} className="w-full px-3 py-2 bg-[#7eff67]/20 hover:bg-[#7eff67]/30 border border-[#7eff67]/30 rounded-xl text-[10px] font-black uppercase text-[#7eff67]">📋 Экспорт маршрутов</button>
+            )}
+            </>
+            )}
+            
+            {/* === PATROL ROUTE TAB === */}
+            {routeTab === 'patrol' && (
+            <>
+            <div className="flex gap-2 flex-wrap">
+              <input value={patrolName} onChange={e => setPatrolName(e.target.value)} placeholder="Название патрульного маршрута" className="flex-1 min-w-[120px] px-2 py-1 bg-white/5 border border-white/20 rounded-lg text-[10px] text-white placeholder-slate-500" />
+            </div>
+            <input value={patrolDescription} onChange={e => setPatrolDescription(e.target.value)} placeholder="Описание патрульного маршрута" className="px-2 py-1 bg-white/5 border border-white/20 rounded-lg text-[10px] text-white placeholder-slate-500" />
+            
+            <div className="flex flex-wrap gap-1 items-center">
+              <span className="text-[9px] text-blue-400">Точки патруля:</span>
+              {patrolStops.map((stop, idx) => (
+                <span key={idx} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-500/20 border border-blue-500/30 rounded-lg text-[9px] text-blue-200">
+                  {idx + 1}. {stop}
+                  <button onClick={() => setPatrolStops(prev => prev.filter((_, i) => i !== idx))} className="text-blue-400 hover:text-red-400">×</button>
+                </span>
+              ))}
+              {patrolStops.length > 0 && (
+                <button onClick={() => { setPatrolStops([]); setPatrolName(''); setPatrolDescription(''); }} className="px-2 py-0.5 bg-red-500/20 border border-red-500/30 rounded-lg text-[9px] text-red-400">Очистить</button>
+              )}
+            </div>
+            
+            {patrolStops.length >= 2 && patrolName && (
+              <div className="flex gap-2">
+                <button onClick={() => {
+                  const patrol = {
+                    id: `patrol_${Date.now()}`,
+                    name: patrolName,
+                    stops: [...patrolStops],
+                    description: patrolDescription || 'Патрульный маршрут',
+                  };
+                  setSavedPatrols(prev => [...prev, patrol]);
+                  setPatrolStops([]); setPatrolName(''); setPatrolDescription('');
+                  notify(`Патрульный маршрут "${patrolName}" сохранён!`);
+                }} className="flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded-xl text-[10px] font-black uppercase">💾 Сохранить патрульный маршрут</button>
+              </div>
+            )}
+            
+            {savedPatrols.length > 0 && (
+              <div className="space-y-1 max-h-24 overflow-y-auto">
+                <span className="text-[9px] text-slate-500">Сохранённые патрульные маршруты:</span>
+                {savedPatrols.map((p, i) => (
+                  <div key={i} className="flex items-center justify-between px-2 py-1 bg-white/5 rounded-lg">
+                    <span className="text-[9px] text-blue-200">🚔 {p.name} ({p.stops.length} точек)</span>
+                    <button onClick={() => setSavedPatrols(prev => prev.filter((_, idx) => idx !== i))} className="text-[9px] text-red-400">×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            {savedPatrols.length > 0 && (
+              <button onClick={() => {
+                const exportText = savedPatrols.map(p => `  {
+    id: '${p.id}',
+    name: '${p.name}',
+    stops: ${JSON.stringify(p.stops)},
+    description: '${(p.description || '').replace(/'/g, "\\'")}',
+  }`).join(',\n') + '\n';
+                copyToClipboard(exportText);
+                notify('Патрульные маршруты скопированы! Добавьте в useLspdStore.js → PATROL_ROUTES');
+              }} className="w-full px-3 py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 rounded-xl text-[10px] font-black uppercase text-blue-400">📋 Экспорт патрульных маршрутов</button>
+            )}
+            </>
+            )}
           </div>
         )}
       </div>
@@ -480,6 +807,46 @@ export default function RoadEditor({ onClose }) {
               {ROAD_NETWORK.map((r, i) => { const f = waypoints[r.from], t = waypoints[r.to]; if (!f || !t) return null; return <line key={`r${i}`} x1={f.x} y1={f.y} x2={t.x} y2={t.y} stroke="#3b82f6" strokeWidth="3" opacity="0.5" />; })}
               {roads.map((r, i) => { if (ROAD_NETWORK.some(o => o.from === r.from && o.to === r.to)) return null; const f = waypoints[r.from], t = waypoints[r.to]; if (!f || !t) return null; return <line key={`nr${i}`} x1={f.x} y1={f.y} x2={t.x} y2={t.y} stroke="#7eff67" strokeWidth="4" opacity="0.8" strokeDasharray="8 4" />; })}
               {previewLine && <line x1={previewLine.from.x} y1={previewLine.from.y} x2={previewLine.to.x} y2={previewLine.to.y} stroke="#fbbf24" strokeWidth="3" opacity="0.7" strokeDasharray="6 3" />}
+              {/* Bus route preview */}
+              {mode === 'busroute' && routeTab === 'bus' && routeStops.length > 1 && (() => {
+                const pts = routeStops.map(id => waypoints[id]).filter(Boolean);
+                return pts.slice(1).map((pt, idx) => {
+                  const prev = pts[idx];
+                  return <line key={`br${idx}`} x1={prev.x} y1={prev.y} x2={pt.x} y2={pt.y} stroke="#eab308" strokeWidth="6" opacity="0.6" strokeDasharray="12 6" />;
+                });
+              })()}
+              {/* Patrol route preview */}
+              {mode === 'busroute' && routeTab === 'patrol' && patrolStops.length > 1 && (() => {
+                const pts = patrolStops.map(id => waypoints[id]).filter(Boolean);
+                return pts.slice(1).map((pt, idx) => {
+                  const prev = pts[idx];
+                  return <line key={`pr${idx}`} x1={prev.x} y1={prev.y} x2={pt.x} y2={pt.y} stroke="#3b82f6" strokeWidth="6" opacity="0.6" strokeDasharray="12 6" />;
+                });
+              })()}
+              {/* Route stop markers */}
+              {mode === 'busroute' && routeTab === 'bus' && routeStops.map((stopId, idx) => {
+                const pt = waypoints[stopId];
+                if (!pt) return null;
+                return (
+                  <g key={`bs${idx}`}>
+                    <circle cx={pt.x} cy={pt.y} r="12" fill="#eab308" fillOpacity="0.3" />
+                    <circle cx={pt.x} cy={pt.y} r="8" fill="#ca8a04" />
+                    <text x={pt.x} y={pt.y + 3} textAnchor="middle" fill="white" fontSize="10" fontWeight="bold">{idx + 1}</text>
+                  </g>
+                );
+              })}
+              {/* Patrol stop markers */}
+              {mode === 'busroute' && routeTab === 'patrol' && patrolStops.map((stopId, idx) => {
+                const pt = waypoints[stopId];
+                if (!pt) return null;
+                return (
+                  <g key={`ps${idx}`}>
+                    <circle cx={pt.x} cy={pt.y} r="12" fill="#3b82f6" fillOpacity="0.3" />
+                    <circle cx={pt.x} cy={pt.y} r="8" fill="#2563eb" />
+                    <text x={pt.x} y={pt.y + 3} textAnchor="middle" fill="white" fontSize="10" fontWeight="bold">{idx + 1}</text>
+                  </g>
+                );
+              })}
             </svg>
             {Object.entries(waypoints).map(([id, pt]) => (
               <div key={id} className="absolute" style={{ left: `${pt.x}px`, top: `${pt.y}px`, transform: 'translate(-50%, -50%)' }}>
@@ -492,9 +859,15 @@ export default function RoadEditor({ onClose }) {
             {locations.map((loc, i) => {
               const icon = typeIcons[loc.type] || '📌';
               const name = typeNames[loc.type] || loc.type;
+              const isDragging = dragging && dragTarget && dragTarget.id === loc.id;
               return (
                 <div key={`loc-${i}`} className="absolute" style={{ left: `${loc.x}px`, top: `${loc.y}px`, transform: 'translate(-50%, -50%)' }}>
-                  <div className="w-5 h-5 bg-purple-500/80 border-2 border-purple-300 rounded-lg flex items-center justify-center text-[10px]">{icon}</div>
+                  <div
+                    onMouseDown={(e) => handleLocationMouseDown(e, loc, 'new', i)}
+                    className={`w-5 h-5 bg-purple-500/80 border-2 rounded-lg flex items-center justify-center text-[10px] transition-all ${isDragging ? 'border-white scale-125 shadow-lg shadow-purple-500/50' : 'border-purple-300'} ${mode === 'move' ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                  >
+                    {icon}
+                  </div>
                   <div className="absolute top-5 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-purple-900/90 border border-purple-400/50 rounded-lg text-[8px] font-black text-purple-200 whitespace-nowrap">{loc.name} ({name})</div>
                 </div>
               );
@@ -502,9 +875,15 @@ export default function RoadEditor({ onClose }) {
             {existingLocations.map(loc => {
               const icon = loc.icon || (typeIcons[loc.type] || '📌');
               const name = loc.name || (typeNames[loc.type] || loc.type);
+              const isDragging = dragging && dragTarget && dragTarget.id === loc.id;
               return (
                 <div key={`existing-${loc.id}`} className="absolute opacity-60" style={{ left: `${loc.x}px`, top: `${loc.y}px`, transform: 'translate(-50%, -50%)' }}>
-                  <div className="w-5 h-5 bg-white/10 border border-white/30 rounded-lg flex items-center justify-center text-[10px]">{icon}</div>
+                  <div
+                    onMouseDown={(e) => handleLocationMouseDown(e, loc, 'existing')}
+                    className={`w-5 h-5 bg-white/10 border rounded-lg flex items-center justify-center text-[10px] transition-all ${isDragging ? 'border-white scale-125 shadow-lg shadow-white/30' : 'border-white/30'} ${mode === 'move' ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                  >
+                    {icon}
+                  </div>
                   <div className="absolute top-5 left-1/2 -translate-x-1/2 px-1.5 py-0.5 bg-slate-900/80 border border-white/20 rounded text-[7px] font-black text-slate-400 whitespace-nowrap">{name}</div>
                 </div>
               );
@@ -528,6 +907,8 @@ export default function RoadEditor({ onClose }) {
           <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-[#7eff67] border border-green-300" /><span>Новая точка</span></div>
           <div className="flex items-center gap-2"><div className="w-2 h-3 bg-blue-500/50" /><span>Старая дорога</span></div>
           <div className="flex items-center gap-2"><div className="w-2 h-3 bg-[#7eff67]/80" /><span>Новая дорога</span></div>
+          {mode === 'busroute' && routeTab === 'bus' && <div className="flex items-center gap-2"><div className="w-4 h-0.5 bg-yellow-600" /><span>🚌 Автобусный маршрут</span></div>}
+          {mode === 'busroute' && routeTab === 'patrol' && <div className="flex items-center gap-2"><div className="w-4 h-0.5 bg-blue-500" /><span>🚔 Патрульный маршрут</span></div>}
         </div>
       </div>
     </div>
