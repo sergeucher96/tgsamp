@@ -1,5 +1,6 @@
 import React from 'react';
 import { ITEM_DATABASE } from '../data/items';
+import { isImageIcon } from '../utils/iconHelper';
 
 export default function InventoryGrid({ items = [], slotsCount = 12, onAction, label }) {
   
@@ -22,9 +23,11 @@ export default function InventoryGrid({ items = [], slotsCount = 12, onAction, l
         >
           {item ? (
             <>
-              <span className="text-3xl drop-shadow-md">
-                {ITEM_DATABASE[item.item_id]?.icon || '❓'}
-              </span>
+              {isImageIcon(ITEM_DATABASE[item.item_id]?.icon) ? (
+                <img src={ITEM_DATABASE[item.item_id].icon} className="w-8 h-8 object-contain drop-shadow-md" onError={(e) => { e.target.style.display = 'none'; }} />
+              ) : (
+                <span className="text-3xl drop-shadow-md">{ITEM_DATABASE[item.item_id]?.icon || '❓'}</span>
+              )}
               {item.amount > 1 && (
                 <span className="absolute bottom-1.5 right-1.5 bg-blue-600 text-[10px] font-black px-1.5 py-0.5 rounded-lg border border-white/20 shadow-md">
                   {item.amount}

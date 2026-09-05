@@ -3,9 +3,11 @@ export const ORGANIZATIONS = [
   { id: 'city_hall', name: 'Мэрия', type: 'government', icon: '🏛️', color: 'bg-amber-600', location_id: 'meriya' },
   { id: 'hospital', name: 'Больница', type: 'medical', icon: '🏥', color: 'bg-red-600', location_id: 'hospital_1' },
   { id: 'farm_org', name: 'Фермерский кооператив', type: 'agriculture', icon: '🌾', color: 'bg-green-600', location_id: 'farm' },
-  { id: 'tgd', name: 'TGD', type: 'gang', icon: '👤', color: 'bg-purple-700', location_id: 'bar_1' },
-  { id: 'mafia', name: 'Мафия "Коза Ностра"', type: 'mafia', icon: '🕴️', color: 'bg-red-900', location_id: 'mafia_hideout' },
+  { id: 'tgd', name: 'TGD', type: 'gang', icon: '👤', color: 'bg-purple-700', location_id: 'bar_1', criminal: true },
+  { id: 'mafia', name: 'Мафия "Коза Ностра"', type: 'mafia', icon: '🕴️', color: 'bg-red-900', location_id: 'mafia_hideout', criminal: true },
 ];
+
+export const CRIMINAL_ORGANIZATIONS = ORGANIZATIONS.filter(o => o.criminal);
 
 export const ORG_TYPES = {
   police: { name: 'Полиция', icon: '🚔', color: 'bg-blue-700' },

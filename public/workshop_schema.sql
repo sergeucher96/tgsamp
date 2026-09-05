@@ -1,13 +1,15 @@
--- Фабрика: склад металла и деталей
+-- Фабрика: склад металла, деталей и нефти
 create table if not exists workshop (
   id bigint primary key default 1,
   metal_count int not null default 0,
   part_count int not null default 0,
+  oil_count int not null default 0,
+  microchip_count int not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
-insert into workshop (id, metal_count, part_count) values (1, 0, 0)
+insert into workshop (id, metal_count, part_count, oil_count, microchip_count) values (1, 0, 0, 0, 0)
 on conflict (id) do nothing;
 
 alter table workshop enable row level security;

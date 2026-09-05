@@ -3,6 +3,7 @@ import { supabase } from '../api/supabase';
 import { usePlayerStore } from './usePlayerStore';
 import { useInventoryStore } from './useInventoryStore';
 import { CLOTHING_DATABASE } from '../data/clothingConfig';
+import { CHARACTER_STATS_MAP } from '../data/characterStats';
 
 export const useEquipmentStore = create((set, get) => ({
   equipment: {
@@ -126,10 +127,12 @@ export const useEquipmentStore = create((set, get) => ({
     }
   },
 
-  // Рассчитать бонусы от экипировки
+  // Рассчитать бонусы от экипировки и баффов
   getStats: () => {
     const { equipment } = get();
-    const stats = { charisma: 0, armor: 0, stamina: 0, speed: 0, inv_slots: 0 };
+    const { activeBuffs } = usePlayerStore.getState();
+    const stats = {};
+    Object.keys(CHARACTER_STATS_MAP).forEach(key => stats[key] = 0);
 
     Object.values(equipment).forEach(item_id => {
       if (!item_id) return;
@@ -138,6 +141,15 @@ export const useEquipmentStore = create((set, get) => ({
       Object.entries(item.stats).forEach(([key, val]) => {
         if (stats[key] !== undefined) stats[key] += val;
       });
+    });
+
+    const now = Date.now();
+    const active = (activeBuffs || []).filter(b => b.expiresAt > now);
+    active.forEach(buff => {
+      const key = buff.type?.replace('buff_', '');
+      if (key && stats[key] !== undefined) {
+        stats[key] += Number(buff.amount) || 0;
+      }
     });
 
     return stats;

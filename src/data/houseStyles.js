@@ -129,6 +129,55 @@ export const getHouseStyle = (house, player) => {
   };
 };
 
+export const getHouseStateKey = (house, player) => {
+  if (!house.owner_id) return 'free';
+  if (house.owner_id === player?.id) return 'player';
+  return 'occupied';
+};
+
+export const getHouseIconKey = (house, player) => {
+  const cls = house.class || 'economy';
+  const state = getHouseStateKey(house, player);
+  return `${cls}-${state}`;
+};
+
+const HOUSE_ICONS_KEY = 'house_icons';
+
+export const loadHouseIcons = () => {
+  try {
+    const raw = localStorage.getItem(HOUSE_ICONS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+};
+
+export const saveHouseIcon = (key, icon) => {
+  const icons = loadHouseIcons();
+  if (icon) {
+    icons[key] = icon;
+  } else {
+    delete icons[key];
+  }
+  localStorage.setItem(HOUSE_ICONS_KEY, JSON.stringify(icons));
+};
+
+export const resetHouseIcon = (key) => {
+  const icons = loadHouseIcons();
+  delete icons[key];
+  localStorage.setItem(HOUSE_ICONS_KEY, JSON.stringify(icons));
+};
+
+export const resetAllHouseIcons = () => {
+  localStorage.removeItem(HOUSE_ICONS_KEY);
+};
+
+export const getHouseIcon = (house, player) => {
+  const key = getHouseIconKey(house, player);
+  const icons = loadHouseIcons();
+  return icons[key] || null;
+};
+
 // 2. Функция получения картинки для меню (Маппинг)
 export const getHousePreview = (house) => {
   const category = HOUSE_PREVIEWS[house.class] || HOUSE_PREVIEWS.economy;

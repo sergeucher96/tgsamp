@@ -8,12 +8,18 @@ import { useWeaponStore } from './store/useWeaponStore';
 import { useQuestStore } from './store/useQuestStore';
 import { useSmsStore } from './store/useSmsStore';
 import { useLspdStore } from './store/useLspdStore';
+import { useTerritoryStore } from './store/useTerritoryStore';
+import { useWarStore } from './store/useWarStore';
+import { useItemCategoryStore } from './store/useItemCategoryStore';
 import { useTelegram } from './hooks/useTelegram';
 
 // Dev tools (only in development — won't be bundled in production build)
 const IS_DEV = import.meta.env.DEV;
 const HotspotTool = IS_DEV ? lazy(() => import('./components/HotspotTool')) : null;
 const RoadEditor = IS_DEV ? lazy(() => import('./views/RoadEditor')) : null;
+const BusinessProductsEditor = IS_DEV ? lazy(() => import('./views/BusinessProductsEditor')) : null;
+const CategoryEditor = IS_DEV ? lazy(() => import('./views/CategoryEditor')) : null;
+const LocationIconEditor = IS_DEV ? lazy(() => import('./views/LocationIconEditor')) : null;
 
 // Views
 import MapView from './views/MapView';
@@ -25,24 +31,37 @@ import GarageView from './views/GarageView';
 import QuestView from './views/QuestView';
 import PhoneView from './views/PhoneView';
 import CharacterView from './views/CharacterView';
+import TerritoriesView from './views/TerritoriesView';
+import WarsView from './views/WarsView';
 
 // Components
 import BankNotifications from './components/BankNotifications';
 import VehicleInfoMenu from './components/VehicleInfoMenu';
+import MyPropertyMenu from './components/MyPropertyMenu';
+import MyVehiclesMenu from './components/MyVehiclesMenu';
 
 import { Loader2 } from 'lucide-react';
 
 function App() {
   const { player, loading, login, needsRegistration, skills, licenses, activeVehicle } = usePlayerStore();
   const { activeTab, setActiveTab, currentInterior, currentGarage, showPhone, closePhone } = useNavigationStore();
-  const { fetchDbHouses } = useHouseStore();
-  const { fetchVehicles } = useVehicleStore();
+  const { fetchDbHouses, dbHouses } = useHouseStore();
+  const { fetchVehicles, myVehicles } = useVehicleStore();
   const { isTelegram } = useTelegram();
+  const { startDecay, stopDecay, startStabilization, stopStabilization } = useTerritoryStore();
+  const { completeExpiredWars, fetchWars } = useWarStore();
   const [showQuests, setShowQuests] = useState(false);
   const [showCharacter, setShowCharacter] = useState(false);
   const [showDevTools, setShowDevTools] = useState(false);
   const [showRoadEditor, setShowRoadEditor] = useState(false);
+  const [showBusinessProducts, setShowBusinessProducts] = useState(false);
+  const [showCategoryEditor, setShowCategoryEditor] = useState(false);
+  const [showLocationIconEditor, setShowLocationIconEditor] = useState(false);
   const [showVehicleInfo, setShowVehicleInfo] = useState(false);
+  const [showMyProperty, setShowMyProperty] = useState(false);
+  const [showMyVehicles, setShowMyVehicles] = useState(false);
+  const [showTerritories, setShowTerritories] = useState(false);
+  const [showWars, setShowWars] = useState(false);
 
   // Dev keyboard shortcut: Ctrl+Shift+H
   useEffect(() => {
@@ -57,6 +76,27 @@ function App() {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
+  useEffect(() => {
+    const unsubLspd = usePlayerStore.subscribe(state => state.player, (p) => {
+      if (p?.id) useLspdStore.getState().loadLspdStatus(p.id);
+    });
+    startDecay();
+    startStabilization();
+    return () => {
+      unsubLspd();
+      stopDecay();
+      stopStabilization();
+    };
+  }, [startDecay, stopDecay, startStabilization, stopStabilization]);
+
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      await completeExpiredWars();
+      await fetchWars();
+    }, 60 * 1000);
+    return () => clearInterval(interval);
+  }, [completeExpiredWars, fetchWars]);
+
   useEffect(() => { 
     login().then(() => {
         fetchDbHouses();
@@ -67,14 +107,9 @@ function App() {
         useQuestStore.getState().loadProgress();
         useQuestStore.getState().startQuestTimer();
         useSmsStore.getState().startRealtimeSubscription();
+        useItemCategoryStore.getState().loadAll();
     });
-    
-    // Load LSPD status when player loads
-    const unsubLspd = usePlayerStore.subscribe(state => state.player, (p) => {
-      if (p?.id) useLspdStore.getState().loadLspdStatus(p.id);
-    });
-    return () => unsubLspd();
-  }, []);
+  }, [login, fetchDbHouses, fetchVehicles]);
 
   // Handle Telegram back button
   useEffect(() => {
@@ -122,6 +157,10 @@ function App() {
       {showPhone && <PhoneView onClose={closePhone} />}
       {showCharacter && <CharacterView onClose={() => setShowCharacter(false)} />}
       {showVehicleInfo && activeVehicle && <VehicleInfoMenu vehicle={activeVehicle} onClose={() => setShowVehicleInfo(false)} />}
+      {showMyProperty && <MyPropertyMenu onClose={() => setShowMyProperty(false)} />}
+      {showMyVehicles && <MyVehiclesMenu onClose={() => setShowMyVehicles(false)} />}
+      {showTerritories && <TerritoriesView onClose={() => setShowTerritories(false)} />}
+      {showWars && <WarsView onClose={() => setShowWars(false)} />}
       
       {/* Dev Tools (development only) */}
       {IS_DEV && HotspotTool && showDevTools && (
@@ -132,6 +171,21 @@ function App() {
       {IS_DEV && RoadEditor && showRoadEditor && (
         <Suspense fallback={null}>
           <RoadEditor onClose={() => setShowRoadEditor(false)} />
+        </Suspense>
+      )}
+      {IS_DEV && BusinessProductsEditor && showBusinessProducts && (
+        <Suspense fallback={null}>
+          <BusinessProductsEditor onClose={() => setShowBusinessProducts(false)} />
+        </Suspense>
+      )}
+      {IS_DEV && CategoryEditor && showCategoryEditor && (
+        <Suspense fallback={null}>
+          <CategoryEditor onClose={() => setShowCategoryEditor(false)} />
+        </Suspense>
+      )}
+      {IS_DEV && LocationIconEditor && showLocationIconEditor && (
+        <Suspense fallback={null}>
+          <LocationIconEditor onClose={() => setShowLocationIconEditor(false)} />
         </Suspense>
       )}
       
@@ -184,8 +238,55 @@ function App() {
               >
                 🚙
               </button>
+              {(() => {
+                const ownedCount = (dbHouses || []).filter(h => h.owner_id === player?.id).length;
+                return (
+                  <button
+                    onClick={() => ownedCount > 0 && setShowMyProperty(true)}
+                    disabled={ownedCount === 0}
+                    className={`w-14 h-14 rounded-2xl flex items-center justify-center text-xl transition-all duration-300 gta-button ${
+                      ownedCount > 0
+                        ? 'border border-[#7eff63]/40 text-[#e8ffc4] shadow-[0_0_20px_rgba(130,255,100,0.22)] active:scale-105'
+                        : 'border border-white/10 text-[#8ebc88] opacity-40 cursor-not-allowed'
+                    }`}
+                  >
+                    🏠
+                  </button>
+                );
+              })()}
+              {(() => {
+                const vehicleCount = (myVehicles || []).length;
+                return (
+                  <button
+                    onClick={() => vehicleCount > 0 && setShowMyVehicles(true)}
+                    disabled={vehicleCount === 0}
+                    className={`w-14 h-14 rounded-2xl flex items-center justify-center text-xl transition-all duration-300 gta-button ${
+                      vehicleCount > 0
+                        ? 'border border-[#7eff63]/40 text-[#e8ffc4] shadow-[0_0_20px_rgba(130,255,100,0.22)] active:scale-105'
+                        : 'border border-white/10 text-[#8ebc88] opacity-40 cursor-not-allowed'
+                    }`}
+                  >
+                    🚗
+                  </button>
+                );
+              })(              )}
+              <button
+                onClick={() => setShowTerritories(true)}
+                className={`w-14 h-14 rounded-2xl flex items-center justify-center text-xl transition-all duration-300 gta-button border border-[#7eff63]/40 text-[#e8ffc4] shadow-[0_0_20px_rgba(130,255,100,0.22)] active:scale-105`}
+              >
+                🏙️
+              </button>
+              <button
+                onClick={() => setShowWars(true)}
+                className={`w-14 h-14 rounded-2xl flex items-center justify-center text-xl transition-all duration-300 gta-button border border-[#7eff63]/40 text-[#e8ffc4] shadow-[0_0_20px_rgba(130,255,100,0.22)] active:scale-95`}
+              >
+                ⚔️
+              </button>
               {IS_DEV && <NavButton active={showDevTools} onClick={() => setShowDevTools(true)} icon="🛠️" />}
               {IS_DEV && <NavButton active={showRoadEditor} onClick={() => setShowRoadEditor(true)} icon="🛣️" />}
+              {IS_DEV && <NavButton active={showBusinessProducts} onClick={() => setShowBusinessProducts(true)} icon="📦" />}
+              {IS_DEV && <NavButton active={showCategoryEditor} onClick={() => setShowCategoryEditor(true)} icon="📚" />}
+              {IS_DEV && <NavButton active={showLocationIconEditor} onClick={() => setShowLocationIconEditor(true)} icon="📍" />}
           </footer>
         </>
       )}

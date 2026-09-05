@@ -210,6 +210,7 @@ function GarbageBody({ job, shift, busy, onCollect, onReturn, onCancel, onGo, on
   const canCollect = shift.status === 'at_bin' && !busy && !shift.collecting;
   const canSelect = shift.status === 'selecting' && !busy;
   const canReturn = shift.status === 'selecting' && !busy;
+  const canUnload = shift.status === 'at_base' && shift.capacity > 0 && !busy;
 
   return (
     <div className="space-y-4">
@@ -267,8 +268,15 @@ function GarbageBody({ job, shift, busy, onCollect, onReturn, onCancel, onGo, on
         </button>
       )}
 
-      {shift.status === 'driving_to_base' && (
-        <div className="w-full py-6 rounded-[32px] bg-slate-800/60 text-center text-lg font-black uppercase italic animate-pulse">Возвращение на базу...</div>
+      {shift.status === 'at_base' && (
+        <button onClick={() => {
+          const state = useJobStore.getState();
+          if (state.isProcessing) return;
+          state.performUnload();
+        }} disabled={!canUnload}
+          className="w-full py-6 rounded-[32px] text-lg font-black uppercase italic bg-lime-500 active:scale-95">
+          <Trash2 size={20} /> Разгрузить мусор ({capacity}/{maxCapacity} кг)
+        </button>
       )}
 
       <button onClick={onCancel} disabled={busy} className="w-full py-3 rounded-3xl border border-white/10 text-xs font-black uppercase text-slate-400 active:scale-95">

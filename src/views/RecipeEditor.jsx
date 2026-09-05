@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Save, Trash2, Plus, Minus, Search, X, Copy } from 'lucide-react';
-import { ITEM_DATABASE } from '../data/items';
 import { RECIPES as DEFAULT_RECIPES } from '../data/kitchenConfig';
+import { useItemCategoryStore } from '../store/useItemCategoryStore';
+import { CHARACTER_STATS, BUFF_STAT_KEYS } from '../data/characterStats';
 
 const loadCustomItems = () => {
   try { const s = localStorage.getItem('recipe_editor_custom_items'); return s ? JSON.parse(s) : {}; }
@@ -14,19 +15,44 @@ const loadCustomRecipes = () => {
 };
 const saveCustomRecipes = (r) => localStorage.setItem('recipe_editor_custom_recipes', JSON.stringify(r));
 
-const ALL_ITEMS_DB = { ...ITEM_DATABASE, ...loadCustomItems() };
-const ALL_ITEMS = Object.entries(ALL_ITEMS_DB).map(([id, d]) => ({ id, name: d.name, icon: d.icon, type: d.type || 'other' }));
-
 const TYPE_LABELS = { ingredient: '🥘 Ингредиенты', resource: '⛏️ Ресурсы', food: '🍽️ Блюда', tool: '🔧 Инструменты', other: '📦 Прочее' };
 const GROUP_ORDER = ['ingredient', 'resource', 'food', 'tool', 'other'];
-const ACTION_OPTIONS = [{ value: '', label: 'Нет' }, { value: 'HEAL_ENERGY', label: '💚 Восстановить энергию' }];
-const EMOJI_LIST = ['🍔','🌮','�','🍛','🥗','🍝','🥘','�','�','🥪','🥙','🫔','🍣','�','🥫','🍙','🍚','🍘','�','�','🍡','🍧','🍨','🍦','�','🍰','🎂','🍮','🍭','🍬','🍫','🍯','☕','🍵','🥤'];
+const ACTION_OPTIONS = [
+  { value: '', label: 'Нет' },
+  { value: 'HEAL_ENERGY', label: '💚 Восстановить энергию' },
+  ...BUFF_STAT_KEYS.map(key => {
+    const stat = CHARACTER_STATS.find(s => s.key === key);
+    return { value: `buff_${key}`, label: `${stat?.icon || ''} Бафф: ${stat?.name || key}` };
+  })
+];
+const EMOJI_LIST = ['🍔','🌮','🍕','🍛','🥗','🍝','🥘','🍗','🍖','🥪','🥙','🫔','🍣','🍤','🥫','🍙','🍚','🍘','🥟','🍠','🍡','🍧','🍨','🍦','🥧','🍰','🎂','🍮','🍭','🍬','🍫','🍯','☕','🍵','🥤'];
 
 const groupItems = (items) => {
   const g = {}; items.forEach(i => { const t = i.type || 'other'; if (!g[t]) g[t] = []; g[t].push(i); }); return g;
 };
 
+const mapStoreItem = (item) => {
+  const id = item.item_key || String(item.id);
+  const props = typeof item.properties === 'object' ? item.properties : {};
+  const effects = Array.isArray(item.effects) ? item.effects : [];
+  const action = effects[0]?.effect_key || props.action || '';
+  const value = effects[0]?.value || props.value || 0;
+  return {
+    id,
+    name: item.name || id,
+    desc: item.description || '',
+    icon: item.icon || '📦',
+    type: props.type || 'other',
+    stackable: item.stackable !== false,
+    maxStack: item.max_stack || 5,
+    sellPrice: item.sell_price || 0,
+    action,
+    value: Number(value) || 0,
+  };
+};
+
 export default function RecipeEditor({ onClose }) {
+  const { items: storeItems, categories, properties, effects, actions, tags, loadAll, createItem, updateItem } = useItemCategoryStore();
   const [customRecipes, setCustomRecipes] = useState(() => loadCustomRecipes().map(r => ({ ...r, source: 'custom' })));
   const [defaultRecipes] = useState(() => {
     const ids = new Set(loadCustomRecipes().map(r => r.id));
@@ -39,7 +65,6 @@ export default function RecipeEditor({ onClose }) {
   const [recipeName, setRecipeName] = useState('');
   const [ingredients, setIngredients] = useState([]);
 
-  // New item fields
   const [itemId, setItemId] = useState('');
   const [itemName, setItemName] = useState('');
   const [itemIcon, setItemIcon] = useState('🍔');
@@ -51,22 +76,60 @@ export default function RecipeEditor({ onClose }) {
   const [itemSellPrice, setItemSellPrice] = useState(0);
   const [resultAmount, setResultAmount] = useState(1);
 
+  const [buffType, setBuffType] = useState('');
+  const [buffDuration, setBuffDuration] = useState(60);
+  const [buffAmount, setBuffAmount] = useState(10);
+
+  const [selectedCategoryId, setSelectedCategoryId] = useState(null);
+  const [itemProperties, setItemProperties] = useState({});
+  const [itemEffects, setItemEffects] = useState([]);
+
   const [showPicker, setShowPicker] = useState(false);
   const [search, setSearch] = useState('');
   const [msg, setMsg] = useState('');
   const [expanded, setExpanded] = useState({ ingredient: true });
   const [showEmoji, setShowEmoji] = useState(false);
 
+  const customItems = loadCustomItems();
+  const storeMapped = (storeItems || []).map(mapStoreItem);
+  const ALL_ITEMS_DB = { ...storeMapped.reduce((acc, item) => ({ ...acc, [item.id]: item }), {}), ...customItems };
+  const ALL_ITEMS = Object.values(ALL_ITEMS_DB);
+
   const filtered = ALL_ITEMS.filter(i => i.name.toLowerCase().includes(search.toLowerCase()) || i.id.toLowerCase().includes(search.toLowerCase()));
   const grouped = groupItems(filtered);
 
   const say = (m) => { setMsg(m); setTimeout(() => setMsg(''), 2500); };
 
+  useEffect(() => {
+    loadAll();
+  }, [loadAll]);
+
+  const preparedFoodCategory = categories.find(c => c.key === 'prepared_food') || categories.find(c => c.key === 'food');
+
+  useEffect(() => {
+    if (preparedFoodCategory && !selectedCategoryId) {
+      setSelectedCategoryId(preparedFoodCategory.id);
+    }
+  }, [preparedFoodCategory, selectedCategoryId]);
+
+  const categoryProperties = selectedCategoryId ? properties.filter(p => {
+    const link = (window.__categoryProperties || []).find(cp => cp.category_id === selectedCategoryId && cp.property_id === p.id);
+    return !!link;
+  }) : [];
+
+  const categoryEffects = selectedCategoryId ? effects.filter(e => {
+    const link = (window.__categoryEffectsAllowed || []).find(ce => ce.category_id === selectedCategoryId && ce.effect_id === e.id);
+    return !!link;
+  }) : [];
+
   const startNew = () => {
-    const items = loadCustomItems();
     setEditIdx(null); setRecipeName(''); setIngredients([]);
-    setItemId(`recipe_item_${Date.now()}`); setItemName(''); setItemIcon('�'); setItemDesc('');
+    setItemId(`recipe_item_${Date.now()}`); setItemName(''); setItemIcon('🍔'); setItemDesc('');
     setItemAction(''); setItemValue(0); setItemStackable(true); setItemMaxStack(5); setItemSellPrice(0); setResultAmount(1);
+    setBuffType(''); setBuffDuration(60); setBuffAmount(10);
+    setSelectedCategoryId(preparedFoodCategory?.id || null);
+    setItemProperties({});
+    setItemEffects([]);
     setShowPicker(false); setShowEditor(true); setShowEmoji(false);
   };
 
@@ -78,9 +141,18 @@ export default function RecipeEditor({ onClose }) {
     Object.entries(counts).forEach(([id, a]) => { const it = ALL_ITEMS.find(i => i.id === id); if (it) ings.push({ itemId: id, amount: a }); });
     setIngredients(ings);
     const ci = loadCustomItems()[r.resultItem];
-    setItemId(r.resultItem); setItemName(ci?.name || ''); setItemIcon(ci?.icon || '�'); setItemDesc(ci?.desc || '');
+    setItemId(r.resultItem); setItemName(ci?.name || ''); setItemIcon(ci?.icon || '🍔'); setItemDesc(ci?.desc || '');
     setItemAction(ci?.action || ''); setItemValue(ci?.value || 0); setItemStackable(ci?.stackable !== false); setItemMaxStack(ci?.maxStack || 5); setItemSellPrice(ci?.sellPrice || 0);
     setResultAmount(r.resultAmount || 1); setShowPicker(false); setShowEditor(true); setShowEmoji(false);
+    
+    const buffEffect = ci?.effects?.find(e => e.effect_key?.startsWith('buff_'));
+    if (buffEffect) {
+      setBuffType(buffEffect.effect_key || '');
+      setBuffAmount(Number(buffEffect.value) || 10);
+      setBuffDuration(Number(buffEffect.duration_minutes) || 60);
+    } else {
+      setBuffType(''); setBuffDuration(60); setBuffAmount(10);
+    }
   };
 
   const cancel = () => { setShowEditor(false); setEditIdx(null); setRecipeName(''); setIngredients([]); setShowEmoji(false); };
@@ -92,28 +164,62 @@ export default function RecipeEditor({ onClose }) {
     setShowPicker(false); setSearch('');
   };
 
-  const save = () => {
+  const save = async () => {
     if (!recipeName.trim()) { say('⚠️ Название рецепта'); return; }
-    if (!itemName.trim()) { say('�️ Название блюда'); return; }
+    if (!itemName.trim()) { say('⚠️ Название блюда'); return; }
     if (ingredients.length === 0) { say('⚠️ Добавьте ингредиенты'); return; }
 
     const flat = []; ingredients.forEach(i => { for (let n = 0; n < i.amount; n++) flat.push(i.itemId); });
-    const newItem = { id: itemId, name: itemName.trim(), desc: itemDesc.trim(), icon: itemIcon, type: 'food',
-      action: itemAction, value: parseInt(itemValue) || 0, stackable: itemStackable, maxStack: parseInt(itemMaxStack) || 5, sellPrice: parseInt(itemSellPrice) || 0 };
-    const ci = loadCustomItems(); ci[itemId] = newItem; saveCustomItems(ci);
+
+    const effectsList = Object.entries(itemEffects).map(([effectId, value]) => ({ effect_key: effectId, value: Number(value) || 0 }));
+    if (itemAction && effectsList.length === 0) {
+      if (itemAction.startsWith('buff_')) {
+        effectsList.push({ effect_key: itemAction, value: Number(buffAmount) || 0, duration_minutes: Number(buffDuration) || 60 });
+      } else {
+        effectsList.push({ effect_key: itemAction, value: itemValue || 0 });
+      }
+    }
+
+    const newItem = {
+      item_key: itemId,
+      name: itemName.trim(),
+      description: itemDesc.trim(),
+      icon: itemIcon,
+      category_id: selectedCategoryId,
+      properties: itemProperties,
+      effects: effectsList,
+      tags: ['food', 'prepared_food', 'consumable'],
+      stackable: itemStackable,
+      max_stack: itemMaxStack,
+      sell_price: itemSellPrice,
+    };
+
+    let savedItem = null;
+    const existing = (storeItems || []).find(i => i.item_key === itemId);
+    if (existing) {
+      savedItem = await updateItem(existing.id, newItem);
+    } else {
+      savedItem = await createItem(newItem);
+    }
+
+    if (!savedItem) {
+      say('❌ Не удалось сохранить блюдо в БД');
+      return;
+    }
+
     const recipe = { id: editIdx !== null ? customRecipes[editIdx].id : `recipe_${Date.now()}`,
       name: recipeName.trim(), icon: itemIcon, ingredients: flat, resultItem: itemId, resultAmount: parseInt(resultAmount) || 1, source: 'custom' };
     const cr = loadCustomRecipes();
     if (editIdx !== null) cr[editIdx] = recipe; else cr.unshift(recipe);
     saveCustomRecipes(cr);
     setCustomRecipes([...loadCustomRecipes()].map(r => ({ ...r, source: 'custom' })));
-    say('✅ Рецепт И блюдо сохранены!'); cancel();
+    await loadAll();
+    say('✅ Рецепт и блюдо сохранены!'); cancel();
   };
 
   const del = (id) => {
     if (!window.confirm('Удалить?')) return;
     const cr = loadCustomRecipes().filter(r => r.id !== id); saveCustomRecipes(cr);
-    // Also remove custom item if no other recipe uses it
     setCustomRecipes(cr.map(r => ({ ...r, source: 'custom' })));
     if (editIdx !== null && customRecipes[editIdx]?.id === id) cancel();
     say('🗑️ Удалён');
@@ -162,7 +268,7 @@ export default function RecipeEditor({ onClose }) {
       <div className="flex-1 overflow-y-auto no-scrollbar pt-20 px-6 pb-6">
         {showEditor ? (
           <div className="max-w-lg mx-auto space-y-4 pt-4">
-            <h3 className="text-base font-black uppercase italic text-purple-400">{editIdx !== null ? '✏️ Редактировать' : '� Новый рецепт + блюдо'}</h3>
+            <h3 className="text-base font-black uppercase italic text-purple-400">{editIdx !== null ? '✏️ Редактировать' : '🍳 Новый рецепт + блюдо'}</h3>
 
             <div><label className="text-[10px] font-black uppercase text-slate-400 mb-1.5 block">Название рецепта</label>
               <input type="text" value={recipeName} onChange={e => setRecipeName(e.target.value)} placeholder="Например: Сочный бургер..."
@@ -202,6 +308,44 @@ export default function RecipeEditor({ onClose }) {
                 <input type="text" value={itemDesc} onChange={e => setItemDesc(e.target.value)} placeholder="Вкусное блюдо..."
                   className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 text-sm text-white font-black uppercase focus:outline-none focus:border-purple-500/50" /></div>
 
+              <div>
+                <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Категория</label>
+                <select value={selectedCategoryId || ''} onChange={e => setSelectedCategoryId(Number(e.target.value))} className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 text-xs text-white font-black uppercase focus:outline-none">
+                  <option value="">— Выберите категорию —</option>
+                  {categories.map(c => (
+                    <option key={c.id} value={c.id}>{c.icon} {c.name} ({c.key})</option>
+                  ))}
+                </select>
+              </div>
+
+              {categoryProperties.length > 0 && (
+                <div>
+                  <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Свойства</label>
+                  <div className="space-y-1">
+                    {categoryProperties.map(prop => (
+                      <div key={prop.id} className="flex items-center gap-2">
+                        <span className="text-[10px] text-slate-400 w-24 truncate">{prop.name || prop.key}</span>
+                        <input type="text" value={itemProperties[prop.key] || ''} onChange={e => setItemProperties(prev => ({ ...prev, [prop.key]: e.target.value }))} placeholder="Значение" className="flex-1 bg-black/50 border border-white/10 rounded-lg px-2 py-1 text-xs" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {categoryEffects.length > 0 && (
+                <div>
+                  <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Эффекты</label>
+                  <div className="space-y-1">
+                    {categoryEffects.map(eff => (
+                      <div key={eff.id} className="flex items-center gap-2">
+                        <span className="text-[10px] text-slate-400 w-24 truncate">{eff.name || eff.key}</span>
+                        <input type="number" value={itemEffects[eff.key] || 0} onChange={e => setItemEffects(prev => ({ ...prev, [eff.key]: e.target.value }))} placeholder="Значение" className="flex-1 bg-black/50 border border-white/10 rounded-lg px-2 py-1 text-xs" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-2">
                 <div><label className="text-[10px] font-black uppercase text-slate-400">Действие</label>
                   <select value={itemAction} onChange={e => setItemAction(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 text-xs text-white font-black uppercase focus:outline-none">
@@ -210,6 +354,17 @@ export default function RecipeEditor({ onClose }) {
                   <input type="number" value={itemValue} onChange={e => setItemValue(parseInt(e.target.value) || 0)} min="0"
                     className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 text-sm text-white font-black uppercase focus:outline-none" />
                   {itemAction === 'HEAL_ENERGY' && <p className="text-[8px] text-slate-500 mt-1">% энергии</p>}</div></div>
+
+              {itemAction?.startsWith('buff_') && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div><label className="text-[10px] font-black uppercase text-slate-400">Длительность (мин)</label>
+                    <input type="number" value={buffDuration} onChange={e => setBuffDuration(parseInt(e.target.value) || 60)} min="1"
+                      className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 text-sm text-white font-black uppercase focus:outline-none" /></div>
+                  <div><label className="text-[10px] font-black uppercase text-slate-400">Сила баффа</label>
+                    <input type="number" value={buffAmount} onChange={e => setBuffAmount(parseInt(e.target.value) || 0)} min="0"
+                      className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 text-sm text-white font-black uppercase focus:outline-none" /></div>
+                </div>
+              )}
 
               <div className="grid grid-cols-3 gap-2">
                 <div><label className="text-[10px] font-black uppercase text-slate-400">Стакаемый</label>
@@ -233,7 +388,7 @@ export default function RecipeEditor({ onClose }) {
           <div className="max-w-lg mx-auto space-y-4 pt-4">
             <button onClick={startNew} className="w-full bg-purple-600/20 border border-purple-500/30 py-3 px-4 rounded-2xl text-xs font-black uppercase flex items-center justify-center gap-2 active:scale-95"><Plus size={14} /> Новый рецепт</button>
             <div className="space-y-2">{recipes.map(recipe => {
-              const ci = loadCustomItems(); const rd = ci[recipe.resultItem] || ITEM_DATABASE[recipe.resultItem];
+              const ci = loadCustomItems(); const rd = ci[recipe.resultItem] || ALL_ITEMS_DB[recipe.resultItem];
               return <div key={recipe.id} className={`bg-white/[0.03] border rounded-2xl p-3.5 ${recipe.source === 'default' ? 'border-blue-500/20' : 'border-purple-500/20'}`}>
                 <div className="flex items-center justify-between mb-1.5">
                   <div className="flex items-center gap-2.5"><span className="text-2xl">{rd?.icon || '🍽️'}</span>
@@ -249,7 +404,8 @@ export default function RecipeEditor({ onClose }) {
                 </div>
                 <div className="flex flex-wrap gap-1">{recipe.ingredients?.map((id, i) => { const it = ALL_ITEMS_DB[id]; return it ? <span key={i} className="inline-flex items-center gap-1 bg-white/5 px-1.5 py-0.5 rounded text-[9px] text-slate-300">{it.icon} {it.name}</span> : null; })}</div>
               </div>;
-            })}</div>
+            })}
+          </div>
           </div>
         )}
       </div>

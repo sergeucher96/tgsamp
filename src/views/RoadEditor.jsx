@@ -2,18 +2,28 @@ import React, { useState, useRef, useCallback, useEffect, flushSync, Fragment } 
 import { X, Plus, Minus, Link, Save, Trash2, MapPin, RotateCcw, Check, AlertCircle, Building2, MousePointer2 } from 'lucide-react';
 import { WAYPOINTS, ROAD_NETWORK } from '../data/roads';
 import { MAP_CONFIG } from '../data/mapConfig';
-import { getLinkedLocations, saveEditorLocations, resetEditorLocations, getSavedEditorLocations, refreshFinalLocations } from '../data/locations';
+import { getLinkedLocations, saveEditorLocations, resetEditorLocations, getSavedEditorLocations, refreshFinalLocations, resetLocationToDefault, DEFAULT_LOCATIONS } from '../data/locations';
 import { LOCATION_IMAGES } from '../data/locationStyles';
 import { HOUSE_PREVIEWS_MAP } from '../data/houseStyles';
+import { isImageIcon } from '../utils/iconHelper';
 
 export default function RoadEditor({ onClose }) {
   const [waypoints, setWaypoints] = useState({ ...WAYPOINTS });
   const [roads, setRoads] = useState([...ROAD_NETWORK]);
-  const existingLocations = getLinkedLocations();
   const [locations, setLocations] = useState(() => {
     const saved = getSavedEditorLocations();
-    return saved.map(l => ({ ...l, moved: true }));
+    // Only include locations whose stored coords differ from current LOCATIONS
+    // (already-applied coords should not appear in the editor)
+    const linked = getLinkedLocations();
+    return saved
+      .filter(l => {
+        const current = linked.find(c => c.id === l.id);
+        if (!current) return true; // new location, always show
+        return current.x !== l.x || current.y !== l.y;
+      })
+      .map(l => ({ ...l, moved: true }));
   });
+  const existingLocations = React.useMemo(() => getLinkedLocations().filter(l => !locations.some(moved => moved.id === l.id)), [locations]);
   const [locationName, setLocationName] = useState('');
   const [locationType, setLocationType] = useState('house');
 
@@ -477,6 +487,7 @@ export default function RoadEditor({ onClose }) {
 
   const handleSaveLocations = () => {
     saveEditorLocations(locations);
+    setLocations([]);
     refreshFinalLocations();
     window.dispatchEvent(new Event('roadEditorLocationsUpdated'));
     notify('Изменения сохранены и применены в игре!');
@@ -552,7 +563,23 @@ export default function RoadEditor({ onClose }) {
                 {moved.map(l => (
                   <div key={l.id} className="flex items-center justify-between px-2 py-1 bg-white/5 rounded-lg">
                     <span className="text-[9px] text-pink-200">{l.icon || '📌'} {l.name}: ({l.x}, {l.y})</span>
-                    <button onClick={() => { setLocations(prev => prev.filter(x => x.id !== l.id)); notify('Удалено из списка'); }} className="text-[9px] text-red-400 hover:text-red-300">×</button>
+                    <button onClick={() => {
+                      const isDefault = DEFAULT_LOCATIONS.some(d => d.id === l.id);
+                      if (isDefault) {
+                        resetLocationToDefault(l.id);
+                      } else {
+                        const saved = getSavedEditorLocations().filter(s => s.id !== l.id);
+                        if (saved.length) {
+                          localStorage.setItem('road_editor_locations', JSON.stringify(saved));
+                        } else {
+                          localStorage.removeItem('road_editor_locations');
+                        }
+                      }
+                      setLocations(prev => prev.filter(x => x.id !== l.id));
+                      refreshFinalLocations();
+                      window.dispatchEvent(new Event('roadEditorLocationsUpdated'));
+                      notify('Координаты сброшены к исходным');
+                    }} className="text-[9px] text-red-400 hover:text-red-300">×</button>
                   </div>
                 ))}
               </div>
@@ -880,9 +907,13 @@ export default function RoadEditor({ onClose }) {
                 <div key={`existing-${loc.id}`} className="absolute opacity-60" style={{ left: `${loc.x}px`, top: `${loc.y}px`, transform: 'translate(-50%, -50%)' }}>
                   <div
                     onMouseDown={(e) => handleLocationMouseDown(e, loc, 'existing')}
-                    className={`w-5 h-5 bg-white/10 border rounded-lg flex items-center justify-center text-[10px] transition-all ${isDragging ? 'border-white scale-125 shadow-lg shadow-white/30' : 'border-white/30'} ${mode === 'move' ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                    className={`w-5 h-5 border rounded-lg flex items-center justify-center text-[10px] transition-all ${isImageIcon(icon) ? 'bg-transparent border-white/20' : `bg-white/10 border ${isDragging ? 'border-white scale-125 shadow-lg shadow-white/30' : 'border-white/30'}`} ${mode === 'move' ? 'cursor-grab active:cursor-grabbing' : ''}`}
                   >
-                    {icon}
+                    {isImageIcon(icon) ? (
+                      <img src={icon} className="w-4 h-4 object-contain" />
+                    ) : (
+                      <span>{icon}</span>
+                    )}
                   </div>
                   <div className="absolute top-5 left-1/2 -translate-x-1/2 px-1.5 py-0.5 bg-slate-900/80 border border-white/20 rounded text-[7px] font-black text-slate-400 whitespace-nowrap">{name}</div>
                 </div>

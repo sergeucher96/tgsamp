@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { usePlayerStore } from './usePlayerStore';
 import { useVehicleStore } from './useVehicleStore';
 import { WAYPOINTS } from '../data/roads';
-import { FINAL_LOCATIONS } from '../data/locations';
+import { getMergedLocations, refreshFinalLocations } from '../data/locations';
 import { findShortestPath } from '../utils/pathfinder';
 import { VEHICLE_DATABASE, HEALTH_WEAR_RATE } from '../data/vehicleConfig';
 
@@ -17,8 +17,10 @@ export const useTravelStore = create((set, get) => ({
   routeToken: 0,
 
   startRoute: async (targetLocId) => {
+    refreshFinalLocations();
     const { player, activeVehicle } = usePlayerStore.getState();
-    let location = FINAL_LOCATIONS.find(l => l.id === targetLocId);
+    const locations = getMergedLocations();
+    let location = locations.find(l => l.id === targetLocId);
 
     if (!location && WAYPOINTS[targetLocId]) {
       const wp = WAYPOINTS[targetLocId];

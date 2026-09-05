@@ -3,6 +3,7 @@ import { ArrowLeft, Flame, RotateCcw, Trash2, Settings2 } from 'lucide-react';
 import { ITEM_DATABASE as DEFAULT_ITEMS } from '../data/items';
 import { useInventoryStore } from '../store/useInventoryStore';
 import RecipeEditor from './RecipeEditor';
+import { isImageIcon } from '../utils/iconHelper';
 
 const loadCustomItems = () => {
   try { const s = localStorage.getItem('recipe_editor_custom_items'); return s ? JSON.parse(s) : {}; }
@@ -363,7 +364,11 @@ export default function KitchenView({ onClose, houseId }) {
                       disabled={!itemData}
                       className="bg-white/[0.03] rounded-xl p-2 flex flex-col items-center gap-1 active:scale-95 disabled:opacity-30"
                     >
-                      <span className="text-2xl">{itemData?.icon || '❓'}</span>
+                      {isImageIcon(itemData?.icon) ? (
+                        <img src={itemData.icon} className="w-8 h-8 object-contain" onError={(e) => { e.target.style.display = 'none'; }} />
+                      ) : (
+                        <span className="text-2xl">{itemData?.icon || '❓'}</span>
+                      )}
                       <p className="text-[9px] font-black uppercase text-center leading-tight">{itemData?.name || item.item_id}</p>
                       <p className="text-[8px] text-slate-400">×{item.amount}</p>
                     </button>
@@ -393,7 +398,11 @@ export default function KitchenView({ onClose, houseId }) {
                       disabled={!itemData}
                       className="bg-white/[0.03] rounded-xl p-2 flex flex-col items-center gap-1 active:scale-95 disabled:opacity-30"
                     >
-                      <span className="text-2xl">{itemData?.icon || '❓'}</span>
+                      {isImageIcon(itemData?.icon) ? (
+                        <img src={itemData.icon} className="w-8 h-8 object-contain" onError={(e) => { e.target.style.display = 'none'; }} />
+                      ) : (
+                        <span className="text-2xl">{itemData?.icon || '❓'}</span>
+                      )}
                       <p className="text-[9px] font-black uppercase text-center leading-tight">{itemData?.name || item.item_id}</p>
                       <p className="text-[8px] text-slate-400">×{item.amount}</p>
                     </button>

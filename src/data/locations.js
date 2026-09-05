@@ -1,4 +1,4 @@
-export const LOCATIONS = [
+const DEFAULT_LOCATIONS = [
   // ==========================================
   // 1. ГОРОДСКИЕ ОБЪЕКТЫ
   // ==========================================
@@ -38,6 +38,7 @@ export const LOCATIONS = [
   { id: 'truck_depot', x: 5158, y: 5602, name: 'Грузовой терминал', desc: 'Работа дальнобойщиком: дальние рейсы с грузом.', icon: '🚛', color: 'bg-cyan-700', type: 'job' },
   { id: 'factory', x: 4902, y: 5304, name: 'Завод "SA Industrial"', desc: 'Работа мастером на заводе: сменные наряды у станка.', icon: '🏭', color: 'bg-orange-700', type: 'job' },
   { id: 'sto_1', x: 5602, y: 4952, name: 'СТО "Wrench"', desc: 'Работа автомехаником: заказ-наряды по ремонту машин.', icon: '🔧', color: 'bg-sky-700', type: 'job' },
+  { id: 'box_club', x: 5480, y: 4700, name: 'Боксерский клуб', desc: 'Выходите на ринг, сражайтесь с NPC и оттачивайте навык бокса.', icon: '🥊', color: 'bg-red-600', type: 'activity' },
 
   // ==========================================
   // 2. ЖИЛОЙ ФОНД (Дома)
@@ -330,6 +331,11 @@ export const LOCATIONS = [
   { id: 'factory_1', x: 4700, y: 4500, name: 'Завод "Metal Works"', icon: '🏭', type: 'factory', color: 'bg-stone-600' },
 
   // ==========================================
+  // 13. ПРОМЫШЛЕННОСТЬ (НЕФТЯНАЯ ВЫШКА)
+  // ==========================================
+  { id: 'oil_rig_1', x: 4550, y: 4350, name: 'Нефтяная вышка', icon: '🛢️', type: 'oil_rig', color: 'bg-blue-800' },
+
+  // ==========================================
   // 13. ПРОМЫШЛЕННОСТЬ (ФАБРИКА)
   // ==========================================
   { id: 'workshop_1', x: 4600, y: 4400, name: 'Фабрика "Parts & Assembly"', icon: '⚙️', type: 'workshop', color: 'bg-blue-600' },
@@ -339,6 +345,24 @@ export const LOCATIONS = [
   // ==========================================
   { id: 'trucker_depot', x: 5400, y: 4900, name: 'Грузовой терминал "Trade Hub"', icon: '🚛', type: 'trucker', color: 'bg-cyan-700' },
 ];
+
+let LOCATIONS = DEFAULT_LOCATIONS;
+
+try {
+  const saved = localStorage.getItem('road_editor_locations');
+  if (saved) {
+    const parsed = JSON.parse(saved);
+    parsed.forEach(savedLoc => {
+      const idx = LOCATIONS.findIndex(l => l.id === savedLoc.id);
+      if (idx !== -1) {
+        LOCATIONS[idx] = { ...LOCATIONS[idx], x: savedLoc.x, y: savedLoc.y };
+      }
+    });
+  }
+} catch {}
+
+export { LOCATIONS };
+
 // ВРЕМЕННЫЙ СКРИПТ ДЛЯ ПРИВЯЗКИ (Потом удалим)
 import { WAYPOINTS } from './roads';
 import { BUSINESS_CATEGORIES } from './businessConfig';
@@ -381,6 +405,9 @@ const getNearestWaypoint = (x, y) => {
 };
 
 const EDITOR_LOCATIONS_KEY = 'road_editor_locations';
+const LOCATION_ICONS_KEY = 'location_icons';
+
+export { DEFAULT_LOCATIONS };
 
 export const getSavedEditorLocations = () => {
   try {
@@ -391,30 +418,114 @@ export const getSavedEditorLocations = () => {
   }
 };
 
+export const loadLocationIcons = () => {
+  try {
+    const raw = localStorage.getItem(LOCATION_ICONS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+};
+
+export const saveLocationIcon = (locationId, icon) => {
+  const icons = loadLocationIcons();
+  if (icon) {
+    icons[locationId] = icon;
+  } else {
+    delete icons[locationId];
+  }
+  localStorage.setItem(LOCATION_ICONS_KEY, JSON.stringify(icons));
+  FINAL_LOCATIONS = getMergedLocations();
+};
+
+export const resetLocationIcon = (locationId) => {
+  const icons = loadLocationIcons();
+  delete icons[locationId];
+  localStorage.setItem(LOCATION_ICONS_KEY, JSON.stringify(icons));
+  FINAL_LOCATIONS = getMergedLocations();
+};
+
+export const resetAllLocationIcons = () => {
+  localStorage.removeItem(LOCATION_ICONS_KEY);
+  FINAL_LOCATIONS = getMergedLocations();
+};
+
 export const saveEditorLocations = (locList) => {
+  // Save ALL locations to localStorage BEFORE updating DEFAULT_LOCATIONS
+  // (DEFAULT_LOCATIONS is a literal in code — mutations are lost on page reload,
+  //  so localStorage is the only persistent storage)
   localStorage.setItem(EDITOR_LOCATIONS_KEY, JSON.stringify(locList));
+
+  // Update LOCATIONS in memory for immediate effect
+  locList.forEach(savedLoc => {
+    const baseIndex = LOCATIONS.findIndex(l => l.id === savedLoc.id);
+    if (baseIndex !== -1) {
+      LOCATIONS[baseIndex] = { ...LOCATIONS[baseIndex], x: savedLoc.x, y: savedLoc.y };
+    }
+  });
+
+  FINAL_LOCATIONS = getMergedLocations();
+};
+
+export const resetLocationToDefault = (locationId) => {
+  const defaultLoc = DEFAULT_LOCATIONS.find(l => l.id === locationId);
+  if (!defaultLoc) return;
+
+  // Reset in LOCATIONS array
+  const idx = LOCATIONS.findIndex(l => l.id === locationId);
+  if (idx !== -1) {
+    LOCATIONS[idx] = { ...defaultLoc };
+  }
+
+  // Remove from saved editor locations in localStorage
+  const saved = getSavedEditorLocations().filter(l => l.id !== locationId);
+  if (saved.length) {
+    localStorage.setItem(EDITOR_LOCATIONS_KEY, JSON.stringify(saved));
+  } else {
+    localStorage.removeItem(EDITOR_LOCATIONS_KEY);
+  }
+
+  // Reset custom icon
+  const icons = loadLocationIcons();
+  delete icons[locationId];
+  localStorage.setItem(LOCATION_ICONS_KEY, JSON.stringify(icons));
+
   FINAL_LOCATIONS = getMergedLocations();
 };
 
 export const resetEditorLocations = () => {
   localStorage.removeItem(EDITOR_LOCATIONS_KEY);
+  localStorage.removeItem(LOCATION_ICONS_KEY);
+  LOCATIONS = DEFAULT_LOCATIONS.map(l => ({ ...l }));
+  FINAL_LOCATIONS = getMergedLocations();
 };
 
 export const getMergedLocations = () => {
   const base = getLinkedLocations();
   const saved = getSavedEditorLocations();
-  if (!saved.length) return base;
-  const savedMap = new Map(saved.map(l => [l.id, l]));
-  return base.map(loc => {
-    const edit = savedMap.get(loc.id);
-    if (edit) {
-      const { id: _id, ...rest } = edit;
-      return { ...loc, ...rest, entrance_id: getNearestWaypoint(rest.x ?? loc.x, rest.y ?? loc.y) };
+  const icons = loadLocationIcons();
+  if (!saved.length && !Object.keys(icons).length) return base;
+  const baseIds = new Set(base.map(l => l.id));
+  let result = base;
+  if (saved.length) {
+    result = result.map(l => {
+      const savedLoc = saved.find(s => s.id === l.id);
+      if (savedLoc) {
+        return { ...l, x: savedLoc.x, y: savedLoc.y };
+      }
+      return l;
+    });
+    const newLocs = saved.filter(s => !baseIds.has(s.id)).map(l => ({ ...l, entrance_id: getNearestWaypoint(l.x, l.y) }));
+    result = result.concat(newLocs);
+  }
+  result = result.map(l => {
+    const icon = icons[l.id];
+    if (icon) {
+      return { ...l, icon };
     }
-    return loc;
-  }).concat(
-    saved.filter(l => !base.some(b => b.id === l.id)).map(l => ({ ...l, entrance_id: getNearestWaypoint(l.x, l.y) }))
-  );
+    return l;
+  });
+  return result;
 };
 
 export let FINAL_LOCATIONS = getLinkedLocations();

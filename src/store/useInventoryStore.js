@@ -5,8 +5,26 @@ import { ITEM_DATABASE } from '../data/items';
 import { RESOURCE_PRICES } from '../data/economy';
 import { CLOTHING_DATABASE } from '../data/clothingConfig';
 import { useNavigationStore } from './useNavigationStore';
+import { useItemCategoryStore } from './useItemCategoryStore';
+import { CHARACTER_STATS_MAP } from '../data/characterStats';
 
 function getItemData(itemId) {
+  // Check DB items first (from item category system)
+  const dbItem = useItemCategoryStore.getState().items.find(i => i.item_key === itemId);
+  if (dbItem) {
+    return {
+      id: dbItem.item_key,
+      name: dbItem.item_name,
+      desc: dbItem.description || '',
+      icon: dbItem.icon || '📦',
+      stackable: dbItem.stackable || false,
+      maxStack: dbItem.max_stack || 99,
+      type: dbItem.type || 'item',
+      action: dbItem.action || null,
+      value: dbItem.action_value || 0,
+      sellPrice: dbItem.sell_price || 0,
+    };
+  }
   return ITEM_DATABASE[itemId] || CLOTHING_DATABASE[itemId];
 }
 
@@ -103,15 +121,44 @@ export const useInventoryStore = create((set, get) => ({
 
   // --- ЛОГИКА ИСПОЛЬЗОВАНИЯ ПРЕДМЕТОВ ---
   useItem: async (item) => {
-    const { player, updateProfile } = usePlayerStore.getState();
+    const { player, updateProfile, applyBuff } = usePlayerStore.getState();
     const itemData = getItemData(item.item_id);
     if (!itemData || item.storage_type !== 'player') return;
+
+    // Получаем полные данные предмета из БД для эффектов
+    const dbItem = useItemCategoryStore.getState().items.find(i => i.item_key === item.item_id);
+    const itemEffects = dbItem?.effects || [];
 
     // 1. ЛОГИКА ЕДЫ
     if (itemData.action === 'HEAL_ENERGY') {
       if (player.energy >= 100) return alert("Вы не голодны!");
       await updateProfile({ energy: Math.min(100, player.energy + itemData.value) });
       await get().removeItem(item.id, 1);
+    }
+
+    // 1.5 ЛОГИКА БАФФОВ
+    if (itemEffects.length > 0) {
+      const buffNames = [];
+      for (const effect of itemEffects) {
+        if (effect.effect_key?.startsWith('buff_')) {
+          applyBuff({
+            type: effect.effect_key,
+            amount: Number(effect.value) || 0,
+            duration_minutes: Number(effect.duration_minutes) || 60,
+          });
+          const statKey = effect.effect_key.replace('buff_', '');
+          const stat = CHARACTER_STATS_MAP[statKey];
+          if (stat) {
+            buffNames.push(`${stat.icon} ${stat.name} +${effect.value} на ${effect.duration_minutes}м`);
+          }
+        }
+      }
+      if (buffNames.length > 0) {
+        alert(`Вы получили бафф: ${buffNames.join(', ')}`);
+      }
+      if (itemEffects.length > 0) {
+        await get().removeItem(item.id, 1);
+      }
     }
 
     // 2. ЛОГИКА СИМ-КАРТЫ

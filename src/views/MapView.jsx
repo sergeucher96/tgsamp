@@ -4,9 +4,9 @@ import { supabase } from '../api/supabase';
 
 // Конфигурации и Данные
 import { MAP_CONFIG } from '../data/mapConfig';
-import { getMergedLocations } from '../data/locations';
+import { getMergedLocations, refreshFinalLocations } from '../data/locations';
 import { WAYPOINTS } from '../data/roads';
-import { getHouseStyle } from '../data/houseStyles';
+import { getHouseStyle, getHouseIcon } from '../data/houseStyles';
 
 // Сторы
 import { usePlayerStore } from '../store/usePlayerStore'; 
@@ -16,10 +16,13 @@ import { useHouseStore } from '../store/useHouseStore';
 import { useVehicleStore } from '../store/useVehicleStore';
 import { useInventoryStore } from '../store/useInventoryStore';
 import { useDeliveryStore } from '../store/useDeliveryStore';
+import { useTruckerStore } from '../store/useTruckerStore';
 import { useLspdStore } from '../store/useLspdStore';
 import { useNavigationStore } from '../store/useNavigationStore';
 import { useJobStore } from '../store/useJobStore';
 import { getJobByLocation, JOBS_DATABASE } from '../data/jobsConfig';
+import { RESOURCE_TYPES } from '../data/businessConfig';
+import { isImageIcon } from '../utils/iconHelper';
 
 // Компоненты (Интерфейсы локаций)
 import HouseMenu from '../components/HouseMenu';
@@ -31,6 +34,7 @@ import MineView from './MineView';
 import FishingPortView from './FishingPortView';
 import FarmView from './FarmView';
 import FactoryView from './FactoryView';
+import OilRigView from './OilRigView';
 import WorkshopView from './WorkshopView';
 import TruckerView from './TruckerView';
 import CafeteriaView from './CafeteriaView';
@@ -40,6 +44,7 @@ import StripClubView from './StripClubView';
 import JobView from './JobView';
 import DrivingSchoolView from './DrivingSchoolView';
 import GunRangeView from './GunRangeView';
+import BoxClubView from './BoxClubView';
 import ATMView from './ATMView';
 import TuningShopView from './TuningShopView';
 import LocationView from './LocationView';
@@ -168,7 +173,10 @@ export default function MapView() {
   const [mergedLocations, setMergedLocations] = useState(() => getMergedLocations());
 
   useEffect(() => {
-    const handler = () => setMergedLocations(getMergedLocations());
+    const handler = () => {
+      setMergedLocations(getMergedLocations());
+      refreshFinalLocations();
+    };
     window.addEventListener('roadEditorLocationsUpdated', handler);
     return () => window.removeEventListener('roadEditorLocationsUpdated', handler);
   }, []);
@@ -184,6 +192,7 @@ export default function MapView() {
   const [showFishingPort, setShowFishingPort] = useState(false);
   const [showFarm, setShowFarm] = useState(false);
   const [showFactory, setShowFactory] = useState(false);
+  const [showOilRig, setShowOilRig] = useState(false);
   const [showWorkshop, setShowWorkshop] = useState(false);
   const [showTrucker, setShowTrucker] = useState(false);
   const [showCafeteria, setShowCafeteria] = useState(false);
@@ -192,6 +201,7 @@ export default function MapView() {
   const [showStripClub, setShowStripClub] = useState(false);
   const [showDrivingSchool, setShowDrivingSchool] = useState(false);
   const [showGunRange, setShowGunRange] = useState(false);
+  const [showBoxClub, setShowBoxClub] = useState(false);
   const [showATM, setShowATM] = useState(false);
   const [showTuningShop, setShowTuningShop] = useState(false);
   const [activeJobId, setActiveJobId] = useState(null);
@@ -307,14 +317,32 @@ export default function MapView() {
   }, []);
 
   // При прибытии на базу мусорщиков (через «Вернуться на базу») — открываем локацию базы,
-  // где находится хотспот «Разгрузить».
+  // где находится хотспот «Разгрузить». Закрываем JobView чтобы он не перекрывал LocationView.
   useEffect(() => {
     if (garbageShift?.kind === 'garbage' && garbageShift.status === 'at_base') {
       const loc = FINAL_LOCATIONS.find((l) => l.id === 'garbage_depot');
+      setActiveJobId(null);
       if (loc) setLocationView(loc);
       useJobStore.setState({ activeShift: { ...useJobStore.getState().activeShift, status: 'selecting' } });
     }
   }, [garbageShift?.status]);
+
+  // При завершении поездки (isMoving стал false) — проверяем pendingDelivery и показываем модалку разгрузки
+  const pendingDelivery = useTruckerStore(state => state.pendingDelivery);
+  const completeDelivery = useTruckerStore(state => state.completeDelivery);
+  const [deliveryModalOpen, setDeliveryModalOpen] = useState(false);
+  const [deliveryAmount, setDeliveryAmountVal] = useState(1);
+
+  // Track previous isMoving to detect arrival
+  const prevIsMovingRef = useRef(true);
+  useEffect(() => {
+    // When travel finishes (isMoving went from true to false) and there's a pending delivery
+    if (prevIsMovingRef.current && !isMoving && pendingDelivery) {
+      setDeliveryAmountVal(pendingDelivery.maxAmount);
+      setDeliveryModalOpen(true);
+    }
+    prevIsMovingRef.current = isMoving;
+  }, [isMoving, pendingDelivery]);
 
   const positionRef = useRef(player ? { x: player.pos_x, y: player.pos_y } : { x: 0, y: 0 });
   const rotationRef = useRef(player?.rotation || 0);
@@ -371,6 +399,44 @@ export default function MapView() {
     try { pinchRef.current.setTransform(newX, newY, targetScale, 600); } catch(e) { /* ignore */ }
     setIsFollowing(false);
   };
+
+  // Expose closeAllViews globally for delivery flow
+  const closeAllViews = () => {
+    setLocationView(null);
+    setSelectedHouse(null);
+    setSelectedShowroom(null);
+    setShowShowroom(false);
+    setCurrentShop(null);
+    setShowBank(false);
+    setShowPizzeria(false);
+    setShowMine(false);
+    setShowFishingPort(false);
+    setShowFarm(false);
+    setShowFactory(false);
+    setShowOilRig(false);
+    setShowWorkshop(false);
+    setShowTrucker(false);
+    setShowCafeteria(false);
+    setShowExport(false);
+    setShowStripClub(false);
+    setActiveJobId(null);
+    setShowDrivingSchool(false);
+    setShowGunRange(false);
+    setShowBoxClub(false);
+    setShowATM(false);
+    setShowTuningShop(false);
+    setSelectedHotel(null);
+    setSelectedBusiness(null);
+    setShowBusDepot(false);
+    setShowLspd(false);
+    setShowMafia(false);
+    setShowHospital(false);
+  };
+  useEffect(() => {
+    window.closeAllMapViewViews = closeAllViews;
+    window.setMapViewFollowing = setIsFollowing;
+    return () => { delete window.closeAllMapViewViews; delete window.setMapViewFollowing; };
+  }, []);
 
   // Find nearest road waypoint to arbitrary map point
   const findNearestRoadPoint = (mapX, mapY) => {
@@ -477,15 +543,79 @@ export default function MapView() {
       {showMine && <MineView onClose={() => setShowMine(null)} />}
       {showFishingPort && <FishingPortView onClose={() => setShowFishingPort(false)} />}
       {showFarm && <FarmView onClose={() => setShowFarm(false)} />}
+      {showOilRig && <OilRigView onClose={() => setShowOilRig(false)} />}
       {showFactory && <FactoryView onClose={() => setShowFactory(false)} />}
       {showWorkshop && <WorkshopView onClose={() => setShowWorkshop(false)} />}
       {showTrucker && <TruckerView onClose={() => setShowTrucker(false)} />}
+
+      {/* Delivery unload modal — appears after arrival at business */}
+      {deliveryModalOpen && pendingDelivery && (
+        <div className="fixed inset-0 z-[1000] bg-black/80 flex items-center justify-center p-6" style={{ animation: 'fadeIn 0.3s ease' }}>
+          <div className="w-full max-w-sm bg-[#0a0f1a] border border-white/10 rounded-[32px] p-6">
+            <h3 className="text-lg font-black uppercase italic mb-4 text-green-400">🏭 Прибыли на объект</h3>
+            <div className="mb-4">
+              <p className="text-sm text-slate-400 mb-1">Заказчик</p>
+              <p className="font-black">{pendingDelivery.businessName}</p>
+            </div>
+            <div className="mb-4">
+              <p className="text-sm text-slate-400 mb-1">Ресурс</p>
+              <p className="font-black">{RESOURCE_TYPES[pendingDelivery.resourceType]?.icon || '�'} {RESOURCE_TYPES[pendingDelivery.resourceType]?.name || pendingDelivery.resourceType}</p>
+            </div>
+            <div className="mb-4">
+              <label className="text-[10px] text-slate-500 uppercase font-black mb-1 block">
+                Сколько разгрузить? (макс. {pendingDelivery.maxAmount})
+              </label>
+              <input
+                type="number"
+                min="1"
+                max={pendingDelivery.maxAmount}
+                value={deliveryAmount}
+                onChange={(e) => setDeliveryAmountVal(Math.max(1, Math.min(parseInt(e.target.value) || 1, pendingDelivery.maxAmount)))}
+                className="w-full bg-black/50 border border-green-500/30 rounded-2xl px-4 py-3 text-white font-black text-center text-xl"
+              />
+            </div>
+            <div className="mb-4 p-3 bg-white/[0.03] border border-white/5 rounded-2xl">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] text-slate-500">Цена за единицу</span>
+                <span className="font-black text-amber-400">${Math.round(pendingDelivery.pricePerUnit)}/ед</span>
+              </div>
+              <div className="flex justify-between items-center mt-1">
+                <span className="text-[10px] text-slate-500">Ваш доход</span>
+                <span className="font-black text-green-400 text-xl">${Math.round(deliveryAmount * pendingDelivery.pricePerUnit)}</span>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  useTruckerStore.getState().cancelDelivery();
+                  setDeliveryModalOpen(false);
+                }}
+                className="flex-1 py-3 rounded-[32px] text-sm font-black uppercase italic border border-white/10 bg-white/5"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={async () => {
+                  const amount = Math.max(1, Math.min(deliveryAmount, pendingDelivery.maxAmount));
+                  const success = await completeDelivery(amount);
+                  if (success) setDeliveryModalOpen(false);
+                }}
+                className="flex-1 py-3 rounded-[32px] text-sm font-black uppercase italic bg-green-600 active:scale-95"
+              >
+                Разгрузить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showCafeteria && cafeteriaBusinessId && <CafeteriaView businessId={cafeteriaBusinessId} onClose={() => { setShowCafeteria(false); setCafeteriaBusinessId(null); }} />}
       {showBank && <BankView onClose={() => setShowBank(false)} />}
       {showPizzeria && <PizzeriaView onClose={() => setShowPizzeria(false)} />}
       {showStripClub && <StripClubView onClose={() => setShowStripClub(false)} />}
       {showDrivingSchool && <DrivingSchoolView onClose={() => setShowDrivingSchool(false)} />}
       {showGunRange && <GunRangeView onClose={() => setShowGunRange(false)} />}
+      {showBoxClub && <BoxClubView onClose={() => setShowBoxClub(false)} />}
       {showTuningShop && <TuningShopView onClose={() => setShowTuningShop(false)} />}
       {selectedHotel && <HotelView hotelId={selectedHotel} onClose={() => setSelectedHotel(null)} />}
       {selectedBusiness && <BusinessView businessId={selectedBusiness} onClose={() => setSelectedBusiness(null)} />}
@@ -501,12 +631,19 @@ export default function MapView() {
               const loc = locationView;
               if (action === 'unload_garbage') {
                 setLocationView(null);
-                const shift = useJobStore.getState().activeShift;
-                if (shift?.kind === 'garbage' && shift.capacity > 0) {
-                  useJobStore.getState().performUnload();
-                } else {
-                  setShowEmptyTruck(true);
+                const state = useJobStore.getState();
+                const shift = state.activeShift;
+                if (state.isProcessing) {
+                  useJobStore.getState().set({ jobMessage: 'Подождите, действие уже выполняется...' });
+                  return;
                 }
+                if (shift?.kind !== 'garbage' || shift.capacity <= 0) {
+                  setShowEmptyTruck(true);
+                  return;
+                }
+                (async () => {
+                  await state.performUnload();
+                })();
                 return;
               }
              // Действия поверх LocationView (не закрываем картинку локации)
@@ -521,6 +658,7 @@ export default function MapView() {
               else if (loc.id === 'mine') { setShowMine(true); }
               else if (loc.id === 'fishing_port') { setShowFishingPort(true); }
               else if (loc.type === 'farm') { setShowFarm(true); }
+              else if (loc.type === 'oil_rig') { setShowOilRig(true); }
               else if (loc.type === 'factory') { setShowFactory(true); }
               else if (loc.type === 'workshop') { setShowWorkshop(true); }
               else if (loc.type === 'trucker') { setShowTrucker(true); }
@@ -528,8 +666,9 @@ export default function MapView() {
               else if (loc.type === 'nightclub') { setShowStripClub(true); }
               else if (loc.type === 'clothes') { setCurrentShop(loc.id); }
               else if (loc.type === 'tuning') { setShowTuningShop(true); }
-              else if (loc.id === 'driving_1' || loc.id === 'driving_school_1') { setShowDrivingSchool(true); }
-              else if (loc.id === 'guns_1' || loc.id === 'gun_range_1') { setShowGunRange(true); }
+               else if (loc.id === 'driving_1' || loc.id === 'driving_school_1') { setShowDrivingSchool(true); }
+               else if (loc.id === 'guns_1' || loc.id === 'gun_range_1') { setShowGunRange(true); }
+               else if (loc.id === 'box_club') { setShowBoxClub(true); }
               else if (loc.type === 'atm') { setShowATM(true); }
               else if (loc.type === 'hotel') { setSelectedHotel(loc.id); }
               else if (loc.type === 'bar') { setCurrentShop(loc.id); }
@@ -553,23 +692,26 @@ export default function MapView() {
             else if (loc.id === 'pizzeria_1') { setShowPizzeria(true); return; }
             else if (loc.id === 'mine') { setShowMine(true); return; }
             else if (loc.id === 'fishing_port') { setShowFishingPort(true); return; }
-            else if (loc.type === 'farm') { setShowFarm(true); }
-            else if (loc.type === 'factory') { setShowFactory(true); }
-            else if (loc.type === 'workshop') { setShowWorkshop(true); }
+             else if (loc.type === 'farm') { setShowFarm(true); }
+             else if (loc.type === 'oil_rig') { setShowOilRig(true); }
+             else if (loc.type === 'factory') { setShowFactory(true); }
+             else if (loc.type === 'workshop') { setShowWorkshop(true); }
             else if (loc.type === 'trucker') { setShowTrucker(true); }
             else if (loc.id === 'port_ls') { setShowExport(true); return; }
             else if (loc.type === 'nightclub') { setShowStripClub(true); return; }
             else if (loc.type === 'clothes') { setCurrentShop(loc.id); return; }
             else if (loc.type === 'tuning') { setShowTuningShop(true); return; }
-            else if (loc.id === 'driving_1' || loc.id === 'driving_school_1') { setShowDrivingSchool(true); return; }
-            else if (loc.id === 'guns_1' || loc.id === 'gun_range_1') { setShowGunRange(true); return; }
+             else if (loc.id === 'driving_1' || loc.id === 'driving_school_1') { setShowDrivingSchool(true); return; }
+             else if (loc.id === 'guns_1' || loc.id === 'gun_range_1') { setShowGunRange(true); return; }
+             else if (loc.id === 'box_club') { setShowBoxClub(true); return; }
             else if (loc.type === 'atm') { setShowATM(true); return; }
             else if (loc.type === 'hotel') { setSelectedHotel(loc.id); return; }
              else if (loc.type === 'lspd') { setShowLspd(true); return; }
              else if (loc.type === 'mafia') { setShowMafia(true); return; }
              else if (loc.type === 'hospital') { setShowHospital(true); return; }
-             else if (loc.type === 'farm') { setShowFarm(true); return; }
-            else if (loc.type === 'factory') { setShowFactory(true); return; }
+              else if (loc.type === 'farm') { setShowFarm(true); return; }
+             else if (loc.type === 'oil_rig') { setShowOilRig(true); return; }
+             else if (loc.type === 'factory') { setShowFactory(true); return; }
             else if (loc.type === 'workshop') { setShowWorkshop(true); return; }
             else if (loc.type === 'trucker') { setShowTrucker(true); return; }
             else if (loc.type === 'cafeteria') { setShowCafeteria(true); setCafeteriaBusinessId(loc.id); return; }
@@ -750,10 +892,16 @@ export default function MapView() {
                           setIsFollowing(true); startRoute(loc.id);
                         }
                       }}
-                        className={`relative ${isHouse ? 'w-7 h-7' : 'w-14 h-14'} ${style.color} ${style.border} rounded-xl shadow-2xl flex items-center justify-center transition-all duration-300 active:scale-75 ${isMoving && !isNear ? 'opacity-40 grayscale' : 'opacity-100'} overflow-hidden ${isHighlighted || isDeliveryTarget ? 'ring-4 ring-yellow-400/40 animate-pulse' : ''}`}
+                        className={`relative ${isHouse ? 'w-7 h-7' : 'w-14 h-14'} ${isImageIcon(loc.icon) ? 'bg-transparent border border-white/10' : `${style.color} ${style.border}`} rounded-xl shadow-2xl flex items-center justify-center transition-all duration-300 active:scale-75 ${isMoving && !isNear ? 'opacity-40 grayscale' : 'opacity-100'} overflow-hidden ${isHighlighted || isDeliveryTarget ? 'ring-4 ring-yellow-400/40 animate-pulse' : ''}`}
                       >
                         <div className="absolute inset-0 glass-shine pointer-events-none" />
-                        {isHouse ? <img src="/iconHouse.png" className="w-4 h-4 brightness-200" /> : <span className="text-2xl">{loc.icon}</span>}
+                        {isImageIcon(loc.icon) ? (
+                          <img src={loc.icon} className={`object-contain ${isHouse ? 'w-5 h-5' : 'w-10 h-10'}`} />
+                        ) : isHouse ? (
+                          <img src={getHouseIcon(hWithD, player) || "/iconHouse.png"} className={`object-contain ${getHouseIcon(hWithD, player) ? 'w-6 h-6' : 'w-4 h-4'}`} />
+                        ) : (
+                          <span className="text-2xl">{loc.icon || '📌'}</span>
+                        )}
                         {hasCamera && !isHouse && (
                           <div className="absolute -top-2 -right-2 w-6 h-6 bg-blue-600 rounded-full border-2 border-white shadow-lg flex items-center justify-center z-10">
                             <span className="text-xs">📹</span>

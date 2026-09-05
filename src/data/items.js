@@ -1,4 +1,5 @@
 // src/data/items.js
+import { useItemCategoryStore } from '../store/useItemCategoryStore';
 
 export const ITEM_DATABASE = {
   // --- ИНСТРУМЕНТЫ ---
@@ -305,3 +306,26 @@ export const ITEM_DATABASE = {
     sellPrice: 700
   },
 };
+
+export function getItemInfo(itemId) {
+  let info = ITEM_DATABASE[itemId];
+  if (info) return info;
+  try {
+    const store = useItemCategoryStore.getState();
+    const dbItem = store.items?.find(i => i.item_key === itemId);
+    if (dbItem) {
+      return {
+        id: dbItem.item_key,
+        name: dbItem.name,
+        desc: dbItem.description,
+        icon: dbItem.icon,
+        stackable: dbItem.stackable,
+        maxStack: dbItem.max_stack,
+        type: dbItem.type || 'item',
+        price: dbItem.price,
+        sellPrice: dbItem.sell_price,
+      };
+    }
+  } catch (e) {}
+  return null;
+}
