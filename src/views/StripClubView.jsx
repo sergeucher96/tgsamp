@@ -37,7 +37,7 @@ const initialDancers = [
     personality: 'Мистичная и загадочная',
     signature: 'Танец теней',
     description: 'Таинственная артистка, создающая атмосферу роскоши. Её бонусы помогают экономить ресурсы на долгих поездках.',
-    image: 'public/iris.png',
+    image: '/iris.png',
   },
 ];
 

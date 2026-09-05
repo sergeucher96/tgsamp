@@ -269,7 +269,7 @@ export const LOCATION_IMAGES = {
   bar_3: { label: '🍺 Ночной бар', images: [{ id: 1, src: '/locations/bar_3.webp' }], default: '/locations/bar_3.webp' },
   bar_4: { label: '🍺 Бар "Восток"', images: [{ id: 1, src: '/locations/bar_4.webp' }], default: '/locations/bar_4.webp' },
   club_1: { label: '💃 Клуб "Velvet"', images: [{ id: 1, src: '/locations/club_1.webp' }], default: '/locations/club_1.webp' },
-  hotel_2: { label: '🏨 Мотель "Jefferson"', images: [{ id: 1, src: '/locations/hotel_2.webp' }], default: '/locations/hotel_2.webp' },
+  hotel_2: { label: '🏨 Мотель "Jefferson"', images: [{ id: 1, src: '/locations/hotel_rockford.webp' }], default: '/locations/hotel_rockford.webp' },
   gas_3: { label: '⛽ АЗС "North"', images: [{ id: 1, src: '/locations/gas_3.webp' }], default: '/locations/gas_3.webp' },
   gas_4: { label: '⛽ АЗС "HighWay"', images: [{ id: 1, src: '/locations/gas_4.webp' }], default: '/locations/gas_4.webp' },
   gas_5: { label: '⛽ АЗС "West Side"', images: [{ id: 1, src: '/locations/gas_5.webp' }], default: '/locations/gas_5.webp' },

@@ -331,6 +331,15 @@ export default function HotspotTool({ onClose, onExport }) {
   const [hotspotPositions, setHotspotPositions] = useState(hotspots);
   const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
+
+  // Panorama mode state
+  const [isPanorama, setIsPanorama] = useState(false);
+  const [panX, setPanX] = useState(0);
+  const [panY, setPanY] = useState(0);
+  const [zoom, setZoom] = useState(1);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [imageNaturalSize, setImageNaturalSize] = useState({ width: 0, height: 0 });
   
   const showToast = (message, duration = 2000) => {
     setToast(message);
@@ -416,6 +425,37 @@ export default function HotspotTool({ onClose, onExport }) {
       setTimeout(() => recalcHotspotPositions(currentHs), 200);
     };
     reader.readAsDataURL(file);
+  };
+
+  // Panorama handlers for image navigation
+  const handlePanMouseDown = (e) => {
+    if (!isPanorama) return;
+    setIsDragging(true);
+    setDragStart({ x: e.clientX - panX, y: e.clientY - panY });
+  };
+
+  const handlePanMouseMove = (e) => {
+    if (!isDragging || !isPanorama) return;
+    setPanX(e.clientX - dragStart.x);
+    setPanY(e.clientY - dragStart.y);
+  };
+
+  const handlePanMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  const handlePanWheel = (e) => {
+    if (!isPanorama) return;
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+    setZoom(prev => Math.min(Math.max(prev + delta, 0.5), 3));
+  };
+
+  const togglePanorama = () => {
+    setIsPanorama(prev => !prev);
+    setPanX(0);
+    setPanY(0);
+    setZoom(1);
   };
 
   // Recalculate hotspot positions based on current image layout

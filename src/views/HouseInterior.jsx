@@ -10,7 +10,7 @@ import { VEHICLE_DATABASE } from '../data/vehicleConfig';
 import KitchenView from './KitchenView';
 import InventoryGrid from '../components/InventoryGrid';
 import ItemActionMenu from '../components/ItemActionMenu';
-import { LogOut, Wallet, ArrowLeft, ParkingCircle } from 'lucide-react';
+import { LogOut, Wallet, ArrowLeft, ParkingCircle, Move } from 'lucide-react';
 
 export default function HouseInterior() {
   const { currentInterior, setInterior, setGarage, exitHouse, exitGarage } = useNavigationStore();
@@ -21,8 +21,8 @@ export default function HouseInterior() {
   const [selectedItem, setSelectedItem] = useState(null);
   const [houseImage, setHouseImage] = useState(null);
   const [hotspots, setHotspots] = useState([]);
-  const [mode, setMode] = useState('exterior'); // 'exterior', 'interior', 'garage', 'sublocation'
-  const [navStack, setNavStack] = useState([]); // stack of { mode, subLocationImage, subLocationHotspots, subLocationLabel }
+  const [mode, setMode] = useState('exterior');
+  const [navStack, setNavStack] = useState([]);
   const [subLocationImage, setSubLocationImage] = useState(null);
   const [subLocationHotspots, setSubLocationHotspots] = useState([]);
   const [subLocationPositions, setSubLocationPositions] = useState([]);
@@ -38,6 +38,15 @@ export default function HouseInterior() {
   const garageContainerRef = useRef(null);
   const subLocationImgRef = useRef(null);
   const subLocationContainerRef = useRef(null);
+
+  // Panorama state
+  const [panX, setPanX] = useState(0);
+  const [panY, setPanY] = useState(0);
+  const [zoom, setZoom] = useState(1);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [isPanorama, setIsPanorama] = useState(false);
+  const [imageNaturalSize, setImageNaturalSize] = useState({ width: 0, height: 0 });
 
   const activeVehicle = usePlayerStore(state => state.activeVehicle);
   const setLocalActiveVehicle = usePlayerStore(state => state.setLocalActiveVehicle);
@@ -179,6 +188,46 @@ export default function HouseInterior() {
     window.addEventListener('resize', recalcSub);
     return () => window.removeEventListener('resize', recalcSub);
   }, [mode, subLocationHotspots, subLocationImage]);
+
+  // Panorama handlers
+  const handleMouseDown = (e) => {
+    if (!isPanorama) return;
+    setIsDragging(true);
+    setDragStart({ x: e.clientX - panX, y: e.clientY - panY });
+  };
+
+  const handleMouseMove = (e) => {
+    if (!isDragging || !isPanorama) return;
+    setPanX(e.clientX - dragStart.x);
+    setPanY(e.clientY - dragStart.y);
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  const handleWheel = (e) => {
+    if (!isPanorama) return;
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+    setZoom(prev => Math.min(Math.max(prev + delta, 0.5), 3));
+  };
+
+  const handleTouchStart = (e) => {
+    if (!isPanorama || e.touches.length !== 1) return;
+    setIsDragging(true);
+    setDragStart({ x: e.touches[0].clientX - panX, y: e.touches[0].clientY - panY });
+  };
+
+  const handleTouchMove = (e) => {
+    if (!isDragging || !isPanorama || e.touches.length !== 1) return;
+    setPanX(e.touches[0].clientX - dragStart.x);
+    setPanY(e.touches[0].clientY - dragStart.y);
+  };
+
+  const handleTouchEnd = () => {
+    setIsDragging(false);
+  };
 
   if (!houseData) return null;
 
@@ -349,14 +398,39 @@ export default function HouseInterior() {
         )}
 
         {/* Garage image with hotspots */}
-        <div ref={garageContainerRef} className="absolute inset-0 bg-black overflow-hidden">
+        <div
+          ref={garageContainerRef}
+          className="absolute inset-0 bg-black overflow-hidden"
+          onMouseDown={isPanorama ? handleMouseDown : undefined}
+          onMouseMove={isPanorama ? handleMouseMove : undefined}
+          onMouseUp={isPanorama ? handleMouseUp : undefined}
+          onMouseLeave={isPanorama ? handleMouseUp : undefined}
+          onWheel={isPanorama ? handleWheel : undefined}
+          onTouchStart={isPanorama ? handleTouchStart : undefined}
+          onTouchMove={isPanorama ? handleTouchMove : undefined}
+          onTouchEnd={isPanorama ? handleTouchEnd : undefined}
+          style={{ cursor: isPanorama ? (isDragging ? 'grabbing' : 'grab') : 'default' }}
+        >
           {garageImage ? (
-            <>
+            <div
+              className="absolute inset-0 flex items-center justify-center"
+              style={{
+                transform: isPanorama ? `translate(${panX}px, ${panY}px) scale(${zoom})` : undefined,
+                transformOrigin: 'center center',
+                transition: isDragging ? 'none' : 'transform 0.1s ease-out',
+              }}
+            >
               <img
                 ref={garageImgRef}
                 src={garageImage}
                 alt="Гараж"
-                className="absolute inset-0 w-full h-full object-fill"
+                className="max-w-none max-h-none"
+                style={{
+                  width: isPanorama ? 'auto' : '100%',
+                  height: isPanorama ? 'auto' : '100%',
+                  objectFit: isPanorama ? 'none' : 'fill',
+                  pointerEvents: isPanorama ? 'none' : 'auto',
+                }}
                 onLoad={() => {
                   if (garageImgRef.current && garageContainerRef.current) {
                     const img = garageImgRef.current;
@@ -365,7 +439,15 @@ export default function HouseInterior() {
                     const cH = container.clientHeight;
                     const nW = img.naturalWidth;
                     const nH = img.naturalHeight;
-                    if (nW === 0 || nH === 0) return;
+                    setImageNaturalSize({ width: nW, height: nH });
+                    if (nW > 0 && nH > 0 && nW / nH > 1.5) {
+                      setIsPanorama(true);
+                    } else {
+                      setIsPanorama(false);
+                    }
+                    const imageScale = nW / nH > 1.5 ? cH / nH : Math.max(cW / nW, cH / nH);
+                    const displayWidth = nW * imageScale;
+                    const displayHeight = nH * imageScale;
                     const garageHsList = Object.values(garageHotspots);
                     const positions = garageHsList.map(hs => {
                       if (hs.type === 'rect') {
@@ -373,10 +455,10 @@ export default function HouseInterior() {
                           id: hs.id,
                           action: hs.action,
                           label: hs.label || '',
-                          left: (hs.x / 100) * cW,
-                          top: (hs.y / 100) * cH,
-                          width: (hs.w / 100) * cW,
-                          height: (hs.h / 100) * cH,
+                          left: (hs.x / 100) * displayWidth,
+                          top: (hs.y / 100) * displayHeight,
+                          width: (hs.w / 100) * displayWidth,
+                          height: (hs.h / 100) * displayHeight,
                         };
                       }
                       return null;
@@ -389,11 +471,14 @@ export default function HouseInterior() {
                 <div
                   key={pos.id}
                   style={{ position: 'absolute', left: `${pos.left}px`, top: `${pos.top}px`, width: `${pos.width}px`, height: `${pos.height}px`, cursor: 'pointer' }}
-                  onClick={() => handleGarageHotspotClick(pos.action)}
+                  onClick={(e) => {
+                    if (isPanorama && isDragging) return;
+                    handleGarageHotspotClick(pos.action);
+                  }}
                 >
                   <div className={`w-full h-full flex items-center justify-center transition-all duration-200 rounded-2xl ${hoveredHotspot === pos.id ? 'bg-white/20' : 'bg-white/10'}`}
-                    onMouseEnter={() => setHoveredHotspot(pos.id)}
-                    onMouseLeave={() => setHoveredHotspot(null)}
+                    onMouseEnter={() => setGarageHoveredHotspot(pos.id)}
+                    onMouseLeave={() => setGarageHoveredHotspot(null)}
                   >
                     <span className="text-sm font-black uppercase italic text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)] text-center pointer-events-none select-none">
                       {pos.label}
@@ -401,7 +486,7 @@ export default function HouseInterior() {
                   </div>
                 </div>
               ))}
-            </>
+            </div>
           ) : (
             <div className="absolute inset-0 flex items-center justify-center text-slate-600">
               <p className="text-sm font-black uppercase">Загрузите картинку гаража</p>
@@ -444,19 +529,56 @@ export default function HouseInterior() {
         )}
 
         {/* Fullscreen image */}
-        <div ref={containerRef} className="absolute inset-0 bg-black overflow-hidden">
+        <div
+          ref={containerRef}
+          className="absolute inset-0 bg-black overflow-hidden"
+          onMouseDown={isPanorama ? handleMouseDown : undefined}
+          onMouseMove={isPanorama ? handleMouseMove : undefined}
+          onMouseUp={isPanorama ? handleMouseUp : undefined}
+          onMouseLeave={isPanorama ? handleMouseUp : undefined}
+          onWheel={isPanorama ? handleWheel : undefined}
+          onTouchStart={isPanorama ? handleTouchStart : undefined}
+          onTouchMove={isPanorama ? handleTouchMove : undefined}
+          onTouchEnd={isPanorama ? handleTouchEnd : undefined}
+          style={{ cursor: isPanorama ? (isDragging ? 'grabbing' : 'grab') : 'default' }}
+        >
           {houseImage && (
-            <>
+            <div
+              className="absolute inset-0 flex items-center justify-center"
+              style={{
+                transform: isPanorama ? `translate(${panX}px, ${panY}px) scale(${zoom})` : undefined,
+                transformOrigin: 'center center',
+                transition: isDragging ? 'none' : 'transform 0.1s ease-out',
+              }}
+            >
               <img
                 ref={imgRef}
                 src={houseImage}
                 alt={houseData.name}
-                className="absolute inset-0 w-full h-full object-fill"
+                className="max-w-none max-h-none"
+                style={{
+                  width: isPanorama ? 'auto' : '100%',
+                  height: isPanorama ? 'auto' : '100%',
+                  objectFit: isPanorama ? 'none' : 'fill',
+                  pointerEvents: isPanorama ? 'none' : 'auto',
+                }}
                 onLoad={() => {
                   if (imgRef.current && containerRef.current) {
+                    const img = imgRef.current;
                     const container = containerRef.current;
                     const cW = container.clientWidth;
                     const cH = container.clientHeight;
+                    const nW = img.naturalWidth;
+                    const nH = img.naturalHeight;
+                    setImageNaturalSize({ width: nW, height: nH });
+                    if (nW > 0 && nH > 0 && nW / nH > 1.5) {
+                      setIsPanorama(true);
+                    } else {
+                      setIsPanorama(false);
+                    }
+                    const imageScale = nW / nH > 1.5 ? cH / nH : Math.max(cW / nW, cH / nH);
+                    const displayWidth = nW * imageScale;
+                    const displayHeight = nH * imageScale;
                     const positions = hotspots.map(hs => {
                       if (hs.type === 'rect') {
                         return {
@@ -464,10 +586,10 @@ export default function HouseInterior() {
                           action: hs.action,
                           label: hs.label || '',
                           subLocation: hs.subLocation || '',
-                          left: (hs.x / 100) * cW,
-                          top: (hs.y / 100) * cH,
-                          width: (hs.w / 100) * cW,
-                          height: (hs.h / 100) * cH,
+                          left: (hs.x / 100) * displayWidth,
+                          top: (hs.y / 100) * displayHeight,
+                          width: (hs.w / 100) * displayWidth,
+                          height: (hs.h / 100) * displayHeight,
                         };
                       }
                       return null;
@@ -480,7 +602,10 @@ export default function HouseInterior() {
                 <div
                   key={pos.id}
                   style={{ position: 'absolute', left: `${pos.left}px`, top: `${pos.top}px`, width: `${pos.width}px`, height: `${pos.height}px`, cursor: 'pointer' }}
-                  onClick={() => handleHotspotClick(pos)}
+                  onClick={(e) => {
+                    if (isPanorama && isDragging) return;
+                    handleHotspotClick(pos);
+                  }}
                 >
                   <div className={`w-full h-full flex items-center justify-center transition-all duration-200 rounded-2xl ${
                     pos.action === 'sublocation'
@@ -496,7 +621,7 @@ export default function HouseInterior() {
                   </div>
                 </div>
               ))}
-            </>
+            </div>
           )}
         </div>
       </div>
@@ -518,19 +643,56 @@ export default function HouseInterior() {
           <button onClick={handleExitRequest} className="p-4 bg-red-600 text-white rounded-3xl shadow-lg active:scale-90 transition-all"><LogOut /></button>
         </div>
 
-        <div ref={subLocationContainerRef} className="absolute inset-0 bg-black overflow-hidden">
+        <div
+          ref={subLocationContainerRef}
+          className="absolute inset-0 bg-black overflow-hidden"
+          onMouseDown={isPanorama ? handleMouseDown : undefined}
+          onMouseMove={isPanorama ? handleMouseMove : undefined}
+          onMouseUp={isPanorama ? handleMouseUp : undefined}
+          onMouseLeave={isPanorama ? handleMouseUp : undefined}
+          onWheel={isPanorama ? handleWheel : undefined}
+          onTouchStart={isPanorama ? handleTouchStart : undefined}
+          onTouchMove={isPanorama ? handleTouchMove : undefined}
+          onTouchEnd={isPanorama ? handleTouchEnd : undefined}
+          style={{ cursor: isPanorama ? (isDragging ? 'grabbing' : 'grab') : 'default' }}
+        >
           {subLocationImage ? (
-            <>
+            <div
+              className="absolute inset-0 flex items-center justify-center"
+              style={{
+                transform: isPanorama ? `translate(${panX}px, ${panY}px) scale(${zoom})` : undefined,
+                transformOrigin: 'center center',
+                transition: isDragging ? 'none' : 'transform 0.1s ease-out',
+              }}
+            >
               <img
                 ref={subLocationImgRef}
                 src={subLocationImage}
                 alt={subLocationLabel}
-                className="absolute inset-0 w-full h-full object-fill"
+                className="max-w-none max-h-none"
+                style={{
+                  width: isPanorama ? 'auto' : '100%',
+                  height: isPanorama ? 'auto' : '100%',
+                  objectFit: isPanorama ? 'none' : 'fill',
+                  pointerEvents: isPanorama ? 'none' : 'auto',
+                }}
                 onLoad={() => {
                   if (subLocationImgRef.current && subLocationContainerRef.current) {
+                    const img = subLocationImgRef.current;
                     const container = subLocationContainerRef.current;
                     const cW = container.clientWidth;
                     const cH = container.clientHeight;
+                    const nW = img.naturalWidth;
+                    const nH = img.naturalHeight;
+                    setImageNaturalSize({ width: nW, height: nH });
+                    if (nW > 0 && nH > 0 && nW / nH > 1.5) {
+                      setIsPanorama(true);
+                    } else {
+                      setIsPanorama(false);
+                    }
+                    const imageScale = nW / nH > 1.5 ? cH / nH : Math.max(cW / nW, cH / nH);
+                    const displayWidth = nW * imageScale;
+                    const displayHeight = nH * imageScale;
                     const positions = subLocationHotspots.map(hs => {
                       if (hs.type === 'rect') {
                         return {
@@ -538,10 +700,10 @@ export default function HouseInterior() {
                           action: hs.action,
                           label: hs.label || '',
                           subLocation: hs.subLocation || '',
-                          left: (hs.x / 100) * cW,
-                          top: (hs.y / 100) * cH,
-                          width: (hs.w / 100) * cW,
-                          height: (hs.h / 100) * cH,
+                          left: (hs.x / 100) * displayWidth,
+                          top: (hs.y / 100) * displayHeight,
+                          width: (hs.w / 100) * displayWidth,
+                          height: (hs.h / 100) * displayHeight,
                         };
                       }
                       return null;
@@ -554,7 +716,10 @@ export default function HouseInterior() {
                 <div
                   key={pos.id}
                   style={{ position: 'absolute', left: `${pos.left}px`, top: `${pos.top}px`, width: `${pos.width}px`, height: `${pos.height}px`, cursor: 'pointer' }}
-                  onClick={() => handleHotspotClick(pos)}
+                  onClick={(e) => {
+                    if (isPanorama && isDragging) return;
+                    handleHotspotClick(pos);
+                  }}
                 >
                   <div className={`w-full h-full flex items-center justify-center transition-all duration-200 rounded-2xl ${
                     pos.action === 'sublocation'
@@ -570,7 +735,7 @@ export default function HouseInterior() {
                   </div>
                 </div>
               ))}
-            </>
+            </div>
           ) : (
             <div className="absolute inset-0 flex items-center justify-center text-slate-600">
               <p className="text-sm font-black uppercase">Загрузите картинку подлокации</p>
