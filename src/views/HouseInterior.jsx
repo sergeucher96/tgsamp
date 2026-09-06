@@ -409,8 +409,8 @@ export default function HouseInterior() {
   }
 
   // РЕНДЕР: КУХНЯ
-  if (mode === 'kitchen') {
-    return <KitchenView house={houseData} onBack={goBack} />;
+if (mode === 'kitchen') {
+    return <KitchenView onClose={goBack} onBack={goBack} houseId={currentInterior} />;
   }
 
   // РЕНДЕР: ГАРАЖ

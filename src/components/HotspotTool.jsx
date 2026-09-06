@@ -8,6 +8,7 @@ import {
 import { HOUSE_PREVIEWS_MAP } from '../data/houseStyles';
 import { LOCATION_IMAGES } from '../data/locationStyles';
 import { LOCATIONS } from '../data/locations';
+import { getActionsForCategory, getLocationCategory } from '../data/locationActions';
 
 function safeLocalStorageSet(key, value) {
   try {
@@ -45,40 +46,6 @@ function compressImageBase64(base64, maxDim = 1600, quality = 0.8) {
   });
 }
 
-// БАЗОВЫЕ ДЕЙСТВИЯ ДЛЯ ТИПОВ ЛОКАЦИЙ
-const BASE_ACTIONS_BY_CATEGORY = {
-  house: [
-    { value: 'enter', label: '📦 Войти в дом / Шкаф' },
-    { value: 'garage', label: '🅿️ Зайти в гараж' },
-    { value: 'kitchen', label: '🍳 Кухня' },
-    { value: 'sublocation', label: '📍 Часть локации (комната)' },
-  ],
-  bank: [
-    { value: 'enter', label: '🚪 Войти в банк' },
-    { value: 'atm', label: '🏧 Использовать банкомат' },
-    { value: 'sublocation', label: '📍 Перейти в зал' },
-  ],
-  gas: [
-    { value: 'refuel', label: '⛽ Заправиться' },
-    { value: 'enter', label: '🛒 Войти в магазин АЗС' },
-    { value: 'sublocation', label: '📍 Часть локации' },
-  ],
-  hotel: [
-    { value: 'enter', label: '🏨 Зайти в отель' },
-    { value: 'open_hotel', label: '🛏️ Меню номеров' },
-    { value: 'sublocation', label: '📍 Часть локации' },
-  ],
-  shop: [
-    { value: 'enter', label: '🛒 Войти в магазин' },
-    { value: 'sublocation', label: '📍 Часть локации' },
-  ],
-  default: [
-    { value: 'enter', label: '🚪 Войти в здание / интерьер' },
-    { value: 'buy_business', label: '💼 Купить бизнес / инфо' },
-    { value: 'sublocation', label: '📍 Часть локации' },
-  ],
-};
-
 const ALL_CLASSES = {
   economy: HOUSE_PREVIEWS_MAP?.economy || { label: '🏠 Эконом' },
   comfort: HOUSE_PREVIEWS_MAP?.comfort || { label: '🏠 Комфорт' },
@@ -113,15 +80,6 @@ LOCATIONS?.forEach(loc => {
     CLASS_LABELS[loc.id] = (loc.icon || '📍') + ' ' + (loc.name || loc.id);
   }
 });
-
-function getLocationCategory(locId) {
-  if (['economy', 'comfort', 'business', 'premium'].includes(locId)) return 'house';
-  if (locId.startsWith('bank')) return 'bank';
-  if (locId.startsWith('gas')) return 'gas';
-  if (locId.startsWith('hotel')) return 'hotel';
-  if (locId.startsWith('shop') || locId.startsWith('clothes')) return 'shop';
-  return 'default';
-}
 
 export default function HotspotTool({ onClose, onExport }) {
   const [selectedLocId, setSelectedLocId] = useState(() => {
@@ -175,8 +133,8 @@ export default function HotspotTool({ onClose, onExport }) {
 
   // СПИСОК ДОСТУПНЫХ ДЕЙСТВИЙ: ВСЕГДА ВКЛЮЧАЕТ ДЕЙСТВИЯ РОДИТЕЛЬСКОЙ ЛОКАЦИИ
   const currentAvailableActions = useMemo(() => {
+    const base = getActionsForCategory(effectiveParentId);
     const category = getLocationCategory(effectiveParentId);
-    const base = BASE_ACTIONS_BY_CATEGORY[category] || BASE_ACTIONS_BY_CATEGORY.default;
 
     // В подлокациях первой опцией ставим "Назад / Выход"
     const subNavActions = editingSubLocation
