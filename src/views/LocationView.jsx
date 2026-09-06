@@ -7,14 +7,13 @@ import {
   getLocationSublocations,
 } from '../data/locationStyles';
 
-// Настройки физики камеры (идентичные HouseInterior)
 const PHYSICS_CONFIG = {
-  friction: 0.93,          // Затухание инерции
-  springStiffness: 0.18,   // Возврат от краев (spring back)
-  bounceResistance: 0.32,  // Сопротивление при перетягивании
-  maxSpeed: 45,            // Ограничение скорости
-  stopVelocity: 0.05,      // Порог остановки
-  dragThreshold: 6,        // Отсечение клика от скролла (px)
+  friction: 0.93,
+  springStiffness: 0.18,
+  bounceResistance: 0.32,
+  maxSpeed: 45,
+  stopVelocity: 0.05,
+  dragThreshold: 6,
 };
 
 export default function LocationView({ location, onClose, onAction }) {
@@ -24,41 +23,33 @@ export default function LocationView({ location, onClose, onAction }) {
   const [hotspots, setHotspots] = useState([]);
   const [hoveredHotspot, setHoveredHotspot] = useState(null);
 
-  // Навигация по подлокациям
   const [subLocationStack, setSubLocationStack] = useState([]);
   const [currentSubLocation, setCurrentSubLocation] = useState(null);
   const [subLocationImage, setSubLocationImage] = useState(null);
   const [subLocationHotspots, setSubLocationHotspots] = useState([]);
 
-  // Размеры и физика камеры
   const containerRef = useRef(null);
   const [viewportWidth, setViewportWidth] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
   const [imageAspect, setImageAspect] = useState(16 / 9);
   const [isPanorama, setIsPanorama] = useState(false);
 
-  // Текущее положение камеры (X)
   const [cameraX, setCameraX] = useState(0);
   const cameraXRef = useRef(0);
   cameraXRef.current = cameraX;
 
-  // Рефы драга и инерции
   const isDraggingRef = useRef(false);
   const dragStartPointerX = useRef(0);
   const dragStartCameraX = useRef(0);
   const totalDragDistanceRef = useRef(0);
-
   const pointerSamplesRef = useRef([]);
   const velocityRef = useRef(0);
   const rafIdRef = useRef(null);
 
   const inSubLocation = subLocationImage !== null;
-
-  // Вычисляем ширину панорамы при фиксированной 100% высоте
   const scaledWidth = viewportHeight > 0 ? viewportHeight * imageAspect : 0;
   const maxCameraX = Math.max(0, scaledWidth - viewportWidth);
 
-  // Измерение контейнера при ресайзе
   useEffect(() => {
     const updateDimensions = () => {
       if (!containerRef.current) return;
@@ -71,7 +62,6 @@ export default function LocationView({ location, onClose, onAction }) {
     return () => window.removeEventListener('resize', updateDimensions);
   }, []);
 
-  // Остановка инерции
   const stopInertia = () => {
     if (rafIdRef.current) {
       cancelAnimationFrame(rafIdRef.current);
@@ -80,7 +70,6 @@ export default function LocationView({ location, onClose, onAction }) {
     velocityRef.current = 0;
   };
 
-  // Инерционный цикл RAF (60 FPS)
   const startInertiaLoop = useCallback(() => {
     stopInertia();
 
@@ -91,19 +80,14 @@ export default function LocationView({ location, onClose, onAction }) {
       const vW = containerRef.current?.clientWidth || 0;
       const currentMax = Math.max(0, vH * imageAspect - vW);
 
-      // В пределах границ
       if (currentX >= 0 && currentX <= currentMax) {
         currentX -= vel;
         vel *= PHYSICS_CONFIG.friction;
-      }
-      // Пружина слева
-      else if (currentX < 0) {
+      } else if (currentX < 0) {
         const springDelta = (0 - currentX) * PHYSICS_CONFIG.springStiffness;
         currentX += springDelta;
         vel *= 0.65;
-      }
-      // Пружина справа
-      else if (currentX > currentMax) {
+      } else if (currentX > currentMax) {
         const springDelta = (currentMax - currentX) * PHYSICS_CONFIG.springStiffness;
         currentX += springDelta;
         vel *= 0.65;
@@ -127,7 +111,6 @@ export default function LocationView({ location, onClose, onAction }) {
     rafIdRef.current = requestAnimationFrame(loop);
   }, [imageAspect]);
 
-  // Загрузка локации и хотспотов
   useEffect(() => {
     if (!location) return;
 
@@ -138,7 +121,7 @@ export default function LocationView({ location, onClose, onAction }) {
     if (saved) {
       try {
         const data = JSON.parse(saved);
-        if (data?.default) customImage = data.default;
+        if (data?.default && typeof data.default === 'string') customImage = data.default;
         else if (data?.images?.length > 0) customImage = data.images[0]?.src || data.default;
 
         if (Array.isArray(data)) customHotspots = data;
@@ -149,7 +132,7 @@ export default function LocationView({ location, onClose, onAction }) {
     }
 
     const locData = LOCATION_IMAGES[location.id];
-    const finalImage = customImage || (locData ? locData.default || locData.images?.[0]?.src || null : null);
+    const finalImage = customImage || (locData ? locData.default || locData.images?.[0]?.src || null : null) || '/locations/shop_1.webp';
     const finalHotspots = customHotspots.length > 0 ? customHotspots : getLocationHotspots(location.id, 1) || [];
 
     setHouseImage(finalImage);
@@ -163,7 +146,6 @@ export default function LocationView({ location, onClose, onAction }) {
     setCameraX(0);
   }, [location]);
 
-  // Замер соотношения сторон фоновой картинки
   const handleImageLoad = (e) => {
     const nw = e.target.naturalWidth || 16;
     const nh = e.target.naturalHeight || 9;
@@ -173,7 +155,6 @@ export default function LocationView({ location, onClose, onAction }) {
     const isPano = ratio > (window.innerWidth / window.innerHeight || 1.3);
     setIsPanorama(isPano);
 
-    // Центрируем панораму при первом входе
     if (containerRef.current && isPano) {
       const vH = containerRef.current.clientHeight;
       const vW = containerRef.current.clientWidth;
@@ -185,7 +166,6 @@ export default function LocationView({ location, onClose, onAction }) {
     }
   };
 
-  // Pointer Events (drag & inertia)
   const handlePointerDown = (e) => {
     if (!isPanorama) return;
     stopInertia();
@@ -250,9 +230,7 @@ export default function LocationView({ location, onClose, onAction }) {
     startInertiaLoop();
   };
 
-  // Клик по хотспоту
   const handleHotspotClick = (hs) => {
-    // Отсекаем случайные клики при скролле
     if (totalDragDistanceRef.current >= PHYSICS_CONFIG.dragThreshold) return;
 
     if (hs.action === 'sublocation' && hs.subLocation) {
@@ -267,11 +245,9 @@ export default function LocationView({ location, onClose, onAction }) {
             label: currentSubLocation?.label || location?.name || getLocationLabel(location?.id),
           },
         ]);
-
         setCurrentSubLocation(hs);
-        setSubLocationImage(subData.image);
+        setSubLocationImage(subData.image || '/locations/shop_1.webp');
         setSubLocationHotspots(subData.hotspots || []);
-
         cameraXRef.current = 0;
         setCameraX(0);
         return;
@@ -281,7 +257,6 @@ export default function LocationView({ location, onClose, onAction }) {
     if (onAction) onAction(hs.action, hs.label);
   };
 
-  // Возврат назад из подлокации
   const goBackFromSublocation = () => {
     if (subLocationStack.length === 0) return;
     stopInertia();
@@ -309,12 +284,12 @@ export default function LocationView({ location, onClose, onAction }) {
     getLocationLabel(location?.id) ||
     location?.id;
 
-  const displayImage = subLocationImage || houseImage;
+  const displayImage = subLocationImage || houseImage || '/locations/shop_1.webp';
   const displayHotspots = inSubLocation ? subLocationHotspots : hotspots;
 
   return (
     <div className="fixed inset-0 z-[350] bg-[#020617] flex flex-col text-white font-sans select-none overflow-hidden">
-      {/* Шапка */}
+      {/* Header */}
       <div className="absolute top-0 left-0 right-0 z-30 p-6 flex justify-between items-center bg-gradient-to-b from-black/80 via-black/40 to-transparent pointer-events-none">
         <div className="flex items-center gap-3 pointer-events-auto">
           {inSubLocation && (
@@ -354,7 +329,7 @@ export default function LocationView({ location, onClose, onAction }) {
         </div>
       </div>
 
-      {/* Интерактивный видовой экран панорамы */}
+      {/* Screen container */}
       <div
         ref={containerRef}
         onPointerDown={handlePointerDown}
@@ -376,16 +351,21 @@ export default function LocationView({ location, onClose, onAction }) {
               height: '100%',
             }}
           >
-            {/* Картинка: строго 100% высоты, ширина пропорциональна */}
             <img
               src={displayImage}
               alt={label}
+              onError={(e) => {
+                // Если картинка не найдена в Vercel, подставляем гарантированно существующий fallback
+                if (!e.currentTarget.src.includes('/locations/shop_1.webp')) {
+                  e.currentTarget.src = '/locations/shop_1.webp';
+                }
+              }}
               onLoad={handleImageLoad}
               className="h-full w-auto max-w-none object-cover pointer-events-none block"
               draggable={false}
             />
 
-            {/* Хотспоты: точно привязаны к картинке в процентах */}
+            {/* Hotspots */}
             {displayHotspots.map((hs) => (
               <div
                 key={hs.id}
@@ -424,14 +404,11 @@ export default function LocationView({ location, onClose, onAction }) {
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#0a0f0a]">
             <span className="text-4xl mb-4">📍</span>
             <p className="text-sm font-black uppercase italic text-slate-500">{label}</p>
-            <p className="text-[10px] text-slate-600 mt-2 uppercase tracking-widest text-center px-8">
-              Загрузите картинку для этой локации в Hotspot Tool
-            </p>
           </div>
         )}
       </div>
 
-      {/* Индикатор скролла панорамы внизу */}
+      {/* Panorama indicator */}
       {isPanorama && maxCameraX > 0 && (
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 w-32 h-1 bg-white/15 rounded-full overflow-hidden pointer-events-none">
           <div

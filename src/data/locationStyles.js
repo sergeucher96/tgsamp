@@ -70,232 +70,27 @@ export const LOCATION_HOTSPOTS = {
 // Каждая отдельная локация на карте имеет свой ID и свою картинку
 // Положите файлы в public/locations/
 export const LOCATION_IMAGES = {
-  // === Мусорная база ===
-  garbage_depot: {
-    label: '🗑️ Мусорная база',
-    default: '/locations/garbage_depot.svg'
-  },
-
-  // === Банки ===
-  bank_1: {
-    label: '🏦 Банк #1',
-    images: [
-      { id: 1, src: '/locations/bank_1.webp' },
-    ],
-    default: '/locations/bank_1.webp'
-  },
-  bank_2: {
-    label: '🏦 Банк #2',
-    images: [
-      { id: 1, src: '/locations/bank_2.webp' },
-    ],
-    default: '/locations/bank_2.webp'
-  },
-
-  // === Магазины ===
-  shop_1: {
-    label: '🛒 Магазин #1',
-    images: [
-      { id: 1, src: '/locations/shop_1.webp' },
-    ],
-    default: '/locations/shop_1.webp'
-  },
-  shop_2: {
-    label: '🛒 Магазин #2',
-    images: [
-      { id: 1, src: '/locations/shop_2.webp' },
-    ],
-    default: '/locations/shop_2.webp'
-  },
-
-  // === Тюнинг ===
-  tuning_1: {
-    label: '🔧 Тюнинг #1',
-    images: [
-      { id: 1, src: '/locations/tuning_1.webp' },
-    ],
-    default: '/locations/tuning_1.webp'
-  },
-
-  // === Одежда ===
-  clothes_1: {
-    label: '👕 Одежда #1',
-    images: [
-      { id: 1, src: '/locations/clothes_1.webp' },
-    ],
-    default: '/locations/clothes_1.webp'
-  },
-
-  // === Шахта ===
-  mine_1: {
-    label: '⛏️ Шахта #1',
-    images: [
-      { id: 1, src: '/locations/mine_1.webp' },
-    ],
-    default: '/locations/mine_1.webp'
-  },
-
-  // === Пиццерия ===
-  pizzeria_1: {
-    label: '🍕 Пиццерия #1',
-    images: [
-      { id: 1, src: '/locations/pizzeria_1.webp' },
-    ],
-    default: '/locations/pizzeria_1.webp'
-  },
-
-  // === Автосалон ===
-  showroom_1: {
-    label: '🚗 Автосалон #1',
-    images: [
-      { id: 1, src: '/locations/showroom_1.webp' },
-    ],
-    default: '/locations/showroom_1.webp'
-  },
-
-  // === Стрелковый ===
-  guns_1: {
-    label: '🔫 Стрелковый #1',
-    images: [
-      { id: 1, src: '/locations/guns_1.webp' },
-    ],
-    default: '/locations/guns_1.webp'
-  },
-
-  // === Автошкола ===
-  driving_1: {
-    label: '🎓 Автошкола #1',
-    images: [
-      { id: 1, src: '/locations/driving_1.webp' },
-    ],
-    default: '/locations/driving_1.webp'
-  },
-
-  // === Экспорт ===
-  export_1: {
-    label: '📤 Экспорт #1',
-    images: [
-      { id: 1, src: '/locations/export_1.webp' },
-    ],
-    default: '/locations/export_1.webp'
-  },
-
-  // === Стрип-клуб ===
-  strip_1: {
-    label: '💃 Стрип-клуб #1',
-    images: [
-      { id: 1, src: '/locations/strip_1.webp' },
-    ],
-    default: '/locations/strip_1.webp'
-  },
-
-  // === Бары ===
-  bar_1: {
-    label: '🍺 Бар #1',
-    images: [
-      { id: 1, src: '/locations/bar_1.webp' },
-    ],
-    default: '/locations/bar_1.webp'
-  },
-  bar_2: {
-    label: '🍺 Бар #2',
-    images: [
-      { id: 1, src: '/locations/bar_2.webp' },
-    ],
-    default: '/locations/bar_2.webp'
-  },
-
-  // === Отели ===
-  hotel_1: {
-    label: '🏨 Отель #1',
-    images: [
-      { id: 1, src: '/locations/hotel_1.webp' },
-    ],
-    default: '/locations/hotel_1.webp'
-  },
-  hotel_3: {
-    label: '🏨 Отель "Vinewood"',
-    images: [
-      { id: 1, src: '/locations/hotel_vinewood.webp' },
-    ],
-    default: '/locations/hotel_vinewood.webp'
-  },
-  hotel_4: {
-    label: '🏨 Отель "Rockford Hills"',
-    images: [
-      { id: 1, src: '/locations/hotel_rockford.webp' },
-    ],
-    default: '/locations/hotel_rockford.webp'
-  },
-
-  // === АЗС ===
-  gas_1: {
-    label: '⛽ АЗС #1',
-    images: [
-      { id: 1, src: '/locations/gas_1.webp' },
-    ],
-    default: '/locations/gas_1.webp'
-  },
-  gas_2: {
-    label: '⛽ АЗС #2',
-    images: [
-      { id: 1, src: '/locations/gas_2.webp' },
-    ],
-    default: '/locations/gas_2.webp'
-  },
-
-  // === Парковки ===
-  parking_1: {
-    label: '🅿️ Парковка #1',
-    images: [
-      { id: 1, src: '/locations/parking_1.webp' },
-    ],
-    default: '/locations/parking_1.webp'
-  },
-
-  // === Спортзал ===
-  gym_1: {
-    label: '💪 Спортзал #1',
-    images: [
-      { id: 1, src: '/locations/gym_1.webp' },
-    ],
-    default: '/locations/gym_1.webp'
-  },
-
-  // === Дополнительный бизнес ===
-  shop_3: { label: '🛒 Продукты', images: [{ id: 1, src: '/locations/shop_3.webp' }], default: '/locations/shop_3.webp' },
-  shop_4: { label: '🛒 Минимаркет', images: [{ id: 1, src: '/locations/shop_4.webp' }], default: '/locations/shop_4.webp' },
-  shop_5: { label: '🛒 Угловой магазин', images: [{ id: 1, src: '/locations/shop_5.webp' }], default: '/locations/shop_5.webp' },
-  bar_3: { label: '🍺 Ночной бар', images: [{ id: 1, src: '/locations/bar_3.webp' }], default: '/locations/bar_3.webp' },
-  bar_4: { label: '🍺 Бар "Восток"', images: [{ id: 1, src: '/locations/bar_4.webp' }], default: '/locations/bar_4.webp' },
-  club_1: { label: '💃 Клуб "Velvet"', images: [{ id: 1, src: '/locations/club_1.webp' }], default: '/locations/club_1.webp' },
-  hotel_2: { label: '🏨 Мотель "Jefferson"', images: [{ id: 1, src: '/locations/hotel_rockford.webp' }], default: '/locations/hotel_rockford.webp' },
-  gas_3: { label: '⛽ АЗС "North"', images: [{ id: 1, src: '/locations/gas_3.webp' }], default: '/locations/gas_3.webp' },
-  gas_4: { label: '⛽ АЗС "HighWay"', images: [{ id: 1, src: '/locations/gas_4.webp' }], default: '/locations/gas_4.webp' },
-  gas_5: { label: '⛽ АЗС "West Side"', images: [{ id: 1, src: '/locations/gas_5.webp' }], default: '/locations/gas_5.webp' },
-  parking_2: { label: '🅿️ Парковка Центр', images: [{ id: 1, src: '/locations/parking_2.webp' }], default: '/locations/parking_2.webp' },
-  parking_3: { label: '�️ Парковка Вост.', images: [{ id: 1, src: '/locations/parking_3.webp' }], default: '/locations/parking_3.webp' },
-  parking_4: { label: '🅿️ Подземный паркинг', images: [{ id: 1, src: '/locations/parking_4.webp' }], default: '/locations/parking_4.webp' },
-  gym_2: { label: '💪 Фитнес-центр', images: [{ id: 1, src: '/locations/gym_2.webp' }], default: '/locations/gym_2.webp' },
-  atm_1: { label: '🏧 Банкомат #1', images: [{ id: 1, src: '/locations/atm_1.webp' }], default: '/locations/atm_1.webp' },
-  atm_2: { label: '🏧 Банкомат #2', images: [{ id: 1, src: '/locations/atm_2.webp' }], default: '/locations/atm_2.webp' },
-  atm_3: { label: '🏧 Банкомат #3', images: [{ id: 1, src: '/locations/atm_3.webp' }], default: '/locations/atm_3.webp' },
-  driving_school_1: { label: '🎓 Автошкола', images: [{ id: 1, src: '/locations/driving_school_1.webp' }], default: '/locations/driving_school_1.webp' },
-  gun_range_1: { label: '🎯 Тир', images: [{ id: 1, src: '/locations/gun_range_1.webp' }], default: '/locations/gun_range_1.webp' },
-  port_ls: { label: '⚓ Порт', images: [{ id: 1, src: '/locations/port_ls.webp' }], default: '/locations/port_ls.webp' },
-  mine: { label: '�️ Шахта', images: [{ id: 1, src: '/locations/mine.webp' }], default: '/locations/mine.webp' },
-  // Without images yet — will show "Load image" message
-  lspd: { label: '🚔 LSPD HQ', images: [], default: null },
-  hospital_1: { label: '🏥 Больница', images: [], default: null },
-  mafia_hideout: { label: '🕴️ Мафия "Коза Ностра"', images: [], default: null },
-  bus_depot: { label: '� Автобусный парк', images: [{ id: 1, src: '/locations/bus_depot.webp' }], default: '/locations/bus_depot.webp' },
-  showroom_ls: { label: '🚗 Premium Motors', images: [], default: null },
-  cafe_1: { label: '☕ Кафе', images: [], default: null },
-  warehouse_1: { label: '📦 Склад', images: [], default: null },
+  garbage_depot: { label: '🗑️ Мусорная база', default: '/locations/garbage_depot.svg' },
+  bus_depot: { label: '🚌 Автобусный парк', images: [{ id: 1, src: '/locations/bus_depot.webp' }], default: '/locations/bus_depot.webp' },
+  meriya: { label: '🏛️ Мэрия', images: [{ id: 1, src: '/locations/city_holl.webp' }], default: '/locations/city_holl.webp' },
+  city_hall: { label: '🏛️ Мэрия', images: [{ id: 1, src: '/locations/city_holl.webp' }], default: '/locations/city_holl.webp' },
+  pizzeria_1: { label: '🍕 Пиццерия #1', images: [{ id: 1, src: '/locations/pizzeria_1.webp' }], default: '/locations/pizzeria_1.webp' },
+  club_1: { label: '💃 Стрип-клуб "Velvet"', images: [{ id: 1, src: '/locations/strip_1.webp' }], default: '/locations/strip_1.webp' },
+  strip_1: { label: '💃 Стрип-клуб #1', images: [{ id: 1, src: '/locations/strip_1.webp' }], default: '/locations/strip_1.webp' },
+  bank_1: { label: '🏦 Банк #1', images: [{ id: 1, src: '/locations/bank_1.webp' }], default: '/locations/bank_1.webp' },
+  bank_2: { label: '🏦 Банк #2', images: [{ id: 1, src: '/locations/bank_2.webp' }], default: '/locations/bank_2.webp' },
+  shop_1: { label: '🛒 Магазин #1', images: [{ id: 1, src: '/locations/shop_1.webp' }], default: '/locations/shop_1.webp' },
+  shop_2: { label: '🛒 Супермаркет #2', images: [{ id: 1, src: '/locations/shop_2.webp' }], default: '/locations/shop_2.webp' },
+  shop_3: { label: '🛒 Продукты', images: [{ id: 1, src: '/locations/shop_1.webp' }], default: '/locations/shop_1.webp' },
+  shop_4: { label: '🛒 Минимаркет', images: [{ id: 1, src: '/locations/shop_2.webp' }], default: '/locations/shop_2.webp' },
+  shop_5: { label: '🛒 Угловой магазин', images: [{ id: 1, src: '/locations/shop_1.webp' }], default: '/locations/shop_1.webp' },
   shop_24_7: { label: '🛒 24/7 Market', images: [{ id: 1, src: '/locations/shop_2.webp' }], default: '/locations/shop_2.webp' },
-  
-  // === Рыболовный порт ===
-  fishing_port: { label: '� Рыболовный порт', images: [], default: null },
+  gas_1: { label: '⛽ АЗС "X-Oil"', images: [{ id: 1, src: '/locations/gas_1.webp' }], default: '/locations/gas_1.webp' },
+  gas_2: { label: '⛽ АЗС "East"', images: [{ id: 1, src: '/locations/gas_1.webp' }], default: '/locations/gas_1.webp' },
+  gas_3: { label: '⛽ АЗС "North"', images: [{ id: 1, src: '/locations/gas_1.webp' }], default: '/locations/gas_1.webp' },
+  gas_4: { label: '⛽ АЗС "HighWay"', images: [{ id: 1, src: '/locations/gas_1.webp' }], default: '/locations/gas_1.webp' },
+  gas_5: { label: '⛽ АЗС "West Side"', images: [{ id: 1, src: '/locations/gas_1.webp' }], default: '/locations/gas_1.webp' },
+  parking_1: { label: '🅿️ Парковка #1', images: [{ id: 1, src: '/locations/bus_depot.webp' }], default: '/locations/bus_depot.webp' },
 };
 
 // Получить картинку для локации по ID
