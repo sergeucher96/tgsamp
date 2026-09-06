@@ -8,9 +8,10 @@ export default function ItemActionMenu({ item, location, onUse, onTransfer, onDr
   const { items: dbItems } = useItemCategoryStore();
   
   const dbItem = dbItems.find(i => i.item_key === item.item_id);
+  const fallbackItem = ITEM_DATABASE[item.item_id];
   const itemData = dbItem
-    ? { name: dbItem.item_name, icon: dbItem.icon || '�', desc: dbItem.description || '', type: dbItem.type }
-    : ITEM_DATABASE[item.item_id];
+    ? { name: dbItem.item_name, icon: dbItem.icon || '📦', desc: dbItem.description || '', type: dbItem.type, action: dbItem.action || fallbackItem?.action }
+    : fallbackItem;
   
   if (!itemData) return null;
 
