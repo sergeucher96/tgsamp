@@ -24,7 +24,7 @@ const PHYSICS_CONFIG = {
   bounceResistance: 0.32,
   maxSpeed: 45,
   stopVelocity: 0.05,
-  dragThreshold: 6,
+  dragThreshold: 15, // Увеличен порог, чтобы легкие касания не блокировали клик
 };
 
 export default function HouseInterior() {
@@ -66,8 +66,8 @@ export default function HouseInterior() {
   const [viewportHeight, setViewportHeight] = useState(0);
   const [imageAspect, setImageAspect] = useState(16 / 9);
   const [isPanorama, setIsPanorama] = useState(false);
-
   const [cameraX, setCameraX] = useState(0);
+
   const cameraXRef = useRef(0);
   cameraXRef.current = cameraX;
 
@@ -75,7 +75,6 @@ export default function HouseInterior() {
   const dragStartPointerX = useRef(0);
   const dragStartCameraX = useRef(0);
   const totalDragDistanceRef = useRef(0);
-
   const pointerSamplesRef = useRef([]);
   const velocityRef = useRef(0);
   const rafIdRef = useRef(null);
@@ -89,7 +88,6 @@ export default function HouseInterior() {
       setViewportWidth(containerRef.current.clientWidth);
       setViewportHeight(containerRef.current.clientHeight);
     };
-
     updateDimensions();
     window.addEventListener('resize', updateDimensions);
     return () => window.removeEventListener('resize', updateDimensions);
@@ -108,7 +106,6 @@ export default function HouseInterior() {
 
     setMode('exterior');
     setNavStack([]);
-
     stopInertia();
     cameraXRef.current = 0;
     setCameraX(0);
@@ -160,6 +157,7 @@ export default function HouseInterior() {
     const loop = () => {
       let currentX = cameraXRef.current;
       let vel = velocityRef.current;
+
       const vH = containerRef.current?.clientHeight || 0;
       const vW = containerRef.current?.clientWidth || 0;
       const currentMax = Math.max(0, vH * imageAspect - vW);
@@ -198,12 +196,10 @@ export default function HouseInterior() {
   const handlePointerDown = (e) => {
     if (!isPanorama) return;
     stopInertia();
-
     isDraggingRef.current = true;
     dragStartPointerX.current = e.clientX;
     dragStartCameraX.current = cameraXRef.current;
     totalDragDistanceRef.current = 0;
-
     pointerSamplesRef.current = [{ x: e.clientX, time: performance.now() }];
 
     if (e.currentTarget.setPointerCapture) {
@@ -215,9 +211,9 @@ export default function HouseInterior() {
 
   const handlePointerMove = (e) => {
     if (!isDraggingRef.current || !isPanorama) return;
-
     const deltaX = e.clientX - dragStartPointerX.current;
-    totalDragDistanceRef.current += Math.abs(e.movementX || deltaX);
+    // Исправлен подсчет дистанции драга (не накапливается бесконечно)
+    totalDragDistanceRef.current = Math.abs(deltaX);
 
     let targetCameraX = dragStartCameraX.current - deltaX;
 
@@ -247,7 +243,6 @@ export default function HouseInterior() {
       const newest = samples[samples.length - 1];
       const dt = newest.time - oldest.time;
       const dx = newest.x - oldest.x;
-
       if (dt > 10) {
         let v = (dx / dt) * 16.6;
         v = Math.max(-PHYSICS_CONFIG.maxSpeed, Math.min(PHYSICS_CONFIG.maxSpeed, v));
@@ -296,35 +291,48 @@ export default function HouseInterior() {
       setSubLocationLabel(previous.subLocationLabel);
       return prevStack.slice(0, -1);
     });
-
     cameraXRef.current = 0;
     setCameraX(0);
   };
 
+  // Обработчик клика по хотспотам
   const handleHotspotClick = (pos) => {
-    if (totalDragDistanceRef.current >= PHYSICS_CONFIG.dragThreshold) return;
+    if (totalDragDistanceRef.current > PHYSICS_CONFIG.dragThreshold) return;
+
+    if (pos.action === 'exit' || pos.action === 'back') {
+      goBack();
+      return;
+    }
 
     if (pos.action === 'enter') {
       navigateTo('interior');
     } else if (pos.action === 'garage') {
+      // Подгружаем гараж из настроенных подлокаций
+      const garageData = getHouseGarageData(houseData?.class || 'economy');
+      if (garageData?.image) setGarageImage(garageData.image);
       navigateTo('garage');
     } else if (pos.action === 'kitchen') {
       navigateTo('kitchen');
-    } else if (pos.action === 'sublocation' && pos.subLocation) {
-      const subs = getHouseSublocations(houseData.class);
-      const subData = subs[pos.subLocation];
+    } else if (pos.action === 'sublocation') {
+      const cls = houseData?.class || 'economy';
+      const subs = getHouseSublocations(cls);
+      const subKey = pos.subLocation || pos.label;
+      const subData = subs?.[subKey];
+
       if (subData) {
         setSubLocationImage(subData.image || '/houses/eco_1_int.webp');
         setSubLocationHotspots(subData.hotspots || []);
-        setSubLocationLabel(pos.subLocation);
+        setSubLocationLabel(subData.label || subKey);
         navigateTo('sublocation');
+      } else {
+        // Fallback если подлокация еще не настроена
+        navigateTo('interior');
       }
     }
   };
 
   const handleGarageHotspotClick = (action) => {
-    if (totalDragDistanceRef.current >= PHYSICS_CONFIG.dragThreshold) return;
-    if (action === 'exit') {
+    if (action === 'exit' || action === 'back') {
       goBack();
     } else if (action === 'drive') {
       handleExitInGarage();
@@ -345,23 +353,70 @@ export default function HouseInterior() {
   };
 
   const handleExitRequest = () => {
-    if (!activeVehicle) {
-      setLocalActiveVehicle(null);
-    }
     exitHouse();
-    exitGarage();
   };
 
-  const handleParkActiveVehicle = async () => {
-    if (!activeVehicle) return;
-    await useVehicleStore.getState().parkVehicle(activeVehicle.id, houseData.id_name);
-  };
+  if (!houseData) {
+    return (
+      <div className="h-full w-full bg-[#050814] flex items-center justify-center text-white">
+        <p>Загрузка данных интерьера...</p>
+      </div>
+    );
+  }
 
-  if (!houseData) return null;
+  // РЕНДЕР: ИНТЕРЬЕР (ШКАФ / ВЕЩИ)
+  if (mode === 'interior') {
+    return (
+      <div className="h-full w-full bg-[#050814] text-white flex flex-col p-6 font-sans relative">
+        <div className="flex justify-between items-center mb-6">
+          <button
+            onClick={goBack}
+            className="flex items-center gap-2 text-blue-400 text-xs font-black uppercase tracking-widest active:opacity-70"
+          >
+            <ArrowLeft size={16} /> На улицу
+          </button>
+          <div className="text-center">
+            <h1 className="text-xl font-black uppercase italic tracking-wider">{houseData.name}</h1>
+            <p className="text-[10px] text-slate-400">Шкаф дома</p>
+          </div>
+          <button
+            onClick={handleExitRequest}
+            className="p-3 bg-red-600/80 hover:bg-red-600 text-white rounded-2xl active:scale-95 transition-all"
+          >
+            <LogOut size={16} />
+          </button>
+        </div>
+
+        <div className="flex-1 bg-slate-900/60 border border-white/5 rounded-3xl p-6 overflow-y-auto">
+          <InventoryGrid
+            items={houseItems}
+            maxSlots={HOUSE_CLASSES[houseData.class]?.wardrobe_slots || 10}
+            onItemClick={(item) => setSelectedItem(item)}
+            isHouse={true}
+          />
+        </div>
+
+        {selectedItem && (
+          <ItemActionMenu
+            item={selectedItem}
+            isHouse={true}
+            houseId={currentInterior}
+            onClose={() => setSelectedItem(null)}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // РЕНДЕР: КУХНЯ
+  if (mode === 'kitchen') {
+    return <KitchenView house={houseData} onBack={goBack} />;
+  }
 
   // РЕНДЕР: ГАРАЖ
   if (mode === 'garage') {
     const garageHsList = Array.isArray(garageHotspots) ? garageHotspots : Object.values(garageHotspots);
+
     return (
       <div className="h-full w-full bg-[#050814] text-white overflow-hidden font-sans relative select-none">
         <div className="absolute top-0 left-0 right-0 z-20 shrink-0 p-6 flex justify-between items-center bg-gradient-to-b from-black/70 to-transparent pointer-events-none">
@@ -397,6 +452,7 @@ export default function HouseInterior() {
                 className="w-full h-full object-contain pointer-events-none block"
                 draggable={false}
               />
+
               {garageHsList.map((hs) => (
                 <div
                   key={hs.id}
@@ -408,7 +464,11 @@ export default function HouseInterior() {
                     height: `${hs.h}%`,
                     cursor: 'pointer',
                   }}
-                  onClick={() => handleGarageHotspotClick(hs.action)}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleGarageHotspotClick(hs.action || hs.id);
+                  }}
                 >
                   <div
                     className={`w-full h-full flex items-center justify-center transition-all duration-200 rounded-2xl ${
@@ -425,9 +485,7 @@ export default function HouseInterior() {
               ))}
             </div>
           ) : (
-            <div className="absolute inset-0 flex items-center justify-center text-slate-600">
-              <p className="text-sm font-black uppercase">Загрузите картинку гаража</p>
-            </div>
+            <div className="text-slate-500 text-xs">Загрузка гаража...</div>
           )}
         </div>
       </div>
@@ -473,6 +531,7 @@ export default function HouseInterior() {
                 className="w-full h-full object-contain pointer-events-none block"
                 draggable={false}
               />
+
               {subLocationHotspots.map((hs) => (
                 <div
                   key={hs.id}
@@ -484,11 +543,15 @@ export default function HouseInterior() {
                     height: `${hs.h}%`,
                     cursor: 'pointer',
                   }}
-                  onClick={() => handleHotspotClick(hs)}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleHotspotClick(hs);
+                  }}
                 >
                   <div className="w-full h-full flex items-center justify-center transition-all duration-200 rounded-2xl bg-cyan-500/20 border border-cyan-400/40 hover:bg-cyan-500/35">
                     <span className="text-sm font-black uppercase italic text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)] text-center pointer-events-none select-none">
-                      📍 {hs.label}
+                      {hs.label || 'Зона'}
                     </span>
                   </div>
                 </div>
@@ -530,53 +593,33 @@ export default function HouseInterior() {
           </div>
         </div>
 
-        {activeVehicle && (
-          <div className="absolute top-24 left-1/2 -translate-x-1/2 z-30 bg-[#0c1220]/90 backdrop-blur-md border border-blue-500/30 rounded-2xl p-4 flex items-center gap-4 shadow-2xl">
-            <div className="text-center">
-              <p className="text-[10px] text-slate-400 font-black uppercase">
-                {VEHICLE_DATABASE?.[activeVehicle.model_id]?.name || activeVehicle.model_id}
-              </p>
-              <p className="text-[9px] text-slate-500">{activeVehicle.plate}</p>
-            </div>
-            <button
-              onClick={handleParkActiveVehicle}
-              className="bg-blue-600 hover:bg-blue-500 py-2 px-4 rounded-xl text-xs font-black uppercase flex items-center gap-2 active:scale-95"
-            >
-              <ParkingCircle size={14} /> Запарковать
-            </button>
-            <button onClick={() => {}} className="text-slate-400 text-xs font-black uppercase py-2 px-3 active:opacity-70">
-              Закрыть
-            </button>
-          </div>
-        )}
-
         <div
           ref={containerRef}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
-          className="absolute inset-0 bg-black overflow-hidden flex items-center"
-          style={{
-            cursor: isPanorama ? (isDraggingRef.current ? 'grabbing' : 'grab') : 'default',
-            touchAction: 'none',
-          }}
+          className={`h-full w-full relative overflow-hidden flex items-center justify-start ${
+            isPanorama ? 'cursor-grab active:cursor-grabbing' : ''
+          }`}
+          style={{ touchAction: 'none' }}
         >
           {houseImage && (
             <div
-              className="relative h-full flex items-center will-change-transform"
+              className="relative h-full flex items-center justify-center shrink-0"
               style={{
-                transform: `translate3d(${-cameraX}px, 0, 0)`,
-                width: `${scaledWidth}px`,
-                height: '100%',
+                width: isPanorama && scaledWidth > 0 ? `${scaledWidth}px` : '100%',
+                transform: isPanorama ? `translate3d(${-cameraX}px, 0, 0)` : 'none',
+                transition: isDraggingRef.current ? 'none' : 'transform 0.1s ease-out',
+                willChange: 'transform',
               }}
             >
               <img
                 src={houseImage}
-                alt={houseData.name}
-                onError={() => setHouseImage('/houses/eco_1.webp')}
+                alt="House"
                 onLoad={handleExteriorImageLoad}
-                className="h-full w-auto max-w-none object-cover pointer-events-none block"
+                onError={() => setHouseImage('/houses/eco_1.webp')}
+                className="w-full h-full object-contain pointer-events-none block"
                 draggable={false}
               />
 
@@ -591,6 +634,7 @@ export default function HouseInterior() {
                     height: `${hs.h}%`,
                     cursor: 'pointer',
                   }}
+                  onPointerDown={(e) => e.stopPropagation()} // Предотвращает отмену клика панорамой
                   onClick={(e) => {
                     e.stopPropagation();
                     handleHotspotClick(hs);
@@ -616,41 +660,8 @@ export default function HouseInterior() {
             </div>
           )}
         </div>
-
-        {isPanorama && maxCameraX > 0 && (
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 w-32 h-1 bg-white/15 rounded-full overflow-hidden pointer-events-none">
-            <div
-              className="h-full bg-cyan-400/80 rounded-full transition-all duration-75"
-              style={{
-                width: `${Math.max(15, (viewportWidth / scaledWidth) * 100)}%`,
-                transform: `translateX(${(cameraX / maxCameraX) * (128 - Math.max(20, (viewportWidth / scaledWidth) * 128))}px)`,
-              }}
-            />
-          </div>
-        )}
       </div>
     );
-  }
-
-  // РЕНДЕР: ШКАФ
-  if (mode === 'interior') {
-    return (
-      <div className="h-full w-full bg-[#050814] text-white p-6 relative select-none">
-        <button onClick={goBack} className="flex items-center gap-2 text-blue-400 font-bold mb-4">
-          <ArrowLeft size={16} /> Назад
-        </button>
-        <h2 className="text-xl font-bold">Шкаф / Интерьер</h2>
-        <div className="mt-4">
-          <InventoryGrid items={houseItems} onItemClick={(it) => setSelectedItem(it)} />
-        </div>
-        {selectedItem && <ItemActionMenu item={selectedItem} onClose={() => setSelectedItem(null)} />}
-      </div>
-    );
-  }
-
-  // РЕНДЕР: КУХНЯ (переданы и onClose, и onBack для полной совместимости)
-  if (mode === 'kitchen') {
-    return <KitchenView onClose={goBack} onBack={goBack} houseId={currentInterior} />;
   }
 
   return null;
