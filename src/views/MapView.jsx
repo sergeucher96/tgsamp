@@ -892,9 +892,8 @@ export default function MapView() {
                           setIsFollowing(true); startRoute(loc.id);
                         }
                       }}
-                        className={`relative ${isHouse ? 'w-7 h-7' : 'w-14 h-14'} ${isImageIcon(loc.icon) ? 'bg-transparent border border-white/10' : `${style.color} ${style.border}`} rounded-xl shadow-2xl flex items-center justify-center transition-all duration-300 active:scale-75 ${isMoving && !isNear ? 'opacity-40 grayscale' : 'opacity-100'} overflow-hidden ${isHighlighted || isDeliveryTarget ? 'ring-4 ring-yellow-400/40 animate-pulse' : ''}`}
+                        className={`relative ${isHouse ? 'w-7 h-7' : 'w-14 h-14'} ${isImageIcon(loc.icon) ? 'bg-transparent' : `${style.color} ${style.border}`} rounded-xl shadow-2xl flex items-center justify-center transition-all duration-300 active:scale-75 ${isMoving && !isNear ? 'opacity-40 grayscale' : 'opacity-100'} overflow-hidden ${isHighlighted || isDeliveryTarget ? 'ring-4 ring-yellow-400/40 animate-pulse' : ''} ${isNear ? 'scale-125 z-50' : ''}`}
                       >
-                        <div className="absolute inset-0 glass-shine pointer-events-none" />
                         {isImageIcon(loc.icon) ? (
                           <img src={loc.icon} className={`object-contain ${isHouse ? 'w-5 h-5' : 'w-10 h-10'}`} />
                         ) : isHouse ? (
@@ -908,7 +907,6 @@ export default function MapView() {
                           </div>
                         )}
                         {isDeliveryTarget && <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-2 h-2 bg-yellow-400 rounded-full shadow-lg animate-pulse" />}
-                        {isNear && <div className="absolute inset-0 border-4 border-white animate-marker-pulse rounded-inherit" />}
                       </button>
                       {showLabel && (
                         <div className="mt-2 px-2 py-0.5 bg-slate-900/90 backdrop-blur-md border border-white/10 rounded-lg shadow-2xl text-[8px] font-black text-white italic whitespace-nowrap">

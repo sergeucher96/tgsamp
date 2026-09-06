@@ -1,10 +1,16 @@
 {
   "location_coordinates": {
-    "bank_1": {
-      "x": 5591,
-      "y": 4644,
-      "name": "Банк",
-      "type": "bank"
+    "gym_1": {
+      "x": 5051,
+      "y": 4699,
+      "name": "Спортзал \"Muscle\"",
+      "type": "gym"
+    },
+    "atm_2": {
+      "x": 5104,
+      "y": 4646,
+      "name": "Банкомат",
+      "type": "atm"
     }
   },
   "location_icons": {},
