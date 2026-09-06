@@ -11,6 +11,8 @@ import { CHARACTER_STATS_MAP } from '../data/characterStats';
 function getItemData(itemId) {
   // Check DB items first (from item category system)
   const dbItem = useItemCategoryStore.getState().items.find(i => i.item_key === itemId);
+  const fallback = ITEM_DATABASE[itemId] || CLOTHING_DATABASE[itemId];
+  
   if (dbItem) {
     return {
       id: dbItem.item_key,
@@ -20,12 +22,12 @@ function getItemData(itemId) {
       stackable: dbItem.stackable || false,
       maxStack: dbItem.max_stack || 99,
       type: dbItem.type || 'item',
-      action: dbItem.action || null,
+      action: dbItem.action || fallback?.action || null,
       value: dbItem.action_value || 0,
       sellPrice: dbItem.sell_price || 0,
     };
   }
-  return ITEM_DATABASE[itemId] || CLOTHING_DATABASE[itemId];
+  return fallback;
 }
 
 export const useInventoryStore = create((set, get) => ({

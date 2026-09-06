@@ -23,6 +23,7 @@ export default function InventoryView() {
 
   const getItemInfo = (itemId) => {
     const dbItem = dbItems.find(i => i.item_key === itemId);
+    const fallback = ITEM_DATABASE[itemId] || CLOTHING_DATABASE[itemId] || null;
     if (dbItem) {
       return {
         id: dbItem.item_key,
@@ -30,13 +31,13 @@ export default function InventoryView() {
         desc: dbItem.description || '',
         icon: dbItem.icon || '📦',
         type: dbItem.type || 'item',
-        action: dbItem.action || null,
+        action: dbItem.action || fallback?.action || null,
         value: dbItem.action_value || 0,
         sellPrice: dbItem.sell_price || 0,
         stackable: dbItem.stackable || false,
       };
     }
-    return ITEM_DATABASE[itemId] || CLOTHING_DATABASE[itemId] || null;
+    return fallback;
   };
 
   const getItemCategory = (item) => {
