@@ -39,6 +39,7 @@ import BankNotifications from './components/BankNotifications';
 import VehicleInfoMenu from './components/VehicleInfoMenu';
 import MyPropertyMenu from './components/MyPropertyMenu';
 import MyVehiclesMenu from './components/MyVehiclesMenu';
+import CarViewer from './components/CarViewer';
 
 import { Loader2 } from 'lucide-react';
 
@@ -62,6 +63,7 @@ function App() {
   const [showMyVehicles, setShowMyVehicles] = useState(false);
   const [showTerritories, setShowTerritories] = useState(false);
   const [showWars, setShowWars] = useState(false);
+  const [showCarViewer, setShowCarViewer] = useState(false);
 
   // Dev keyboard shortcut: Ctrl+Shift+H
   useEffect(() => {
@@ -161,6 +163,7 @@ function App() {
       {showMyVehicles && <MyVehiclesMenu onClose={() => setShowMyVehicles(false)} />}
       {showTerritories && <TerritoriesView onClose={() => setShowTerritories(false)} />}
       {showWars && <WarsView onClose={() => setShowWars(false)} />}
+      {showCarViewer && <CarViewer onClose={() => setShowCarViewer(false)} />}
       
       {/* Dev Tools (development only) */}
       {IS_DEV && HotspotTool && showDevTools && (
@@ -287,6 +290,7 @@ function App() {
               {IS_DEV && <NavButton active={showBusinessProducts} onClick={() => setShowBusinessProducts(true)} icon="📦" />}
               {IS_DEV && <NavButton active={showCategoryEditor} onClick={() => setShowCategoryEditor(true)} icon="📚" />}
               {IS_DEV && <NavButton active={showLocationIconEditor} onClick={() => setShowLocationIconEditor(true)} icon="📍" />}
+              {IS_DEV && <NavButton active={showCarViewer} onClick={() => setShowCarViewer(true)} icon="🚗" />}
           </footer>
         </>
       )}
