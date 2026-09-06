@@ -29,37 +29,43 @@ export const LOCATION_ACTIONS = {
   gas: [
     { value: 'refuel',        label: '⛽ Заправиться' },
     { value: 'enter',         label: '🛒 Войти в магазин АЗС' },
+    { value: 'atm',           label: '� Использовать банкомат' },
     { value: 'sublocation',   label: '📍 Часть локации' },
   ],
 
   // --- Отель ---
   hotel: [
-    { value: 'enter',         label: '� Зайти в отель' },
+    { value: 'enter',         label: '🏨 Зайти в отель' },
     { value: 'open_hotel',    label: '🛏️ Меню номеров' },
+    { value: 'atm',           label: '🏧 Использовать банкомат' },
     { value: 'sublocation',   label: '📍 Часть локации' },
   ],
 
   // --- Магазин ---
   shop: [
     { value: 'enter',         label: '🛒 Войти в магазин' },
+    { value: 'atm',           label: '🏧 Использовать банкомат' },
     { value: 'sublocation',   label: '📍 Часть локации' },
   ],
 
   // --- Пиццерия ---
   pizzeria: [
     { value: 'enter',         label: '🍕 Войти в пиццерию' },
+    { value: 'atm',           label: '🏧 Использовать банкомат' },
     { value: 'sublocation',   label: '📍 Часть локации' },
   ],
 
   // --- Тюнинг ---
   tuning: [
     { value: 'enter',         label: '🔧 Войти в тюнинг' },
+    { value: 'atm',           label: '🏧 Использовать банкомат' },
     { value: 'sublocation',   label: '📍 Часть локации' },
   ],
 
   // --- Автосалон ---
   showroom: [
     { value: 'enter',         label: '🚗 Войти в автосалон' },
+    { value: 'atm',           label: '� Использовать банкомат' },
     { value: 'sublocation',   label: '📍 Часть локации' },
   ],
 
@@ -78,30 +84,35 @@ export const LOCATION_ACTIONS = {
   // --- Стрип-клуб ---
   nightclub: [
     { value: 'enter',         label: '💃 Войти в клуб' },
-    { value: 'sublocation',   label: '📍 Часть локации' },
+    { value: 'atm',           label: '🏧 Использовать банкомат' },
+    { value: 'sublocation',   label: '� Часть локации' },
   ],
 
   // --- Бар ---
   bar: [
     { value: 'enter',         label: '🍺 Войти в бар' },
-    { value: 'sublocation',   label: '� Часть локации' },
+    { value: 'atm',           label: '🏧 Использовать банкомат' },
+    { value: 'sublocation',   label: '📍 Часть локации' },
   ],
 
   // --- Парковка ---
   parking: [
     { value: 'enter',         label: '🅿️ Зайти на парковку' },
-    { value: 'sublocation',   label: '� Часть локации' },
+    { value: 'atm',           label: '🏧 Использовать банкомат' },
+    { value: 'sublocation',   label: '📍 Часть локации' },
   ],
 
   // --- Спортзал ---
   gym: [
     { value: 'enter',         label: '💪 Войти в спортзал' },
+    { value: 'atm',           label: '🏧 Использовать банкомат' },
     { value: 'sublocation',   label: '📍 Часть локации' },
   ],
 
   // --- Больница ---
   hospital: [
     { value: 'enter',         label: '🏥 Войти в больницу' },
+    { value: 'atm',           label: '🏧 Использовать банкомат' },
     { value: 'sublocation',   label: '📍 Часть локации' },
   ],
 
@@ -144,6 +155,7 @@ export const LOCATION_ACTIONS = {
   // --- Fallback для неизвестных типов ---
   default: [
     { value: 'enter',         label: '🚪 Войти в здание / интерьер' },
+    { value: 'atm',           label: '� Использовать банкомат' },
     { value: 'buy_business',  label: '💼 Купить бизнес / инфо' },
     { value: 'sublocation',   label: '📍 Часть локации' },
   ],
