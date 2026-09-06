@@ -407,6 +407,28 @@ const getNearestWaypoint = (x, y) => {
 const EDITOR_LOCATIONS_KEY = 'road_editor_locations';
 const LOCATION_ICONS_KEY = 'location_icons';
 
+// Базовые иконки, которые отображаются у всех игроков в Telegram
+export const DEFAULT_LOCATION_ICONS = {
+  vokzal: '/icons/locations/icon_vokzal.png',
+  meriya: '/icons/locations/icon_meria.png',
+  showroom_ls: '/icons/locations/icon_autoshop.png',
+  bank_1: '/icons/locations/icon_bank.png',
+  lspd: '/icons/locations/icon_polic.png',
+  hospital_1: '/icons/locations/icon_hospital.png',
+  sto_1: '/icons/locations/icon_sto.png',
+  shop_1: '/icons/locations/icon_shop247.png',
+  shop_2: '/icons/locations/icon_shop247.png',
+  shop_3: '/icons/locations/icon_shop247.png',
+  shop_4: '/icons/locations/icon_shop247.png',
+  shop_5: '/icons/locations/icon_shop247.png',
+  clothes_1: '/icons/locations/icon_clothshop.png',
+  gym_1: '/icons/locations/icon_gym.png',
+  gym_2: '/icons/locations/icon_gym.png',
+  warehouse_1: '/icons/locations/icon_sklad.png',
+  driving_school_1: '/icons/locations/icon_autoshcool.png',
+  fishing_port: '/icons/locations/icon_fishplace.png',
+};
+
 export { DEFAULT_LOCATIONS };
 
 export const getSavedEditorLocations = () => {
@@ -421,9 +443,10 @@ export const getSavedEditorLocations = () => {
 export const loadLocationIcons = () => {
   try {
     const raw = localStorage.getItem(LOCATION_ICONS_KEY);
-    return raw ? JSON.parse(raw) : {};
+    const custom = raw ? JSON.parse(raw) : {};
+    return { ...DEFAULT_LOCATION_ICONS, ...custom };
   } catch {
-    return {};
+    return { ...DEFAULT_LOCATION_ICONS };
   }
 };
 
@@ -451,19 +474,13 @@ export const resetAllLocationIcons = () => {
 };
 
 export const saveEditorLocations = (locList) => {
-  // Save ALL locations to localStorage BEFORE updating DEFAULT_LOCATIONS
-  // (DEFAULT_LOCATIONS is a literal in code — mutations are lost on page reload,
-  //  so localStorage is the only persistent storage)
   localStorage.setItem(EDITOR_LOCATIONS_KEY, JSON.stringify(locList));
-
-  // Update LOCATIONS in memory for immediate effect
   locList.forEach(savedLoc => {
     const baseIndex = LOCATIONS.findIndex(l => l.id === savedLoc.id);
     if (baseIndex !== -1) {
       LOCATIONS[baseIndex] = { ...LOCATIONS[baseIndex], x: savedLoc.x, y: savedLoc.y };
     }
   });
-
   FINAL_LOCATIONS = getMergedLocations();
 };
 
@@ -471,13 +488,11 @@ export const resetLocationToDefault = (locationId) => {
   const defaultLoc = DEFAULT_LOCATIONS.find(l => l.id === locationId);
   if (!defaultLoc) return;
 
-  // Reset in LOCATIONS array
   const idx = LOCATIONS.findIndex(l => l.id === locationId);
   if (idx !== -1) {
     LOCATIONS[idx] = { ...defaultLoc };
   }
 
-  // Remove from saved editor locations in localStorage
   const saved = getSavedEditorLocations().filter(l => l.id !== locationId);
   if (saved.length) {
     localStorage.setItem(EDITOR_LOCATIONS_KEY, JSON.stringify(saved));
@@ -485,11 +500,9 @@ export const resetLocationToDefault = (locationId) => {
     localStorage.removeItem(EDITOR_LOCATIONS_KEY);
   }
 
-  // Reset custom icon
   const icons = loadLocationIcons();
   delete icons[locationId];
   localStorage.setItem(LOCATION_ICONS_KEY, JSON.stringify(icons));
-
   FINAL_LOCATIONS = getMergedLocations();
 };
 
@@ -504,10 +517,10 @@ export const getMergedLocations = () => {
   const base = getLinkedLocations();
   const saved = getSavedEditorLocations();
   const icons = loadLocationIcons();
-  if (!saved.length && !Object.keys(icons).length) return base;
-  const baseIds = new Set(base.map(l => l.id));
+  
   let result = base;
   if (saved.length) {
+    const baseIds = new Set(base.map(l => l.id));
     result = result.map(l => {
       const savedLoc = saved.find(s => s.id === l.id);
       if (savedLoc) {
@@ -518,13 +531,16 @@ export const getMergedLocations = () => {
     const newLocs = saved.filter(s => !baseIds.has(s.id)).map(l => ({ ...l, entrance_id: getNearestWaypoint(l.x, l.y) }));
     result = result.concat(newLocs);
   }
+
+  // Применяем иконки: сначала кастомные из редактора, затем DEFAULT_LOCATION_ICONS, затем оригинальный loc.icon
   result = result.map(l => {
-    const icon = icons[l.id];
+    const icon = icons[l.id] || DEFAULT_LOCATION_ICONS[l.id];
     if (icon) {
       return { ...l, icon };
     }
     return l;
   });
+
   return result;
 };
 
