@@ -434,14 +434,13 @@ export default function HotspotTool({ onClose, onExport }) {
   };
 
   // Сохранение в SAMP LocalStorage
-  const handleSaveToStorage = () => {
-    // Переводим обратно в проценты для идеальной совместимости с LocationView.jsx
+  const handleSave = async () => {
     const normalized = hotspots.map((hs) => ({
       id: hs.id,
       type: 'rect',
       label: hs.label,
       action: hs.action,
-      subLocation: hs.subLocation || undefined,
+      ...(hs.subLocation ? { subLocation: hs.subLocation } : {}),
       x: Number(((hs.x / naturalSize.width) * 100).toFixed(3)),
       y: Number(((hs.y / naturalSize.height) * 100).toFixed(3)),
       w: Number(((hs.w / naturalSize.width) * 100).toFixed(3)),
@@ -454,11 +453,28 @@ export default function HotspotTool({ onClose, onExport }) {
       updatedAt: new Date().toISOString(),
     };
 
-    const ok = safeLocalStorageSet(`hotspot_tool_${selectedLocId}`, JSON.stringify(payload));
-    if (ok) {
-      showToast('💾 Сохранено для игры!');
-      if (onExport) onExport(payload);
+    // 1. Сохраняем в localStorage для мгновенного отклика
+    safeLocalStorageSet(`hotspot_tool_${selectedLocId}`, JSON.stringify(payload));
+
+    // 2. Сохраняем на диск в src/data/savedHotspots.json через Vite
+    try {
+      const res = await fetch('/api/save-hotspots', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: selectedLocId, payload }),
+      });
+
+      if (res.ok) {
+        showToast('💾 Успешно сохранено на диск в src/data/savedHotspots.json!');
+        if (onExport) onExport(payload);
+        return;
+      }
+    } catch (e) {
+      console.warn('Сервер автосохранения не ответил:', e);
     }
+
+    showToast('💾 Сохранено в браузере!');
+    if (onExport) onExport(payload);
   };
 
   // Экспорт готового JS-конфига для locationStyles.js

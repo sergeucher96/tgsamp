@@ -1,12 +1,13 @@
 // src/data/houseStyles.js
+import savedHotspots from './savedHotspots.json';
+
 // Hotspots для интерактивных зон дома (дверь, гараж и т.д.)
 // Координаты рассчитываются в процентах от картинки (object-contain) — стабильны при любом размере экрана.
-
 export const HOUSE_HOTSPOTS = {
   economy: {
     1: [
-      { id: 'door', type: 'rect', x: 22.03635853728407, y: 50.697541268952165, w: 32.53247332111437, h: 18.46437690836538, action: 'enter', label: 'Войти в дом' },
-      { id: 'garage', type: 'rect', x: 67.53786676604943, y: 45.568543767077344, w: 27.03711334302976, h: 24.912261960987607, action: 'garage', label: 'Гараж' }
+      { id: 'door', type: 'rect', x: 22.036, y: 50.697, w: 32.532, h: 18.464, action: 'enter', label: 'Войти в дом' },
+      { id: 'garage', type: 'rect', x: 67.537, y: 45.568, w: 27.037, h: 24.912, action: 'garage', label: 'Гараж' }
     ]
   },
   comfort: {},
@@ -16,63 +17,51 @@ export const HOUSE_HOTSPOTS = {
 
 // Картинки гаражей по классу дома
 export const HOUSE_GARAGE_IMAGES = {
-  economy: {
-    image: '/houses/eco_1_int.webp',
-  },
-  comfort: {
-    image: '/houses/eco_1_int.webp',
-  },
-  business: {
-    image: '/houses/eco_1_int.webp',
-  },
-  premium: {
-    image: '/houses/eco_1_int.webp',
-  }
+  economy: { image: '/houses/eco_1_int.webp' },
+  comfort: { image: '/houses/eco_1_int.webp' },
+  business: { image: '/houses/eco_1_int.webp' },
+  premium: { image: '/houses/eco_1_int.webp' }
 };
 
 // Хотспоты для гаража
 export const HOUSE_GARAGE_HOTSPOTS = {
   economy: {
-    exit: { id: 'exit', type: 'rect', x: 10, y: 40, w: 20, h: 20, action: 'exit', label: 'Назад' },
+    exit: { id: 'exit', type: 'rect', x: 10, y: 40, w: 20, h: 20, action: 'exit', label: 'Назад' }
   },
   comfort: {
-    exit: { id: 'exit', type: 'rect', x: 10, y: 40, w: 20, h: 20, action: 'exit', label: 'Назад' },
+    exit: { id: 'exit', type: 'rect', x: 10, y: 40, w: 20, h: 20, action: 'exit', label: 'Назад' }
   },
   business: {
-    exit: { id: 'exit', type: 'rect', x: 10, y: 40, w: 20, h: 20, action: 'exit', label: 'Назад' },
+    exit: { id: 'exit', type: 'rect', x: 10, y: 40, w: 20, h: 20, action: 'exit', label: 'Назад' }
   },
   premium: {
-    exit: { id: 'exit', type: 'rect', x: 10, y: 40, w: 20, h: 20, action: 'exit', label: 'Назад' },
+    exit: { id: 'exit', type: 'rect', x: 10, y: 40, w: 20, h: 20, action: 'exit', label: 'Назад' }
   }
 };
 
-// Реестр изображений (используем только реально существующие файлы в public/houses)
+// Реестр изображений
 export const HOUSE_PREVIEWS_MAP = {
   economy: {
     images: [
       { id: 1, src: '/houses/eco_1.webp' },
       { id: 2, src: '/houses/eco_1_int.webp' },
-      { id: 3, src: '/houses/houselong.jpg' },
+      { id: 3, src: '/houses/houselong.jpg' }
     ],
     default: '/houses/eco_1.webp'
   },
   comfort: {
     images: [
       { id: 1, src: '/houses/eco_1.webp' },
-      { id: 2, src: '/houses/houselong.jpg' },
+      { id: 2, src: '/houses/houselong.jpg' }
     ],
     default: '/houses/eco_1.webp'
   },
   business: {
-    images: [
-      { id: 1, src: '/houses/houselong.jpg' },
-    ],
+    images: [{ id: 1, src: '/houses/houselong.jpg' }],
     default: '/houses/houselong.jpg'
   },
   premium: {
-    images: [
-      { id: 1, src: '/houses/houselong.jpg' },
-    ],
+    images: [{ id: 1, src: '/houses/houselong.jpg' }],
     default: '/houses/houselong.jpg'
   }
 };
@@ -104,7 +93,7 @@ export const CLASS_BORDERS = {
   economy: 'border-white/80 border-[2px]',
   comfort: 'border-yellow-400/90 border-[3px] shadow-[0_0_10px_rgba(234,179,8,0.3)]',
   business: 'border-cyan-400 border-[4px] shadow-[0_0_15px_rgba(34,211,238,0.5)]',
-  premium: 'border-purple-500 border-[4px] shadow-[0_0_20px_rgba(168,85,247,0.7)] animate-pulse',
+  premium: 'border-purple-500 border-[4px] shadow-[0_0_20px_rgba(168,85,247,0.7)] animate-pulse'
 };
 
 // 1. Функция получения стиля маркера на карте
@@ -121,7 +110,7 @@ export const getHouseStyle = (house, player) => {
   }
   return {
     color: statusColor,
-    border: CLASS_BORDERS[house.class] || CLASS_BORDERS.economy,
+    border: CLASS_BORDERS[house.class] || CLASS_BORDERS.economy
   };
 };
 
@@ -181,36 +170,51 @@ export const getHousePreview = (house) => {
   return (house.v ? category[house.v] : null) || category.default || '/houses/eco_1.webp';
 };
 
-// 3. Получение хотспотов дома
-export function getHouseHotspots(cls, imgIdx) {
-  const staticHs = HOUSE_HOTSPOTS[cls]?.[imgIdx] || [];
-  const saved = localStorage.getItem(`hotspot_tool_${cls}`);
-  if (saved) {
-    try {
-      const data = JSON.parse(saved);
-      if (Array.isArray(data) && data.length > 0) return data;
-      if (Array.isArray(data?.hotspots) && data.hotspots.length > 0) return data.hotspots;
-    } catch (e) {}
+// 3. Получение хотспотов дома (Берет сначала из savedHotspots.json, затем из localStorage, затем дефолт)
+export function getHouseHotspots(cls, imgIdx = 1) {
+  // 1. Приоритет: данные из файла savedHotspots.json (закоммиченные в Git для Telegram)
+  const fileData = savedHotspots?.[cls];
+  if (fileData) {
+    if (Array.isArray(fileData) && fileData.length > 0) return fileData;
+    if (Array.isArray(fileData?.hotspots) && fileData.hotspots.length > 0) return fileData.hotspots;
   }
+
+  // 2. Локальная память браузера (для мгновенного предпросмотра при редактировании)
+  if (typeof localStorage !== 'undefined') {
+    const saved = localStorage.getItem(`hotspot_tool_${cls}`);
+    if (saved) {
+      try {
+        const data = JSON.parse(saved);
+        if (Array.isArray(data) && data.length > 0) return data;
+        if (Array.isArray(data?.hotspots) && data.hotspots.length > 0) return data.hotspots;
+      } catch (e) {}
+    }
+  }
+
+  // 3. Базовый дефолт
+  const staticHs = HOUSE_HOTSPOTS[cls]?.[imgIdx] || [];
   return staticHs.length > 0 ? staticHs : (HOUSE_HOTSPOTS.economy[1] || []);
 }
 
 // 4. Получение подлокаций дома
 export function getHouseSublocations(cls) {
-  const saved = localStorage.getItem('hotspot_tool_sublocations');
-  if (saved) {
-    try {
-      const data = JSON.parse(saved);
-      const result = {};
-      for (const [key, value] of Object.entries(data)) {
-        if (key.startsWith(cls + '__')) {
-          const label = key.substring(cls.length + 2);
-          result[label] = value;
+  if (typeof localStorage !== 'undefined') {
+    const saved = localStorage.getItem('hotspot_tool_sublocations');
+    if (saved) {
+      try {
+        const data = JSON.parse(saved);
+        const result = {};
+        for (const [key, value] of Object.entries(data)) {
+          if (key.startsWith(cls + '__')) {
+            const label = key.substring(cls.length + 2);
+            result[label] = value;
+          }
         }
-      }
-      if (Object.keys(result).length > 0) return result;
-    } catch (e) {}
+        if (Object.keys(result).length > 0) return result;
+      } catch (e) {}
+    }
   }
+
   return {
     garage_1: {
       image: '/houses/eco_1_int.webp',
@@ -222,16 +226,30 @@ export function getHouseSublocations(cls) {
   };
 }
 
-// 5. Получение картинки интерьера дома
+// 5. Получение картинки интерьера / панорамы дома
 export function getHouseImage(cls, imgIdx = 1) {
-  const saved = localStorage.getItem(`hotspot_tool_${cls}`);
-  if (saved) {
-    try {
-      const data = JSON.parse(saved);
-      if (data?.default && typeof data.default === 'string' && data.default.length > 5) return data.default;
-      if (data?.images?.length > 0) return data.images[imgIdx - 1]?.src || data.default;
-    } catch (e) {}
+  // 1. Приоритет: данные из файла savedHotspots.json (закоммиченные в Git для Telegram)
+  const fileData = savedHotspots?.[cls];
+  if (fileData?.default && typeof fileData.default === 'string' && fileData.default.length > 5) {
+    return fileData.default;
   }
+  if (fileData?.images?.length > 0) {
+    return fileData.images[imgIdx - 1]?.src || fileData.default;
+  }
+
+  // 2. Локальная память браузера (при редактировании)
+  if (typeof localStorage !== 'undefined') {
+    const saved = localStorage.getItem(`hotspot_tool_${cls}`);
+    if (saved) {
+      try {
+        const data = JSON.parse(saved);
+        if (data?.default && typeof data.default === 'string' && data.default.length > 5) return data.default;
+        if (data?.images?.length > 0) return data.images[imgIdx - 1]?.src || data.default;
+      } catch (e) {}
+    }
+  }
+
+  // 3. Базовый дефолт
   const category = HOUSE_PREVIEWS_MAP[cls] || HOUSE_PREVIEWS_MAP.economy;
   if (!category) return '/houses/eco_1.webp';
   const img = category.images?.find(i => i.id === imgIdx);
@@ -240,16 +258,18 @@ export function getHouseImage(cls, imgIdx = 1) {
 
 // 6. Получение данных гаража
 export function getHouseGarageData(cls) {
-  const saved = localStorage.getItem('hotspot_tool_sublocations');
-  if (saved) {
-    try {
-      const data = JSON.parse(saved);
-      for (const [key, value] of Object.entries(data)) {
-        if (key.startsWith(cls + '__')) {
-          return value;
+  if (typeof localStorage !== 'undefined') {
+    const saved = localStorage.getItem('hotspot_tool_sublocations');
+    if (saved) {
+      try {
+        const data = JSON.parse(saved);
+        for (const [key, value] of Object.entries(data)) {
+          if (key.startsWith(cls + '__')) {
+            return value;
+          }
         }
-      }
-    } catch (e) {}
+      } catch (e) {}
+    }
   }
   return HOUSE_GARAGE_IMAGES[cls] || { image: '/houses/eco_1_int.webp' };
 }
