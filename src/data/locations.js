@@ -541,7 +541,7 @@ export const getMergedLocations = () => {
     result = result.map(l => {
       const savedLoc = saved.find(s => s.id === l.id);
       if (savedLoc) {
-        return { ...l, x: savedLoc.x, y: savedLoc.y };
+        return { ...l, x: savedLoc.x, y: savedLoc.y, entrance_id: getNearestWaypoint(savedLoc.x, savedLoc.y) };
       }
       return l;
     });
@@ -549,7 +549,7 @@ export const getMergedLocations = () => {
     result = result.concat(newLocs);
   }
 
-  // Применяем иконки: сначала кастомные из редактора, затем DEFAULT_LOCATION_ICONS, затем оригинальный loc.icon
+  // Применяем иконки (не перезаписываем entrance_id)
   result = result.map(l => {
     const icon = icons[l.id] || DEFAULT_LOCATION_ICONS[l.id];
     if (icon) {
