@@ -213,7 +213,7 @@ export default function LocationView({ location, onClose, onAction }) {
   };
 
   const handleHotspotClick = (hs) => {
-    if (totalDragDistanceRef.current >= PHYSICS_CONFIG.dragThreshold) return;
+    // Hotspot onClick with stopPropagation is sufficient; drag guard only needed for image click
 
     if (hs.action === 'sublocation' && hs.subLocation) {
       const subData = getLocationSublocations(location?.id)?.[hs.subLocation];
@@ -359,6 +359,7 @@ export default function LocationView({ location, onClose, onAction }) {
                   height: `${hs.h}%`,
                   cursor: 'pointer',
                 }}
+                onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation();
                   handleHotspotClick(hs);
