@@ -2,6 +2,8 @@
 // 2D картинки и интерактивные зоны (hotspots) для локаций
 // Аналог houseStyles.js — координаты в процентах от изображения
 
+import savedHotspots from './savedHotspots.json';
+
 // Интерактивные зоны (дверь, касса, стойка...)
 // Формат: { locationId: { imageIndex: [ { id, type, x, y, w, h, action, label } ] } }
 // locationId — это ID локации из locations.js (bank_1, shop_1, tuning_1...)
@@ -94,18 +96,22 @@ export const LOCATION_IMAGES = {
 };
 
 // Получить картинку для локации по ID
-// Checks localStorage first (HotspotTool saves blob URLs there), falls back to static data
+// Приоритет: 1) localStorage, 2) savedHotspots.json, 3) статика
 export const getLocationImage = (locationId, imageIndex) => {
-  // Check if HotspotTool saved a custom image for this location
   const saved = localStorage.getItem(`hotspot_tool_${locationId}`);
   if (saved) {
     try {
       const data = JSON.parse(saved);
-      // If data has 'default' or 'images' field (image was saved via editor)
       if (data?.default) return data.default;
       if (data?.images?.length > 0) return data.images[imageIndex - 1]?.src || data.default || null;
     } catch (e) {}
   }
+
+  // Check savedHotspots.json
+  const fileData = savedHotspots?.[locationId];
+  if (fileData?.default && typeof fileData.default === 'string' && fileData.default.length > 5) return fileData.default;
+  if (fileData?.images?.length > 0) return fileData.images[imageIndex - 1]?.src || fileData.default || null;
+
   const category = LOCATION_IMAGES[locationId];
   if (!category) return null;
   const img = category.images?.find(i => i.id === imageIndex);
@@ -118,49 +124,57 @@ export const getLocationLabel = (locationId) => {
 };
 
 // Получить hotspots для локации
-// Prioritizes localStorage data (HotspotTool saves hotspots there), falls back to static data
+// Приоритет: 1) localStorage, 2) savedHotspots.json, 3) статика
 export const getLocationHotspots = (locationId, imageIndex) => {
-  // Check localStorage for editor-saved hotspots
   const saved = localStorage.getItem(`hotspot_tool_${locationId}`);
   if (saved) {
     try {
       const data = JSON.parse(saved);
-      // If it's an array of hotspots and not empty — use it
       if (Array.isArray(data) && data.length > 0) return data;
-      // If it has a hotspots field and it's not empty
       if (Array.isArray(data?.hotspots) && data.hotspots.length > 0) return data.hotspots;
     } catch (e) {}
   }
-  // Fall back to static data
+
+  // Check savedHotspots.json
+  const fileData = savedHotspots?.[locationId];
+  if (Array.isArray(fileData?.hotspots) && fileData.hotspots.length > 0) return fileData.hotspots;
+
   return LOCATION_HOTSPOTS[locationId]?.[imageIndex] || [];
 };
 
-// Подлокации (сублокации) — картинка + хотспоты для каждой части локации
-// Формат: { parentId: { subLocationKey: { image: '/path.webp', hotspots: [...], label: 'Имя' } } }
-// Merges static data with localStorage data (HotspotTool saves sublocations there)
+// Подлокации — картинка + хотспоты для каждой части локации
+// Приоритет: 1) localStorage, 2) savedHotspots.json, 3) статика
 export function getLocationSublocations(locationId) {
   const staticData = LOCATION_SUBLOCATIONS[locationId] || {};
-  // Check localStorage for editor-saved sublocations
+  
+  // 1. localStorage
   const saved = localStorage.getItem('hotspot_tool_sublocations');
+  let merged = { ...staticData };
   if (saved) {
     try {
       const data = JSON.parse(saved);
-      // Filter entries that belong to this locationId
-      // Key format: "locationId__subLocationLabel"
       if (data && typeof data === 'object') {
-        const result = { ...staticData };
         for (const [key, value] of Object.entries(data)) {
-          // Check if key starts with locationId__ (locationId followed by __ and label)
           if (key.startsWith(locationId + '__')) {
             const label = key.substring(locationId.length + 2);
-            result[label] = value;
+            merged[label] = value;
           }
         }
-        return result;
       }
     } catch (e) {}
   }
-  return staticData;
+
+  // 2. savedHotspots.json
+  if (savedHotspots) {
+    for (const [key, value] of Object.entries(savedHotspots)) {
+      if (key.startsWith(locationId + '__')) {
+        const label = key.substring(locationId.length + 2);
+        merged[label] = { ...merged[label], ...value };
+      }
+    }
+  }
+
+  return merged;
 }
 
 // Keep the export for backward compatibility
