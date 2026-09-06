@@ -6,7 +6,8 @@ import InventoryGrid from '../components/InventoryGrid';
 import ItemActionMenu from '../components/ItemActionMenu';
 import { Briefcase, Zap, Search, Package, DollarSign, Trash2, UtensilsCrossed, Wrench, Shield, AlertTriangle, HeartPulse } from 'lucide-react';
 import { ITEM_DATABASE } from '../data/items';
-import { RESOURCE_PRICES } from '../data/items';
+import { CLOTHING_DATABASE } from '../data/clothingConfig';
+import { RESOURCE_PRICES } from '../data/economy';
 
 export default function InventoryView() {
   const { player } = usePlayerStore();
