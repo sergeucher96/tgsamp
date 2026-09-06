@@ -1,3 +1,5 @@
+import savedHotspots from './savedHotspots.json';
+
 const DEFAULT_LOCATIONS = [
   // ==========================================
   // 1. ГОРОДСКИЕ ОБЪЕКТЫ
@@ -432,22 +434,37 @@ export const DEFAULT_LOCATION_ICONS = {
 export { DEFAULT_LOCATIONS };
 
 export const getSavedEditorLocations = () => {
+  // 1. localStorage first
   try {
     const raw = localStorage.getItem(EDITOR_LOCATIONS_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  // 2. savedHotspots.json fallback
+  if (savedHotspots?.location_coordinates) {
+    return Object.entries(savedHotspots.location_coordinates).map(([id, coords]) => ({
+      id,
+      x: coords.x,
+      y: coords.y,
+      name: coords.name || id,
+      type: coords.type || 'public',
+    }));
   }
+  return [];
 };
 
 export const loadLocationIcons = () => {
   try {
     const raw = localStorage.getItem(LOCATION_ICONS_KEY);
-    const custom = raw ? JSON.parse(raw) : {};
-    return { ...DEFAULT_LOCATION_ICONS, ...custom };
-  } catch {
-    return { ...DEFAULT_LOCATION_ICONS };
+    if (raw) {
+      const custom = JSON.parse(raw);
+      return { ...DEFAULT_LOCATION_ICONS, ...custom };
+    }
+  } catch {}
+  // Fallback to savedHotspots.json
+  if (savedHotspots?.location_icons) {
+    return { ...DEFAULT_LOCATION_ICONS, ...savedHotspots.location_icons };
   }
+  return { ...DEFAULT_LOCATION_ICONS };
 };
 
 export const saveLocationIcon = (locationId, icon) => {

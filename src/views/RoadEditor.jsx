@@ -485,12 +485,27 @@ export default function RoadEditor({ onClose }) {
 
   const resetAll = () => { setWaypoints({ ...WAYPOINTS }); setRoads([...ROAD_NETWORK]); setSelectedPoint(null); setDragging(false); setDragTarget(null); notify('Сброшено'); };
 
-  const handleSaveLocations = () => {
+  const handleSaveLocations = async () => {
     saveEditorLocations(locations);
+    // Also save coordinates to savedHotspots.json via API
+    try {
+      const saved = getSavedEditorLocations();
+      const coords = {};
+      saved.forEach(loc => {
+        coords[loc.id] = { x: loc.x, y: loc.y, name: loc.name, type: loc.type };
+      });
+      await fetch('/api/save-locations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ coordinates: coords }),
+      });
+      notify('💾 Координаты сохранены в savedHotspots.json!');
+    } catch (e) {
+      console.error('Failed to save locations to file:', e);
+    }
     setLocations([]);
     refreshFinalLocations();
     window.dispatchEvent(new Event('roadEditorLocationsUpdated'));
-    notify('Изменения сохранены и применены в игре!');
   };
 
   const handleResetSavedLocations = () => {
