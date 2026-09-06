@@ -290,7 +290,7 @@ function App() {
               {IS_DEV && <NavButton active={showBusinessProducts} onClick={() => setShowBusinessProducts(true)} icon="📦" />}
               {IS_DEV && <NavButton active={showCategoryEditor} onClick={() => setShowCategoryEditor(true)} icon="📚" />}
               {IS_DEV && <NavButton active={showLocationIconEditor} onClick={() => setShowLocationIconEditor(true)} icon="📍" />}
-              {IS_DEV && <NavButton active={showCarViewer} onClick={() => setShowCarViewer(true)} icon="🚗" />}
+              <NavButton active={showCarViewer} onClick={() => setShowCarViewer(true)} icon="🚗" />
           </footer>
         </>
       )}
