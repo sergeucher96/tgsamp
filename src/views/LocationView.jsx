@@ -1,214 +1,328 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { X, ArrowLeft, Move } from 'lucide-react';
-import { LOCATION_IMAGES, getLocationHotspots, getLocationLabel, getLocationSublocations } from '../data/locationStyles';
+import {
+  LOCATION_IMAGES,
+  getLocationHotspots,
+  getLocationLabel,
+  getLocationSublocations,
+} from '../data/locationStyles';
 
-/**
- * LocationView — показывает 2D картинку локации с интерактивными зонами (hotspots).
- * Поддерживает панорамный режим для широких изображений с drag-to-pan и zoom.
- */
+// Настройки физики камеры (идентичные HouseInterior)
+const PHYSICS_CONFIG = {
+  friction: 0.93,          // Затухание инерции
+  springStiffness: 0.18,   // Возврат от краев (spring back)
+  bounceResistance: 0.32,  // Сопротивление при перетягивании
+  maxSpeed: 45,            // Ограничение скорости
+  stopVelocity: 0.05,      // Порог остановки
+  dragThreshold: 6,        // Отсечение клика от скролла (px)
+};
+
 export default function LocationView({ location, onClose, onAction }) {
   if (!location) return null;
+
   const [houseImage, setHouseImage] = useState(null);
   const [hotspots, setHotspots] = useState([]);
-  const [hotspotPositions, setHotspotPositions] = useState([]);
   const [hoveredHotspot, setHoveredHotspot] = useState(null);
-  // Sublocation navigation
+
+  // Навигация по подлокациям
   const [subLocationStack, setSubLocationStack] = useState([]);
   const [currentSubLocation, setCurrentSubLocation] = useState(null);
   const [subLocationImage, setSubLocationImage] = useState(null);
   const [subLocationHotspots, setSubLocationHotspots] = useState([]);
-  const [subLocationPositions, setSubLocationPositions] = useState([]);
 
-  // Panorama state
-  const [panX, setPanX] = useState(0);
-  const [panY, setPanY] = useState(0);
-  const [zoom, setZoom] = useState(1);
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [isPanorama, setIsPanorama] = useState(false);
-  const [imageNaturalSize, setImageNaturalSize] = useState({ width: 0, height: 0 });
-
-  const imgRef = useRef(null);
+  // Размеры и физика камеры
   const containerRef = useRef(null);
-  const panoramaWrapperRef = useRef(null);
+  const [viewportWidth, setViewportWidth] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const [imageAspect, setImageAspect] = useState(16 / 9);
+  const [isPanorama, setIsPanorama] = useState(false);
+
+  // Текущее положение камеры (X)
+  const [cameraX, setCameraX] = useState(0);
+  const cameraXRef = useRef(0);
+  cameraXRef.current = cameraX;
+
+  // Рефы драга и инерции
+  const isDraggingRef = useRef(false);
+  const dragStartPointerX = useRef(0);
+  const dragStartCameraX = useRef(0);
+  const totalDragDistanceRef = useRef(0);
+
+  const pointerSamplesRef = useRef([]);
+  const velocityRef = useRef(0);
+  const rafIdRef = useRef(null);
 
   const inSubLocation = subLocationImage !== null;
 
-  // Load image and hotspots for this location
+  // Вычисляем ширину панорамы при фиксированной 100% высоте
+  const scaledWidth = viewportHeight > 0 ? viewportHeight * imageAspect : 0;
+  const maxCameraX = Math.max(0, scaledWidth - viewportWidth);
+
+  // Измерение контейнера при ресайзе
+  useEffect(() => {
+    const updateDimensions = () => {
+      if (!containerRef.current) return;
+      setViewportWidth(containerRef.current.clientWidth);
+      setViewportHeight(containerRef.current.clientHeight);
+    };
+
+    updateDimensions();
+    window.addEventListener('resize', updateDimensions);
+    return () => window.removeEventListener('resize', updateDimensions);
+  }, []);
+
+  // Остановка инерции
+  const stopInertia = () => {
+    if (rafIdRef.current) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+    velocityRef.current = 0;
+  };
+
+  // Инерционный цикл RAF (60 FPS)
+  const startInertiaLoop = useCallback(() => {
+    stopInertia();
+
+    const loop = () => {
+      let currentX = cameraXRef.current;
+      let vel = velocityRef.current;
+      const vH = containerRef.current?.clientHeight || 0;
+      const vW = containerRef.current?.clientWidth || 0;
+      const currentMax = Math.max(0, vH * imageAspect - vW);
+
+      // В пределах границ
+      if (currentX >= 0 && currentX <= currentMax) {
+        currentX -= vel;
+        vel *= PHYSICS_CONFIG.friction;
+      }
+      // Пружина слева
+      else if (currentX < 0) {
+        const springDelta = (0 - currentX) * PHYSICS_CONFIG.springStiffness;
+        currentX += springDelta;
+        vel *= 0.65;
+      }
+      // Пружина справа
+      else if (currentX > currentMax) {
+        const springDelta = (currentMax - currentX) * PHYSICS_CONFIG.springStiffness;
+        currentX += springDelta;
+        vel *= 0.65;
+      }
+
+      cameraXRef.current = currentX;
+      setCameraX(currentX);
+      velocityRef.current = vel;
+
+      const isOutOfBounds = currentX < -0.5 || currentX > currentMax + 0.5;
+      if (Math.abs(vel) > PHYSICS_CONFIG.stopVelocity || isOutOfBounds) {
+        rafIdRef.current = requestAnimationFrame(loop);
+      } else {
+        const clamped = Math.max(0, Math.min(currentMax, currentX));
+        cameraXRef.current = clamped;
+        setCameraX(clamped);
+        stopInertia();
+      }
+    };
+
+    rafIdRef.current = requestAnimationFrame(loop);
+  }, [imageAspect]);
+
+  // Загрузка локации и хотспотов
   useEffect(() => {
     if (!location) return;
+
     const saved = localStorage.getItem(`hotspot_tool_${location.id}`);
     let customImage = null;
     let customHotspots = [];
+
     if (saved) {
       try {
         const data = JSON.parse(saved);
         if (data?.default) customImage = data.default;
         else if (data?.images?.length > 0) customImage = data.images[0]?.src || data.default;
+
         if (Array.isArray(data)) customHotspots = data;
         else if (Array.isArray(data?.hotspots)) customHotspots = data.hotspots;
-      } catch (e) {}
+      } catch (e) {
+        console.error(e);
+      }
     }
+
     const locData = LOCATION_IMAGES[location.id];
-    const finalImage = customImage || (locData ? (locData.default || locData.images?.[0]?.src || null) : null);
-    const finalHotspots = customHotspots.length > 0 ? customHotspots : (getLocationHotspots(location.id, 1) || []);
+    const finalImage = customImage || (locData ? locData.default || locData.images?.[0]?.src || null : null);
+    const finalHotspots = customHotspots.length > 0 ? customHotspots : getLocationHotspots(location.id, 1) || [];
+
     setHouseImage(finalImage);
     setHotspots(finalHotspots);
     setSubLocationStack([]);
     setSubLocationImage(null);
     setSubLocationHotspots([]);
-    setSubLocationPositions([]);
-    setPanX(0);
-    setPanY(0);
-    setZoom(1);
+
+    stopInertia();
+    cameraXRef.current = 0;
+    setCameraX(0);
   }, [location]);
 
-  // Check if image is panoramic and update natural size
-  useEffect(() => {
-    const img = imgRef.current;
-    if (!img || !img.complete) return;
-    const nw = img.naturalWidth;
-    const nh = img.naturalHeight;
-    setImageNaturalSize({ width: nw, height: nh });
-    if (nw > 0 && nh > 0 && nw / nh > 1.5) {
-      setIsPanorama(true);
-    } else {
-      setIsPanorama(false);
+  // Замер соотношения сторон фоновой картинки
+  const handleImageLoad = (e) => {
+    const nw = e.target.naturalWidth || 16;
+    const nh = e.target.naturalHeight || 9;
+    const ratio = nw / nh;
+    setImageAspect(ratio);
+
+    const isPano = ratio > (window.innerWidth / window.innerHeight || 1.3);
+    setIsPanorama(isPano);
+
+    // Центрируем панораму при первом входе
+    if (containerRef.current && isPano) {
+      const vH = containerRef.current.clientHeight;
+      const vW = containerRef.current.clientWidth;
+      const sW = vH * ratio;
+      const initialMax = Math.max(0, sW - vW);
+      const initialCenter = initialMax / 2;
+      cameraXRef.current = initialCenter;
+      setCameraX(initialCenter);
     }
-  }, [houseImage, subLocationImage]);
+  };
 
-  // Recalculate hotspot positions
-  useEffect(() => {
-    const list = inSubLocation ? subLocationHotspots : hotspots;
-    const img = imgRef.current;
-    const container = containerRef.current;
-    if (!img || !container || !img.complete || !list.length) return;
+  // Pointer Events (drag & inertia)
+  const handlePointerDown = (e) => {
+    if (!isPanorama) return;
+    stopInertia();
 
-    const nw = img.naturalWidth || imageNaturalSize.width;
-    const nh = img.naturalHeight || imageNaturalSize.height;
-    if (!nw || !nh) return;
+    isDraggingRef.current = true;
+    dragStartPointerX.current = e.clientX;
+    dragStartCameraX.current = cameraXRef.current;
+    totalDragDistanceRef.current = 0;
 
-    const cW = container.clientWidth;
-    const cH = container.clientHeight;
+    pointerSamplesRef.current = [{ x: e.clientX, time: performance.now() }];
 
-    // For panorama: image is scaled to fit container height, width overflows
-    // For normal: image fills container (object-fit: cover behavior)
-    const imageScale = nw / nh > 1.5 ? cH / nh : Math.max(cW / nw, cH / nh);
-    const displayWidth = nw * imageScale;
-    const displayHeight = nh * imageScale;
+    if (e.currentTarget.setPointerCapture) {
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch (err) {}
+    }
+  };
 
-    const positions = list.map(hs => {
-      if (hs.type === 'rect') {
-        const left = (hs.x / 100) * displayWidth;
-        const top = (hs.y / 100) * displayHeight;
-        const width = (hs.w / 100) * displayWidth;
-        const height = (hs.h / 100) * displayHeight;
-        return {
-          id: hs.id,
-          action: hs.action,
-          label: hs.label || '',
-          subLocation: hs.subLocation,
-          left,
-          top,
-          width,
-          height,
-        };
+  const handlePointerMove = (e) => {
+    if (!isDraggingRef.current || !isPanorama) return;
+
+    const deltaX = e.clientX - dragStartPointerX.current;
+    totalDragDistanceRef.current += Math.abs(e.movementX || deltaX);
+
+    let targetCameraX = dragStartCameraX.current - deltaX;
+
+    if (targetCameraX < 0) {
+      targetCameraX = targetCameraX * PHYSICS_CONFIG.bounceResistance;
+    } else if (targetCameraX > maxCameraX) {
+      const over = targetCameraX - maxCameraX;
+      targetCameraX = maxCameraX + over * PHYSICS_CONFIG.bounceResistance;
+    }
+
+    cameraXRef.current = targetCameraX;
+    setCameraX(targetCameraX);
+
+    const now = performance.now();
+    const samples = pointerSamplesRef.current.filter((s) => now - s.time <= 100);
+    samples.push({ x: e.clientX, time: now });
+    pointerSamplesRef.current = samples;
+  };
+
+  const handlePointerUp = () => {
+    if (!isDraggingRef.current) return;
+    isDraggingRef.current = false;
+
+    const samples = pointerSamplesRef.current;
+    if (samples.length >= 2) {
+      const oldest = samples[0];
+      const newest = samples[samples.length - 1];
+      const dt = newest.time - oldest.time;
+      const dx = newest.x - oldest.x;
+
+      if (dt > 10) {
+        let v = (dx / dt) * 16.6;
+        v = Math.max(-PHYSICS_CONFIG.maxSpeed, Math.min(PHYSICS_CONFIG.maxSpeed, v));
+        velocityRef.current = v;
       }
-      return null;
-    }).filter(Boolean);
+    }
 
-    if (inSubLocation) setSubLocationPositions(positions);
-    else setHotspotPositions(positions);
-  }, [hotspots, subLocationHotspots, inSubLocation, imageNaturalSize, panX, panY, zoom]);
-
-  // Pan handlers
-  const handleMouseDown = (e) => {
-    if (!isPanorama) return;
-    setIsDragging(true);
-    setDragStart({ x: e.clientX - panX, y: e.clientY - panY });
+    pointerSamplesRef.current = [];
+    startInertiaLoop();
   };
 
-  const handleMouseMove = (e) => {
-    if (!isDragging || !isPanorama) return;
-    setPanX(e.clientX - dragStart.x);
-    setPanY(e.clientY - dragStart.y);
-  };
-
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
-
-  // Zoom handler
-  const handleWheel = (e) => {
-    if (!isPanorama) return;
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? -0.1 : 0.1;
-    setZoom(prev => Math.min(Math.max(prev + delta, 0.5), 3));
-  };
-
-  // Touch handlers for mobile
-  const handleTouchStart = (e) => {
-    if (!isPanorama || e.touches.length !== 1) return;
-    setIsDragging(true);
-    setDragStart({ x: e.touches[0].clientX - panX, y: e.touches[0].clientY - panY });
-  };
-
-  const handleTouchMove = (e) => {
-    if (!isDragging || !isPanorama || e.touches.length !== 1) return;
-    setPanX(e.touches[0].clientX - dragStart.x);
-    setPanY(e.touches[0].clientY - dragStart.y);
-  };
-
-  const handleTouchEnd = () => {
-    setIsDragging(false);
-  };
-
+  // Клик по хотспоту
   const handleHotspotClick = (hs) => {
-    if (isPanorama && isDragging) return; // Prevent click after drag
+    // Отсекаем случайные клики при скролле
+    if (totalDragDistanceRef.current >= PHYSICS_CONFIG.dragThreshold) return;
+
     if (hs.action === 'sublocation' && hs.subLocation) {
       const subData = getLocationSublocations(location?.id)?.[hs.subLocation];
       if (subData) {
-        setSubLocationStack(prev => [...prev, {
-          image: subLocationImage,
-          hotspots: subLocationHotspots,
-          positions: subLocationPositions,
-          label: currentSubLocation?.label || location?.name || getLocationLabel(location?.id),
-        }]);
+        stopInertia();
+        setSubLocationStack((prev) => [
+          ...prev,
+          {
+            image: subLocationImage || houseImage,
+            hotspots: inSubLocation ? subLocationHotspots : hotspots,
+            label: currentSubLocation?.label || location?.name || getLocationLabel(location?.id),
+          },
+        ]);
+
         setCurrentSubLocation(hs);
         setSubLocationImage(subData.image);
         setSubLocationHotspots(subData.hotspots || []);
-        setSubLocationPositions([]);
+
+        cameraXRef.current = 0;
+        setCameraX(0);
         return;
       }
     }
+
     if (onAction) onAction(hs.action, hs.label);
   };
 
+  // Возврат назад из подлокации
   const goBackFromSublocation = () => {
     if (subLocationStack.length === 0) return;
+    stopInertia();
+
     const prev = subLocationStack[subLocationStack.length - 1];
-    setSubLocationStack(prevStack => prevStack.slice(0, -1));
+    setSubLocationStack((prevStack) => prevStack.slice(0, -1));
     setCurrentSubLocation(null);
-    setSubLocationImage(prev.image);
-    setSubLocationHotspots(prev.hotspots);
-    setSubLocationPositions(prev.positions);
+
+    if (subLocationStack.length === 1) {
+      setSubLocationImage(null);
+      setSubLocationHotspots([]);
+    } else {
+      setSubLocationImage(prev.image);
+      setSubLocationHotspots(prev.hotspots || []);
+    }
+
+    cameraXRef.current = 0;
+    setCameraX(0);
   };
 
-  const label = currentSubLocation?.label || currentSubLocation?.name || location?.name || getLocationLabel(location?.id) || location?.id;
+  const label =
+    currentSubLocation?.label ||
+    currentSubLocation?.name ||
+    location?.name ||
+    getLocationLabel(location?.id) ||
+    location?.id;
 
   const displayImage = subLocationImage || houseImage;
-  const displayHotspots = subLocationHotspots.length > 0 ? subLocationHotspots : hotspots;
-  const displayPositions = subLocationPositions.length > 0 ? subLocationPositions : hotspotPositions;
+  const displayHotspots = inSubLocation ? subLocationHotspots : hotspots;
 
   return (
-    <div className="fixed inset-0 z-[350] bg-[#020617] flex flex-col text-white font-sans">
-      {/* Header */}
-      <div className="absolute top-0 left-0 right-0 z-20 shrink-0 p-4 flex justify-between items-center bg-gradient-to-b from-black/70 to-transparent">
-        <div className="flex items-center gap-3">
+    <div className="fixed inset-0 z-[350] bg-[#020617] flex flex-col text-white font-sans select-none overflow-hidden">
+      {/* Шапка */}
+      <div className="absolute top-0 left-0 right-0 z-30 p-6 flex justify-between items-center bg-gradient-to-b from-black/80 via-black/40 to-transparent pointer-events-none">
+        <div className="flex items-center gap-3 pointer-events-auto">
           {inSubLocation && (
-            <button onClick={goBackFromSublocation}
-              className="p-2 bg-white/10 backdrop-blur-md rounded-2xl active:scale-90 transition-all"
-              title="Назад">
+            <button
+              onClick={goBackFromSublocation}
+              className="p-3 bg-white/10 backdrop-blur-md rounded-2xl active:scale-90 transition-all hover:bg-white/20"
+              title="Назад"
+            >
               <ArrowLeft size={18} />
             </button>
           )}
@@ -216,145 +330,119 @@ export default function LocationView({ location, onClose, onAction }) {
             <p className="text-[9px] font-black text-emerald-500 uppercase tracking-[0.3em]">
               {inSubLocation ? 'Подлокация' : 'Локация'}
             </p>
-            <h2 className="text-xl font-black uppercase italic tracking-tighter">{label}</h2>
+            <h2 className="text-2xl font-black uppercase italic tracking-tighter drop-shadow-md">
+              {label}
+            </h2>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+
+        <div className="flex items-center gap-2 pointer-events-auto">
           {isPanorama && (
-            <div className="flex items-center gap-1 bg-white/10 backdrop-blur-md rounded-xl px-2 py-1">
-              <Move size={12} className="text-slate-400" />
-              <span className="text-[9px] font-black uppercase text-slate-400">Панорама</span>
+            <div className="flex items-center gap-1.5 bg-black/40 backdrop-blur-md rounded-xl px-3 py-1 border border-white/10">
+              <Move size={12} className="text-cyan-400 animate-pulse" />
+              <span className="text-[9px] font-black uppercase tracking-wider text-slate-300">
+                Панорама
+              </span>
             </div>
           )}
-          <button onClick={onClose} className="p-3 bg-white/10 backdrop-blur-md rounded-2xl active:scale-90 transition-all">
-            <X size={18} />
+          <button
+            onClick={onClose}
+            className="p-4 bg-white/10 hover:bg-white/20 text-white rounded-3xl shadow-lg active:scale-90 transition-all backdrop-blur-md"
+          >
+            <X size={20} />
           </button>
         </div>
       </div>
 
-      {/* 2D Image with Hotspots */}
+      {/* Интерактивный видовой экран панорамы */}
       <div
         ref={containerRef}
-        className="absolute inset-0 bg-black overflow-hidden"
-        onMouseDown={isPanorama ? handleMouseDown : undefined}
-        onMouseMove={isPanorama ? handleMouseMove : undefined}
-        onMouseUp={isPanorama ? handleMouseUp : undefined}
-        onMouseLeave={isPanorama ? handleMouseUp : undefined}
-        onWheel={isPanorama ? handleWheel : undefined}
-        onTouchStart={isPanorama ? handleTouchStart : undefined}
-        onTouchMove={isPanorama ? handleTouchMove : undefined}
-        onTouchEnd={isPanorama ? handleTouchEnd : undefined}
-        onClick={!inSubLocation && !displayHotspots.length ? () => onAction?.('default', '') : undefined}
-        onDoubleClick={!inSubLocation && !displayHotspots.length ? () => onAction?.('default', '') : undefined}
-        style={{ cursor: isPanorama ? (isDragging ? 'grabbing' : 'grab') : 'default' }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        className="absolute inset-0 bg-black overflow-hidden flex items-center"
+        style={{
+          cursor: isPanorama ? (isDraggingRef.current ? 'grabbing' : 'grab') : 'default',
+          touchAction: 'none',
+        }}
       >
         {displayImage ? (
           <div
-            ref={panoramaWrapperRef}
-            className="absolute inset-0 flex items-center justify-center"
+            className="relative h-full flex items-center will-change-transform"
             style={{
-              transform: isPanorama ? `translate(${panX}px, ${panY}px) scale(${zoom})` : undefined,
-              transformOrigin: 'center center',
-              transition: isDragging ? 'none' : 'transform 0.1s ease-out',
+              transform: `translate3d(${-cameraX}px, 0, 0)`,
+              width: `${scaledWidth}px`,
+              height: '100%',
             }}
           >
+            {/* Картинка: строго 100% высоты, ширина пропорциональна */}
             <img
-              ref={imgRef}
               src={displayImage}
               alt={label}
-              className="max-w-none max-h-none"
-              style={{
-                width: isPanorama ? 'auto' : '100%',
-                height: isPanorama ? 'auto' : '100%',
-                objectFit: isPanorama ? 'none' : 'fill',
-                pointerEvents: isPanorama ? 'none' : 'auto',
-              }}
-              onLoad={() => {
-                const container = containerRef.current;
-                if (!container) return;
-                const img = imgRef.current;
-                if (!img) return;
-                const nw = img.naturalWidth;
-                const nh = img.naturalHeight;
-                setImageNaturalSize({ width: nw, height: nh });
-                if (nw > 0 && nh > 0 && nw / nh > 1.5) {
-                  setIsPanorama(true);
-                } else {
-                  setIsPanorama(false);
-                }
-                const list = inSubLocation ? subLocationHotspots : hotspots;
-                const cW = container.clientWidth;
-                const cH = container.clientHeight;
-                const imageScale = nw / nh > 1.5 ? cH / nh : Math.max(cW / nw, cH / nh);
-                const displayWidth = nw * imageScale;
-                const displayHeight = nh * imageScale;
-                const positions = list.map(hs => {
-                  if (hs.type === 'rect') {
-                    return {
-                      id: hs.id,
-                      action: hs.action,
-                      label: hs.label || '',
-                      subLocation: hs.subLocation,
-                      left: (hs.x / 100) * displayWidth,
-                      top: (hs.y / 100) * displayHeight,
-                      width: (hs.w / 100) * displayWidth,
-                      height: (hs.h / 100) * displayHeight,
-                    };
-                  }
-                  return null;
-                }).filter(Boolean);
-                if (inSubLocation) setSubLocationPositions(positions);
-                else setHotspotPositions(positions);
-              }}
+              onLoad={handleImageLoad}
+              className="h-full w-auto max-w-none object-cover pointer-events-none block"
               draggable={false}
             />
-            {displayPositions.map((pos) => {
-              const originalHs = displayHotspots.find(h => h.id === pos.id);
-              return (
+
+            {/* Хотспоты: точно привязаны к картинке в процентах */}
+            {displayHotspots.map((hs) => (
+              <div
+                key={hs.id}
+                style={{
+                  position: 'absolute',
+                  left: `${hs.x}%`,
+                  top: `${hs.y}%`,
+                  width: `${hs.w}%`,
+                  height: `${hs.h}%`,
+                  cursor: 'pointer',
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleHotspotClick(hs);
+                }}
+              >
                 <div
-                  key={pos.id}
-                  style={{
-                    position: 'absolute',
-                    left: `${pos.left}px`,
-                    top: `${pos.top}px`,
-                    width: `${pos.width}px`,
-                    height: `${pos.height}px`,
-                    cursor: 'pointer',
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (isPanorama && isDragging) return;
-                    const hs = { id: pos.id, action: pos.action, label: pos.label, subLocation: originalHs?.subLocation };
-                    handleHotspotClick(hs);
-                  }}
+                  className={`w-full h-full flex items-center justify-center transition-all duration-200 rounded-2xl border ${
+                    hs.action === 'sublocation'
+                      ? 'bg-cyan-500/25 border-cyan-400/60 shadow-lg shadow-cyan-500/25 hover:bg-cyan-500/40'
+                      : hoveredHotspot === hs.id
+                      ? 'bg-white/25 border-white/40 shadow-xl'
+                      : 'bg-white/10 border-white/20'
+                  }`}
+                  onMouseEnter={() => setHoveredHotspot(hs.id)}
+                  onMouseLeave={() => setHoveredHotspot(null)}
                 >
-                  <div
-                    className={`w-full h-full flex items-center justify-center transition-all duration-200 rounded-2xl ${
-                      pos.action === 'sublocation'
-                        ? 'bg-cyan-500/20 border border-cyan-400/40'
-                        : hoveredHotspot === pos.id
-                          ? 'bg-white/20'
-                          : 'bg-white/10'
-                    }`}
-                    onMouseEnter={() => setHoveredHotspot(pos.id)}
-                    onMouseLeave={() => setHoveredHotspot(null)}
-                  >
-                    <span className="text-xs font-black uppercase italic text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)] text-center pointer-events-none select-none">
-                      {pos.action === 'sublocation' ? `📍 ${pos.label}` : pos.label}
-                    </span>
-                  </div>
+                  <span className="text-sm font-black uppercase italic text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)] text-center pointer-events-none select-none px-2 truncate max-w-full">
+                    {hs.action === 'sublocation' ? `📍 ${hs.label}` : hs.label}
+                  </span>
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#0a0f0a]">
             <span className="text-4xl mb-4">📍</span>
             <p className="text-sm font-black uppercase italic text-slate-500">{label}</p>
-            <p className="text-[10px] text-slate-600 mt-2 uppercase tracking-widest text-center px-8">Загрузите картинку для этой локации в Hotspot Tool</p>
+            <p className="text-[10px] text-slate-600 mt-2 uppercase tracking-widest text-center px-8">
+              Загрузите картинку для этой локации в Hotspot Tool
+            </p>
           </div>
         )}
       </div>
+
+      {/* Индикатор скролла панорамы внизу */}
+      {isPanorama && maxCameraX > 0 && (
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 w-32 h-1 bg-white/15 rounded-full overflow-hidden pointer-events-none">
+          <div
+            className="h-full bg-emerald-400/80 rounded-full transition-all duration-75"
+            style={{
+              width: `${Math.max(15, (viewportWidth / scaledWidth) * 100)}%`,
+              transform: `translateX(${(cameraX / maxCameraX) * (128 - Math.max(20, (viewportWidth / scaledWidth) * 128))}px)`,
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }

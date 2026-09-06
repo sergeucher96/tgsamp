@@ -1,12 +1,15 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { X, Copy, Trash2, MapPin, Save, Upload, ArrowLeft } from 'lucide-react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import {
+  X, Copy, Trash2, MapPin, Save, Upload, Plus, ZoomIn, ZoomOut,
+  Maximize2, Eye, EyeOff, Check, AlertCircle, RefreshCw, Layers,
+  Compass, ArrowRight, Settings2, Sparkles, Smartphone, Download
+} from 'lucide-react';
 import { HOUSE_PREVIEWS_MAP } from '../data/houseStyles';
 import { LOCATION_IMAGES } from '../data/locationStyles';
 import { LOCATIONS } from '../data/locations';
 
 /**
- * Safe localStorage write — catches QuotaExceededError and notifies the user.
- * Returns true if wrote successfully.
+ * Безопасная запись в localStorage с отловом QuotaExceededError
  */
 function safeLocalStorageSet(key, value) {
   try {
@@ -14,15 +17,18 @@ function safeLocalStorageSet(key, value) {
     return true;
   } catch (e) {
     if (e.name === 'QuotaExceededError' || e.code === 22) {
-      alert('⚠️LocalStorage переполнен! Нажмите "🗑️ Очистить всё" или удалите старые картинки для освобождения места.');
+      alert('⚠️ LocalStorage переполнен! Удалите тяжелые картинки или очистите кэш.');
       return false;
     }
-    throw e;
+    console.error(e);
+    return false;
   }
 }
 
-/** Compress image to a smaller base64 string (max 1200px width/height, 0.7 quality) */
-function compressImageBase64(base64, maxDim = 1200, quality = 0.7) {
+/**
+ * Сжатие загружаемых изображений для экономии памяти
+ */
+function compressImageBase64(base64, maxDim = 1600, quality = 0.8) {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
@@ -36,7 +42,8 @@ function compressImageBase64(base64, maxDim = 1200, quality = 0.7) {
       const canvas = document.createElement('canvas');
       canvas.width = w;
       canvas.height = h;
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
       resolve(canvas.toDataURL('image/jpeg', quality));
     };
     img.onerror = () => resolve(base64);
@@ -44,40 +51,39 @@ function compressImageBase64(base64, maxDim = 1200, quality = 0.7) {
   });
 }
 
-// Type → label mapping for grouping
+// Категории локаций
 const TYPE_LABELS = {
-  bank:       '🏦 Банки',
-  shop:       '🛒 Магазины',
-  clothes:    '👕 Одежда',
-  bar:        '� Бары',
-  nightclub:  '💃 Клубы',
-  hotel:      '🏨 Отели',
-  gas:        '⛽ АЗС',
-  parking:    '🅿️ Парковки',
-  gym:        '💪 Спорт',
-  warehouse:  '📦 Склады',
-  atm:        '🏧 Банкоматы',
-  tuning:     '🔧 Тюнинг',
-  showroom:   '🚗 Автосалон',
+  bank: '🏦 Банки',
+  shop: '🛒 Магазины',
+  clothes: '👕 Одежда',
+  bar: '🍺 Бары',
+  nightclub: '💃 Клубы',
+  hotel: '🏨 Отели',
+  gas: '⛽ АЗС',
+  parking: '🅿️ Парковки',
+  gym: '💪 Спорт',
+  warehouse: '📦 Склады',
+  atm: '🏧 Банкоматы',
+  tuning: '🔧 Тюнинг',
+  showroom: '🚗 Автосалон',
   driving_school: '🎓 Автошкола',
-  guns:       '🔫 Оружие',
-  gun_range:  '🎯 Стрелковые',
-  job:        '💼 Работа',
-  public:     '🏛️ Общественные',
-  bus_depot:  '🚌 Транспорт',
+  guns: '🔫 Оружие',
+  gun_range: '🎯 Стрелковые',
+  job: '💼 Работа',
+  public: '🏛️ Общественные',
+  bus_depot: '🚌 Транспорт',
 };
 
-// Build unified map: house classes + LOCATION_IMAGES + non-house LOCATIONS
+// Единый словарь всех локаций и классов
 const ALL_CLASSES = {
-  economy:  HOUSE_PREVIEWS_MAP.economy,
-  comfort:  HOUSE_PREVIEWS_MAP.comfort,
-  business: HOUSE_PREVIEWS_MAP.business,
-  premium:  HOUSE_PREVIEWS_MAP.premium,
+  economy: HOUSE_PREVIEWS_MAP?.economy || { label: '🏠 Эконом' },
+  comfort: HOUSE_PREVIEWS_MAP?.comfort || { label: '🏠 Комфорт' },
+  business: HOUSE_PREVIEWS_MAP?.business || { label: '🏠 Бизнес' },
+  premium: HOUSE_PREVIEWS_MAP?.premium || { label: '🏠 Премиум' },
   ...LOCATION_IMAGES,
 };
 
-// Auto-add locations from LOCATIONS not yet in ALL_CLASSES
-LOCATIONS.forEach(loc => {
+LOCATIONS?.forEach(loc => {
   if (loc.type === 'house' || ALL_CLASSES[loc.id]) return;
   const src = `/locations/${loc.id}.webp`;
   ALL_CLASSES[loc.id] = {
@@ -88,1490 +94,914 @@ LOCATIONS.forEach(loc => {
 });
 
 const CLASS_LABELS = {
-  economy: '🏠 Эконом',
-  comfort: '🏠 Комфорт',
-  business: '🏠 Бизнес',
-  premium: '🏠 Премиум',
-  ...Object.entries(LOCATION_IMAGES).reduce((acc, [k, v]) => {
+  economy: '🏠 Дом: Эконом',
+  comfort: '🏠 Дом: Комфорт',
+  business: '🏠 Дом: Бизнес',
+  premium: '🏠 Дом: Премиум',
+  ...Object.entries(LOCATION_IMAGES || {}).reduce((acc, [k, v]) => {
     acc[k] = v.label || k;
     return acc;
   }, {}),
 };
 
-// Also add labels from LOCATIONS
-LOCATIONS.forEach(loc => {
+LOCATIONS?.forEach(loc => {
   if (loc.type !== 'house' && !CLASS_LABELS[loc.id]) {
     CLASS_LABELS[loc.id] = (loc.icon || '📍') + ' ' + (loc.name || loc.id);
   }
 });
 
-// Group location keys by `type` for the dropdown
-function getLocationGroups() {
-  const seen = new Set(['economy', 'comfort', 'business', 'premium']);
-  const byType = {};
+// Действия по умолчанию для хотспотов
+const DEFAULT_HOTSPOT_ACTIONS = [
+  { value: 'enter', label: '🚪 Войти в здание / интерьер' },
+  { value: 'buy_business', label: '💼 Купить бизнес / инфо' },
+  { value: 'atm', label: '🏧 Использовать банкомат' },
+  { value: 'garage', label: '🅿️ Зайти в гараж' },
+  { value: 'sublocation', label: '📍 Перейти в подуровень' },
+  { value: 'open_hotel', label: '🛏️ Меню отеля' },
+  { value: 'refuel', label: '⛽ Заправиться' },
+  { value: 'coming_soon', label: '🚧 Скоро открытие' },
+];
 
-  // From LOCATIONS (source of truth for type)
-  LOCATIONS.forEach(loc => {
-    if (loc.type === 'house') return;
-    const key = loc.id;
-    if (seen.has(key)) return;
-    seen.add(key);
-    const type = loc.type || 'other';
-    if (!byType[type]) {
-      byType[type] = { label: TYPE_LABELS[type] || ('📍 ' + type), keys: [] };
-    }
-    byType[type].keys.push(key);
-  });
-
-  // From LOCATION_IMAGES / ALL_CLASSES not in LOCATIONS
-  Object.keys(LOCATION_IMAGES).forEach(key => {
-    if (seen.has(key)) return;
-    seen.add(key);
-    if (!byType['__other__']) {
-      byType['__other__'] = { label: '📦 Прочее', keys: [] };
-    }
-    byType['__other__'].keys.push(key);
-  });
-
-  return byType;
-}
-
-// Actions available per location type (maps to MapView onAction handler)
-const HOTSPOT_ACTIONS = {
-  // House classes
-  economy:  [
-    { value: 'enter', label: '📦 Шкаф' },
-    { value: 'garage', label: '🅿️ Гараж' },
-    { value: 'kitchen', label: '🍳 Кухня' },
-    { value: 'sublocation', label: '📍 Часть локации' },
-  ],
-  comfort:  [
-    { value: 'enter', label: '📦 Шкаф' },
-    { value: 'garage', label: '🅿️ Гараж' },
-    { value: 'kitchen', label: '🍳 Кухня' },
-    { value: 'sublocation', label: '� Часть локации' },
-  ],
-  business: [
-    { value: 'enter', label: '� Шкаф' },
-    { value: 'garage', label: '�️ Гараж' },
-    { value: 'kitchen', label: '🍳 Кухня' },
-    { value: 'sublocation', label: '📍 Часть локации' },
-  ],
-  premium:  [
-    { value: 'enter', label: '📦 Шкаф' },
-    { value: 'garage', label: '🅿️ Гараж' },
-    { value: 'kitchen', label: '🍳 Кухня' },
-    { value: 'sublocation', label: '📍 Часть локации' },
-  ],
-  // Bank
-  bank_1: [
-    { value: 'enter', label: '🚪 Войти в банк' },
-    { value: 'atm', label: '🏧 Банкомат' },
-  ],
-  bank_2: [
-    { value: 'enter', label: '🚪 Войти в банк' },
-    { value: 'atm', label: '🏧 Банкомат' },
-  ],
-  // Shops
-  shop_1: [{ value: 'enter', label: '🛒 Войти в магазин' }],
-  shop_2: [{ value: 'enter', label: '🛒 Войти в магазин' }],
-  shop_3: [{ value: 'enter', label: '🛒 Войти в магазин' }],
-  shop_4: [{ value: 'enter', label: '🛒 Войти в магазин' }],
-  shop_5: [{ value: 'enter', label: '🛒 Войти в магазин' }],
-  // Clothes
-  clothes_1: [{ value: 'enter', label: '👕 Магазин одежды' }],
-  // Bars
-  bar_1: [{ value: 'enter', label: '🍺 Войти в бар' }],
-  bar_2: [{ value: 'enter', label: '🍺 Войти в бар' }],
-  bar_3: [{ value: 'enter', label: '🍺 Войти в бар' }],
-  bar_4: [{ value: 'enter', label: '🍺 Войти в бар' }],
-  // Nightclub
-  club_1: [{ value: 'enter', label: '💃 Войти в клуб' }],
-  // Hotels
-  hotel_1: [
-    { value: 'enter', label: '🏨 Зайти в отель' },
-    { value: 'open_hotel', label: '🛏️ Забронировать' },
-  ],
-  hotel_2: [
-    { value: 'enter', label: '🏨 Зайти в отель' },
-    { value: 'open_hotel', label: '🛏️ Забронировать' },
-  ],
-  hotel_3: [
-    { value: 'enter', label: '� Зайти в отель' },
-    { value: 'open_hotel', label: '🛏️ Забронировать' },
-  ],
-  hotel_4: [
-    { value: 'enter', label: '🏨 Зайти в отель' },
-    { value: 'open_hotel', label: '🛏️ Забронировать' },
-  ],
-  // Gas stations
-  gas_1: [
-    { value: 'enter', label: '⛽ АЗС' },
-    { value: 'refuel', label: '⛽ Заправиться' },
-  ],
-  gas_2: [
-    { value: 'enter', label: '⛽ АЗС' },
-    { value: 'refuel', label: '⛽ Заправиться' },
-  ],
-  gas_3: [
-    { value: 'enter', label: '⛽ АЗС' },
-    { value: 'refuel', label: '⛽ Заправиться' },
-  ],
-  gas_4: [
-    { value: 'enter', label: '⛽ АЗС' },
-    { value: 'refuel', label: '⛽ Заправиться' },
-  ],
-  gas_5: [
-    { value: 'enter', label: '⛽ АЗС' },
-    { value: 'refuel', label: '⛽ Заправиться' },
-  ],
-  // Parking
-  parking_1: [
-    { value: 'enter', label: '🅿️ Парковка' },
-    { value: 'coming_soon', label: '🚧 Скоро открытие' },
-  ],
-  // Gym
-  gym_1: [
-    { value: 'enter', label: '💪 Спортзал' },
-    { value: 'coming_soon', label: '🚧 Скоро открытие' },
-  ],
-  // Warehouse
-  warehouse_1: [{ value: 'enter', label: '📦 Склад' }],
-  warehouse_2: [{ value: 'enter', label: '📦 Склад' }],
-  // ATM
-  atm_1: [{ value: 'atm', label: '🏧 Банкомат' }],
-  atm_2: [{ value: 'atm', label: '� Банкомат' }],
-  // Tuning
-  tuning_1: [{ value: 'enter', label: '🔧 Тюнинг' }],
-  // Showroom
-  showroom_ls: [
-    { value: 'enter', label: '🚗 Автосалон' },
-    { value: 'buy_business', label: '💰 Купить бизнес' },
-  ],
-  // Driving school
-  driving_1: [{ value: 'enter', label: '🎓 Автошкола' }],
-  driving_school_1: [{ value: 'enter', label: '🎓 Автошкола' }],
-  // Gun range
-  guns_1: [{ value: 'enter', label: '🔫 Стрелковый' }],
-  gun_range_1: [{ value: 'enter', label: '🎯 Стрелковый' }],
-  // Port / Export
-  port_ls: [{ value: 'enter', label: '📦 Порт / Скупка' }],
-  // Mine
-  mine: [{ value: 'enter', label: '⛏️ Шахта' }],
-  // Fishing port
-  fishing_port: [{ value: 'enter', label: '🎣 Рыболовный порт' }],
-  // Pizzeria
-  pizzeria_1: [{ value: 'enter', label: '🍕 Пizzeria' }],
-  // Bus depot
-  bus_depot: [{ value: 'enter', label: '🚌 Автовокзал' }],
-  // Garbage depot — разгрузка мусоровоза
-  garbage_depot: [
-    { value: 'enter', label: '🚪 Войти' },
-    { value: 'unload_garbage', label: '🗑️ Разгрузить мусор' },
-  ],
-  // LSPD
-  lspd_1: [{ value: 'enter', label: '🚔 Полицейский участок' }],
-  // Default fallback for unknown types
-  default: [
-    { value: 'enter', label: '🚪 Войти' },
-    { value: 'atm', label: '🏧 Банкомат' },
-    { value: 'buy_business', label: '💰 Купить бизнес' },
-    { value: 'open_hotel', label: '🛏️ Открыть отель' },
-    { value: 'refuel', label: '⛽ Заправиться' },
-    { value: 'sublocation', label: '📍 Часть локации' },
-    { value: 'coming_soon', label: '🚧 Скоро открытие' },
-  ],
-};
-
-// Auto-add actions for locations not explicitly listed (use default)
-LOCATIONS.forEach(loc => {
-  if (loc.type === 'house') return;
-  if (!HOTSPOT_ACTIONS[loc.id]) {
-    HOTSPOT_ACTIONS[loc.id] = [{ value: 'enter', label: `Войти в ${loc.name || loc.id}` }];
-  }
-});
-
-// Add 'sublocation' action to every location that doesn't already have it
-Object.keys(HOTSPOT_ACTIONS).forEach(key => {
-  const list = HOTSPOT_ACTIONS[key];
-  if (!list.some(a => a.value === 'sublocation')) {
-    list.push({ value: 'sublocation', label: '📍 Часть локации' });
-  }
-});
-
-/**
- * HotspotTool — dev-инструмент для разметки интерактивных зон на изображениях.
- * Поддерживает дома (economy/comfort/business/premium) и локации (bank/shop/bar и т.д.).
- */
 export default function HotspotTool({ onClose, onExport }) {
-  const [houseClass, setHouseClass] = useState(() => {
-    return localStorage.getItem('hotspot_tool_last_class') || 'economy';
+  // Выбранная локация
+  const [selectedLocId, setSelectedLocId] = useState(() => {
+    return localStorage.getItem('hotspot_tool_last_class') || 'bank_1';
   });
-  const [selectedImage, setSelectedImage] = useState(null);
-  const [hotspots, setHotspots] = useState(() => {
-    try {
-      const saved = localStorage.getItem(`hotspot_tool_${localStorage.getItem('hotspot_tool_last_class') || 'economy'}`);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
-        if (Array.isArray(parsed.hotspots)) return parsed.hotspots;
-      }
-    } catch (e) {}
-    return [];
-  });
-  const [mode, setMode] = useState(() => {
-    return localStorage.getItem('hotspot_tool_mode') || 'rect';
-  });
-  const [drawing, setDrawing] = useState(false);
-  const [startPos, setStartPos] = useState(null);
-  const [polygonPoints, setPolygonPoints] = useState([]);
-  const [hotspotNames, setHotspotNames] = useState({});
-  const [hotspotActions, setHotspotActions] = useState({});
-  const [hotspotSubNames, setHotspotSubNames] = useState({});
-  const [hotspotPositions, setHotspotPositions] = useState(hotspots);
-  const [toast, setToast] = useState(null);
-  const toastTimer = useRef(null);
 
-  // Panorama mode state
-  const [isPanorama, setIsPanorama] = useState(false);
-  const [panX, setPanX] = useState(0);
-  const [panY, setPanY] = useState(0);
+  const [activeImageSrc, setActiveImageSrc] = useState(null);
+  const [naturalSize, setNaturalSize] = useState({ width: 1280, height: 720 });
+  const [hotspots, setHotspots] = useState([]);
+  const [selectedHotspotId, setSelectedHotspotId] = useState(null);
+
+  // Режимы редактирования
+  const [toolMode, setToolMode] = useState('select'); // 'select' | 'draw' | 'pan'
+  const [showTwaFrame, setShowTwaFrame] = useState(false);
+  const [showOverlays, setShowOverlays] = useState(true);
+
+  // Камера: панорамирование и зум
   const [zoom, setZoom] = useState(1);
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [imageNaturalSize, setImageNaturalSize] = useState({ width: 0, height: 0 });
-  
-  const showToast = (message, duration = 2000) => {
-    setToast(message);
-    clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), duration);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const panStartRef = useRef({ x: 0, y: 0 });
+
+  // Рисование нового хотспота
+  const [drawBox, setDrawBox] = useState(null); // { startX, startY, currentX, currentY } in image px
+  const isDrawingRef = useRef(false);
+
+  // Манипуляция хотспотом (Drag / Resize)
+  const [transforming, setTransforming] = useState(null); // { type: 'move'|'resize', handle?: string, startPointer: {x,y}, origBox: {} }
+
+  // Toast
+  const [toastMessage, setToastMessage] = useState(null);
+  const showToast = (msg) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 2400);
   };
-  
-  // Sublocation editor mode
-  const [editingSubLocation, setEditingSubLocation] = useState(null); // { hotspotId, parentId, parentClass, subName }
-  const [subselectedImage, setSubselectedImage] = useState(null);
-  const [subHotspots, setSubHotspots] = useState(() => {
-    const saved = localStorage.getItem('hotspot_tool_sublocations');
-    return saved ? JSON.parse(saved) : {}; // { subLocationKey: [hotspots] }
-  });
-  const [subHotspotNames, setSubHotspotNames] = useState({});
-  const [subHotspotActions, setSubHotspotActions] = useState({});
-  const [subHotspotSubNames, setSubHotspotSubNames] = useState({});
-  const [subHotspotPositions, setSubHotspotPositions] = useState([]);
-  const subContainerRef = useRef(null);
-  const subImgRef = useRef(null);
-  const subFileInputRef = useRef(null);
-  const [subMode, setSubMode] = useState('rect');
-  const [subDrawing, setSubDrawing] = useState(false);
-  const [subStartPos, setSubStartPos] = useState(null);
-  const [subPolygonPoints, setSubPolygonPoints] = useState([]);
-  const [subDrawingRect, setSubDrawingRect] = useState(null);
-  
-  const containerRef = useRef(null);
-  const imgRef = useRef(null);
-  const hotspotsRef = useRef(hotspots);
-  const hotspotNamesRef = useRef(hotspotNames);
-  const hotspotActionsRef = useRef(hotspotActions);
-  const hotspotSubNamesRef = useRef(hotspotSubNames);
-  const houseClassRef = useRef(houseClass);
+
+  const stageViewportRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  // Keep all refs in sync
-  useEffect(() => { hotspotsRef.current = hotspots; }, [hotspots]);
-  useEffect(() => { hotspotNamesRef.current = hotspotNames; }, [hotspotNames]);
-  useEffect(() => { hotspotActionsRef.current = hotspotActions; }, [hotspotActions]);
-  useEffect(() => { hotspotSubNamesRef.current = hotspotSubNames; }, [hotspotSubNames]);
-  useEffect(() => { houseClassRef.current = houseClass; }, [houseClass]);
-  useEffect(() => { safeLocalStorageSet('hotspot_tool_last_class', houseClass); }, [houseClass]);
-  useEffect(() => { safeLocalStorageSet('hotspot_tool_mode', mode); }, [mode]);
-
-  // Handle uploading an image for the current location
-  // Compress image before storing to avoid localStorage quota exceeded
-  const handleImageUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      const compressed = await compressImageBase64(ev.target.result);
-      setSelectedImage(compressed);
-      const data = ALL_CLASSES[houseClass];
-      if (data) {
-        data.images = [{ id: 1, src: compressed }];
-        data.default = compressed;
-      }
-      // Save image to localStorage
-      const currentHs = hotspotsRef.current;
-      const names = hotspotNamesRef.current;
-      const actions = hotspotActionsRef.current;
-      const subNames = hotspotSubNamesRef.current;
-      const enriched = currentHs.map(h => {
-        const action = actions[h.id] || h.action || 'enter';
-        const sub = subNames[h.id] || h.subName || h.subLocation || '';
-        return {
-          ...h,
-          name: names[h.id] || h.name || 'zone',
-          action,
-          subLocation: action === 'sublocation' ? sub : '',
-          label: names[h.id] || h.name || 'zone',
-        };
-      });
-      const saveData = {
-        hotspots: enriched,
-        default: compressed,
-        images: [{ id: 1, src: compressed }],
-      };
-      safeLocalStorageSet(`hotspot_tool_${houseClass}`, JSON.stringify(saveData));
-      showToast('🖼️ Изображение загружено');
-      setTimeout(() => recalcHotspotPositions(currentHs), 200);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  // Panorama handlers for image navigation
-  const handlePanMouseDown = (e) => {
-    if (!isPanorama) return;
-    setIsDragging(true);
-    setDragStart({ x: e.clientX - panX, y: e.clientY - panY });
-  };
-
-  const handlePanMouseMove = (e) => {
-    if (!isDragging || !isPanorama) return;
-    setPanX(e.clientX - dragStart.x);
-    setPanY(e.clientY - dragStart.y);
-  };
-
-  const handlePanMouseUp = () => {
-    setIsDragging(false);
-  };
-
-  const handlePanWheel = (e) => {
-    if (!isPanorama) return;
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? -0.1 : 0.1;
-    setZoom(prev => Math.min(Math.max(prev + delta, 0.5), 3));
-  };
-
-  const togglePanorama = () => {
-    setIsPanorama(prev => !prev);
-    setPanX(0);
-    setPanY(0);
-    setZoom(1);
-  };
-
-  // Recalculate hotspot positions based on current image layout
-  // Does NOT depend on hotspots state — uses hsList parameter or hotspotsRef
-  const recalcHotspotPositions = useCallback((hsList) => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const cW = container.getBoundingClientRect().width;
-    const cH = container.getBoundingClientRect().height;
-
-    const list = hsList ?? hotspotsRef.current;
-    const positions = list.map(hs => {
-      if (hs.type === 'rect') {
-        return {
-          ...hs,
-          _left: (hs.x / 100) * cW,
-          _top: (hs.y / 100) * cH,
-          _width: (hs.w / 100) * cW,
-          _height: (hs.h / 100) * cH,
-        };
-      }
-      return hs;
-    });
-    setHotspotPositions(positions);
-  }, []);
-
-  // === Sublocation editor functions ===
-  const getSubLocationKey = useCallback(() => {
-    if (!editingSubLocation) return '';
-    return `${editingSubLocation.parentId}__${editingSubLocation.subName}`;
-  }, [editingSubLocation]);
-
-  const loadSublocationData = useCallback((subKey) => {
-    const imgs = subHotspots[subKey]?.images || subHotspots[subKey];
-    if (Array.isArray(imgs)) {
-      // It's an old-format hotspot array loaded from localStorage
-      setSubselectedImage(null);
-      setSubHotspots(prev => prev); // keep as-is
-    }
-    // Load sublocation hotspots
-    const data = subHotspots[subKey];
-    if (data && typeof data === 'object' && !Array.isArray(data)) {
-      setSubselectedImage(data.image || null);
-      setSubHotspotPositions([]);
-    } else {
-      setSubselectedImage(null);
-      setSubHotspotPositions([]);
-    }
-  }, [subHotspots]);
-
-  // Recalculate sublocation hotspot positions
-  const recalcSubHotspotPositions = useCallback((subKey) => {
-    const container = subContainerRef.current;
-    if (!container) return;
-
-    const cW = container.getBoundingClientRect().width;
-    const cH = container.getBoundingClientRect().height;
-
-    const data = subHotspots[subKey];
-    const hsList = (data && typeof data === 'object' && data.hotspots) ? data.hotspots : [];
-    const positions = hsList.map(hs => {
-      if (hs.type === 'rect') {
-        return {
-          ...hs,
-          _left: (hs.x / 100) * cW,
-          _top: (hs.y / 100) * cH,
-          _width: (hs.w / 100) * cW,
-          _height: (hs.h / 100) * cH,
-        };
-      }
-      return hs;
-    });
-    setSubHotspotPositions(positions);
-  }, [subHotspots]);
-
-  // Load sublocation when editingSubLocation changes
+  // Загрузка локации и хотспотов
   useEffect(() => {
-    if (!editingSubLocation) return;
-    const subKey = getSubLocationKey();
-    const data = subHotspots[subKey];
-    if (data && typeof data === 'object' && data.image) {
-      setSubselectedImage(data.image);
-      setTimeout(() => recalcSubHotspotPositions(subKey), 200);
-    } else {
-      setSubselectedImage(null);
-    }
-    setSubHotspotNames({});
-    setSubHotspotActions({});
-    setSubHotspotSubNames({});
-  }, [editingSubLocation]);
+    localStorage.setItem('hotspot_tool_last_class', selectedLocId);
 
-  // Recalc sub hotspots on their change or resize
-  useEffect(() => {
-    if (!editingSubLocation) return;
-    const subKey = getSubLocationKey();
-    recalcSubHotspotPositions(subKey);
-    const onResize = () => recalcSubHotspotPositions(subKey);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, [editingSubLocation, subHotspots, recalcSubHotspotPositions, getSubLocationKey]);
+    // 1. Пытаемся взять сохраненный прогресс из localStorage
+    const saved = localStorage.getItem(`hotspot_tool_${selectedLocId}`);
+    let img = null;
+    let loadedHotspots = [];
 
-  // Sublocation image upload
-  // Always use base64 for persistence (survives page reload)
-  const handleSubImageUpload = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const base64 = ev.target.result;
-      setSubselectedImage(base64);
-      setSubHotspots(prev => {
-        const subKey = `${editingSubLocation.parentId}__${editingSubLocation.subName}`;
-        const updated = { ...prev };
-        updated[subKey] = { ...(updated[subKey] || {}), image: base64, hotspots: updated[subKey]?.hotspots || [] };
-        safeLocalStorageSet('hotspot_tool_sublocations', JSON.stringify(updated));
-        return updated;
-      });
-      showToast('🖼️ Изображение подлокации загружено');
-      setTimeout(() => {
-        const subKey = `${editingSubLocation.parentId}__${editingSubLocation.subName}`;
-        recalcSubHotspotPositions(subKey);
-      }, 200);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  // Sublocation mouse handlers
-  const getSubPercentCoords = useCallback((e) => {
-    const container = subContainerRef.current;
-    if (!container) return { x: 0, y: 0 };
-    const cRect = container.getBoundingClientRect();
-    const clickX = e.clientX - cRect.left;
-    const clickY = e.clientY - cRect.top;
-    return {
-      x: (clickX / cRect.width) * 100,
-      y: (clickY / cRect.height) * 100,
-    };
-  }, []);
-
-  const saveSubHotspotsList = useCallback((list) => {
-    const subKey = getSubLocationKey();
-    setSubHotspots(prev => {
-      const updated = { ...prev };
-      const existing = updated[subKey] || {};
-      updated[subKey] = { ...existing, hotspots: list };
-      safeLocalStorageSet('hotspot_tool_sublocations', JSON.stringify(updated));
-      return updated;
-    });
-  }, [getSubLocationKey]);
-
-  const handleSubMouseDown = useCallback((e) => {
-    const coords = getSubPercentCoords(e);
-    if (subMode === 'rect') {
-      setSubDrawing(true);
-      setSubStartPos(coords);
-    } else if (subMode === 'polygon') {
-      setSubPolygonPoints(prev => [...prev, coords]);
-    }
-  }, [subMode, getSubPercentCoords]);
-
-  const handleSubMouseMove = useCallback((e) => {
-    if (subMode === 'rect' && subDrawing && subStartPos) {
-      const end = getSubPercentCoords(e);
-      setSubDrawingRect({
-        x: Math.min(subStartPos.x, end.x),
-        y: Math.min(subStartPos.y, end.y),
-        w: Math.abs(end.x - subStartPos.x),
-        h: Math.abs(end.y - subStartPos.y),
-      });
-    }
-  }, [subMode, subDrawing, subStartPos, getSubPercentCoords]);
-
-  const handleSubMouseUp = useCallback((e) => {
-    if (subMode === 'rect' && subDrawing && subStartPos) {
-      const end = getSubPercentCoords(e);
-      const x = Math.min(subStartPos.x, end.x);
-      const y = Math.min(subStartPos.y, end.y);
-      const w = Math.abs(end.x - subStartPos.x);
-      const h = Math.abs(end.y - subStartPos.y);
-      if (w > 1 && h > 1) {
-        const id = Date.now();
-        const newHs = { id, type: 'rect', x, y, w, h, name: 'zone' };
-        const subKey = getSubLocationKey();
-        const existing = subHotspots[subKey]?.hotspots || [];
-        const updated = [...existing, newHs];
-        saveSubHotspotsList(updated);
-        setTimeout(() => recalcSubHotspotPositions(subKey), 50);
-      }
-      setSubDrawing(false);
-      setSubStartPos(null);
-      setSubDrawingRect(null);
-    }
-  }, [subMode, subDrawing, subStartPos, getSubPercentCoords, subHotspots, getSubLocationKey, saveSubHotspotsList, recalcSubHotspotPositions]);
-
-  const finishSubPolygon = () => {
-    if (subPolygonPoints.length >= 3) {
-      const id = Date.now();
-      const points = subPolygonPoints.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-      const subKey = getSubLocationKey();
-      const existing = subHotspots[subKey]?.hotspots || [];
-      const updated = [...existing, { id, type: 'polygon', points, name: 'zone' }];
-      saveSubHotspotsList(updated);
-      setTimeout(() => recalcSubHotspotPositions(subKey), 50);
-    }
-    setSubPolygonPoints([]);
-  };
-
-  const removeSubHotspot = (id) => {
-    const subKey = getSubLocationKey();
-    const existing = subHotspots[subKey]?.hotspots || [];
-    const updated = existing.filter(h => h.id !== id);
-    saveSubHotspotsList(updated);
-    setTimeout(() => recalcSubHotspotPositions(subKey), 50);
-  };
-
-  const renameSubHotspot = (id, name) => {
-    const newNames = { ...subHotspotNames, [id]: name };
-    setSubHotspotNames(newNames);
-    const subKey = getSubLocationKey();
-    const hsList = subHotspots[subKey]?.hotspots || [];
-    const enriched = hsList.map(h => ({
-      ...h,
-      name: newNames[h.id] || h.name || 'zone',
-      action: subHotspotActions[h.id] || h.action || 'enter',
-      subName: subHotspotSubNames[h.id] || h.subName || '',
-      label: newNames[h.id] || h.name || 'zone',
-    }));
-    saveSubHotspotsList(enriched);
-  };
-
-  const setSubHotspotAction = (id, action) => {
-    const newActions = { ...subHotspotActions, [id]: action };
-    setSubHotspotActions(newActions);
-    const subKey = getSubLocationKey();
-    const hsList = subHotspots[subKey]?.hotspots || [];
-    const enriched = hsList.map(h => ({
-      ...h,
-      name: subHotspotNames[h.id] || h.name || 'zone',
-      action: newActions[h.id] || h.action || 'enter',
-      subName: subHotspotSubNames[h.id] || h.subName || '',
-      label: subHotspotNames[h.id] || h.name || 'zone',
-    }));
-    saveSubHotspotsList(enriched);
-  };
-
-  const setSubHotspotSubName = (id, subName) => {
-    const newSubNames = { ...subHotspotSubNames, [id]: subName };
-    setSubHotspotSubNames(newSubNames);
-    const subKey = getSubLocationKey();
-    const hsList = subHotspots[subKey]?.hotspots || [];
-    const enriched = hsList.map(h => ({
-      ...h,
-      name: subHotspotNames[h.id] || h.name || 'zone',
-      action: subHotspotActions[h.id] || h.action || 'enter',
-      subName: newSubNames[h.id] || h.subName || '',
-      label: subHotspotNames[h.id] || h.name || 'zone',
-    }));
-    saveSubHotspotsList(enriched);
-  };
-
-  // Enter sublocation edit mode
-  const openSubLocationEditor = (hotspotId) => {
-    const subName = hotspotSubNames[hotspotId] || '';
-    if (!subName) { alert('Сначала введите имя подлокации'); return; }
-    const subKey = `${houseClass}__${subName}`;
-    setEditingSubLocation({ hotspotId, parentId: houseClass, subName });
-    const existing = subHotspots[subKey];
-    if (existing && existing.image) {
-      setSubselectedImage(existing.image);
-      // Restore names, actions from saved hotspots
-      const names = {}, actions = {}, subNames = {};
-      (existing.hotspots || []).forEach(h => {
-        if (h.name) names[h.id] = h.name;
-        if (h.action) actions[h.id] = h.action;
-        if (h.subName) subNames[h.id] = h.subName;
-      });
-      setSubHotspotNames(names);
-      setSubHotspotActions(actions);
-      setSubHotspotSubNames(subNames);
-    } else {
-      setSubselectedImage(null);
-    }
-  };
-
-  // Exit sublocation editor
-  const closeSubLocationEditor = () => {
-    setEditingSubLocation(null);
-    setSubselectedImage(null);
-    setSubHotspotPositions([]);
-    setSubPolygonPoints([]);
-    setSubDrawing(false);
-  };
-
-  // Recalculate on hotspots change and resize
-  useEffect(() => {
-    recalcHotspotPositions();
-
-    const onResize = () => recalcHotspotPositions();
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, [hotspots, recalcHotspotPositions]);
-
-  // Load images from ALL_CLASSES for current class
-  const currentClassData = ALL_CLASSES[houseClass] || {};
-  const imagesList = currentClassData.images || [];
-
-  // Load image when class changes
-  const handleClassChange = (cls) => {
-    setHouseClass(cls);
-    setPolygonPoints([]);
-    setDrawing(false);
-    setStartPos(null);
-    setDrawingRect(null);
-    const data = ALL_CLASSES[cls];
-    if (data?.images?.[0]) {
-      setSelectedImage(data.images[0].src);
-    } else {
-      setSelectedImage(null);
-    }
-    const saved = localStorage.getItem(`hotspot_tool_${cls}`);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      const hsArray = Array.isArray(parsed) ? parsed : (parsed.hotspots || []);
-      setHotspots(hsArray);
-      hotspotsRef.current = hsArray;
-      const names = {}, actions = {}, subNames = {};
-      hsArray.forEach(h => {
-        if (h.name) names[h.id] = h.name;
-        if (h.action) actions[h.id] = h.action;
-        if (h.subLocation) subNames[h.id] = h.subLocation;
-        if (h.subName && !h.subLocation) subNames[h.id] = h.subName;
-      });
-      setHotspotNames(names);
-      setHotspotActions(actions);
-      setHotspotSubNames(subNames);
-      // Restore custom image
-      if (!Array.isArray(parsed) && parsed.default) {
-        setSelectedImage(parsed.default);
-      } else if (!Array.isArray(parsed) && parsed.images?.length > 0) {
-        setSelectedImage(parsed.images[0].src);
-      }
-    } else {
-      setHotspots([]);
-      hotspotsRef.current = [];
-      setHotspotNames({});
-      setHotspotActions({});
-      setHotspotSubNames({});
-      hotspotNamesRef.current = {};
-      hotspotActionsRef.current = {};
-      hotspotSubNamesRef.current = {};
-    }
-  };
-
-  // Recalculate positions when image loads (after class change)
-  useEffect(() => {
-    if (selectedImage) {
-      // Delay to ensure image is rendered
-      const timer = setTimeout(() => recalcHotspotPositions(hotspotsRef.current), 100);
-      return () => clearTimeout(timer);
-    }
-  }, [selectedImage]);
-
-  // Load first image on mount and restore names/actions from localStorage
-  useEffect(() => {
-    const data = ALL_CLASSES[houseClass];
-    if (data?.images?.[0] && !selectedImage) {
-      setSelectedImage(data.images[0].src);
-    }
-    // Restore names/actions/subNames from saved hotspots
-    const saved = localStorage.getItem(`hotspot_tool_${houseClass}`);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // Support both old format [array] and new format {hotspots: [...]}
-        const hsArray = Array.isArray(parsed) ? parsed : (parsed.hotspots || []);
-        const names = {}, actions = {}, subNames = {};
-        hsArray.forEach(h => {
-          if (h.name) names[h.id] = h.name;
-          if (h.action) actions[h.id] = h.action;
-          if (h.subLocation) subNames[h.id] = h.subLocation;
-          if (h.subName && !h.subLocation) subNames[h.id] = h.subName;
-        });
-        setHotspotNames(names);
-        setHotspotActions(actions);
-        setHotspotSubNames(subNames);
-        // Also sync refs immediately
-        hotspotNamesRef.current = names;
-        hotspotActionsRef.current = actions;
-        hotspotSubNamesRef.current = subNames;
-        // Restore hotspots array
-        if (hsArray.length > 0) {
-          setHotspots(hsArray);
-          hotspotsRef.current = hsArray;
-          // Load custom image (houses and locations)
-          if (!Array.isArray(parsed) && parsed.default) {
-            setSelectedImage(parsed.default);
-          } else if (!Array.isArray(parsed) && parsed.images?.length > 0) {
-            setSelectedImage(parsed.images[0].src);
-          }
-          showToast(`✅ ${hsArray.length} зон загружено`);
-        }
-      } catch (e) {}
-    }
-  }, []);
+        if (parsed?.default) img = parsed.default;
+        else if (parsed?.images?.[0]?.src) img = parsed.images[0].src;
 
-  const getPercentCoords = useCallback((e) => {
-    const container = containerRef.current;
-    if (!container) return { x: 0, y: 0 };
-    
-    const cRect = container.getBoundingClientRect();
-    const clickX = e.clientX - cRect.left;
-    const clickY = e.clientY - cRect.top;
-    
-    return {
-      x: (clickX / cRect.width) * 100,
-      y: (clickY / cRect.height) * 100,
-    };
-  }, []);
-
-  const handleMouseDown = useCallback((e) => {
-    const coords = getPercentCoords(e);
-    if (mode === 'rect') {
-      setDrawing(true);
-      setStartPos(coords);
-    } else if (mode === 'polygon') {
-      setPolygonPoints(prev => [...prev, coords]);
-    }
-  }, [mode, getPercentCoords]);
-
-  const [drawingRect, setDrawingRect] = useState(null);
-  const handleMouseMove = useCallback((e) => {
-    if (mode === 'rect' && drawing && startPos) {
-      const end = getPercentCoords(e);
-      setDrawingRect({ x: Math.min(startPos.x, end.x), y: Math.min(startPos.y, end.y), w: Math.abs(end.x - startPos.x), h: Math.abs(end.y - startPos.y) });
-    }
-  }, [mode, drawing, startPos, getPercentCoords]);
-
-  const handleMouseUp = useCallback((e) => {
-    if (mode === 'rect' && drawing && startPos) {
-      const end = getPercentCoords(e);
-      const x = Math.min(startPos.x, end.x);
-      const y = Math.min(startPos.y, end.y);
-      const w = Math.abs(end.x - startPos.x);
-      const h = Math.abs(end.y - startPos.y);
-      if (w > 1 && h > 1) {
-        const id = Date.now();
-        const newHotspot = { id, type: 'rect', x, y, w, h, name: 'zone', action: 'enter' };
-        const updated = [...hotspotsRef.current, newHotspot];
-        setHotspots(updated);
-        saveHotspotsToStorage(updated);
-        recalcHotspotPositions(updated);
-        showToast('✅ Зона создана');
+        if (Array.isArray(parsed)) loadedHotspots = parsed;
+        else if (Array.isArray(parsed?.hotspots)) loadedHotspots = parsed.hotspots;
+      } catch (e) {
+        console.error('Failed to parse saved hotspots', e);
       }
-      setDrawing(false);
-      setStartPos(null);
-      setDrawingRect(null);
     }
-  }, [mode, drawing, startPos, houseClass, recalcHotspotPositions, getPercentCoords]);
 
-  const finishPolygon = () => {
-    if (polygonPoints.length >= 3) {
-      const id = Date.now();
-      const points = polygonPoints.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-      const updated = [...hotspotsRef.current, { id, type: 'polygon', points, name: 'zone', action: 'enter' }];
-      setHotspots(updated);
-      saveHotspotsToStorage(updated);
-      recalcHotspotPositions(updated);
-      showToast('✅ Полигон создан');
+    // 2. Дефолтная картинка из конфига
+    if (!img) {
+      const locData = ALL_CLASSES[selectedLocId];
+      img = locData?.default || locData?.images?.[0]?.src || `/locations/${selectedLocId}.webp`;
     }
-    setPolygonPoints([]);
-  };
 
-  const removeHotspot = (id) => {
-    const updated = hotspotsRef.current.filter(h => h.id !== id);
-    setHotspots(updated);
-    saveHotspotsToStorage(updated);
-    recalcHotspotPositions(updated);
-  };
+    setActiveImageSrc(img);
+    setSelectedHotspotId(null);
 
-  const renameHotspot = (id, name) => {
-    const newNames = { ...hotspotNames, [id]: name };
-    setHotspotNames(newNames);
-    hotspotNamesRef.current = newNames;
-    saveHotspotsToStorage();
-  };
+    // Загрузка картинки для определения реального разрешения
+    const tester = new Image();
+    tester.onload = () => {
+      const nw = tester.naturalWidth || 1280;
+      const nh = tester.naturalHeight || 720;
+      setNaturalSize({ width: nw, height: nh });
 
-  const setHotspotAction = (id, action) => {
-    const newActions = { ...hotspotActions, [id]: action };
-    setHotspotActions(newActions);
-    hotspotActionsRef.current = newActions;
-    saveHotspotsToStorage();
-  };
-
-  const setHotspotSubName = (id, subName) => {
-    const newSubNames = { ...hotspotSubNames, [id]: subName };
-    setHotspotSubNames(newSubNames);
-    hotspotSubNamesRef.current = newSubNames;
-    saveHotspotsToStorage();
-  };
-
-  // Central save function: saves hotspots with embedded name, action, subLocation
-  // Saves custom image (base64) for both houses and locations
-  const saveHotspotsToStorage = (hsList) => {
-    const hs = hsList || hotspotsRef.current;
-    const names = hotspotNamesRef.current;
-    const actions = hotspotActionsRef.current;
-    const subNames = hotspotSubNamesRef.current;
-    const cls = houseClassRef.current;
-    const enriched = hs.map(h => {
-      const action = actions[h.id] || h.action || 'enter';
-      const sub = subNames[h.id] || h.subName || h.subLocation || '';
-      const obj = {
-        ...h,
-        name: names[h.id] || h.name || 'zone',
-        action,
-        subLocation: action === 'sublocation' ? sub : '',
-        label: names[h.id] || h.name || 'zone',
-      };
-      return obj;
-    });
-    // Save base64 image if available (both houses and locations)
-    const customImg = selectedImage && !selectedImage.startsWith('/') ? selectedImage : undefined;
-    const data = {
-      hotspots: enriched,
-      ...(customImg ? {
-        default: customImg,
-        images: [{ id: 1, src: customImg }],
-      } : {}),
-    };
-    safeLocalStorageSet(`hotspot_tool_${cls}`, JSON.stringify(data));
-  };
-
-  const saveToStorage = () => {
-    saveHotspotsToStorage();
-    showToast('✅ Сохранено');
-  };
-
-  const exportJSON = () => {
-    const data = {
-      class: houseClass,
-      hotspots: hotspots.map(h => {
-        const action = hotspotActions[h.id] || 'enter';
-        const obj = {
-          ...h,
-          name: hotspotNames[h.id] || h.name,
-          label: hotspotNames[h.id] || h.name,
-          action,
+      // Преобразуем хотспоты из % в локальные пиксели для точного редактирования
+      const converted = loadedHotspots.map((h, index) => {
+        const x = (h.x != null ? (h.x / 100) * nw : 50);
+        const y = (h.y != null ? (h.y / 100) * nh : 50);
+        const w = (h.w != null ? (h.w / 100) * nw : 120);
+        const hVal = (h.h != null ? (h.h / 100) * nh : 80);
+        return {
+          id: h.id || `hs_${Date.now()}_${index}`,
+          label: h.label || 'Зона',
+          action: h.action || 'enter',
+          subLocation: h.subLocation || '',
+          x,
+          y,
+          w,
+          h: hVal,
+          type: 'rect',
         };
-        if (action === 'sublocation') {
-          obj.subLocation = hotspotSubNames[h.id] || '';
-        }
-        return obj;
-      }),
-      // Include sublocations data
-      sublocations: (() => {
-        const subs = {};
-        Object.entries(subHotspots).forEach(([key, val]) => {
-          if (typeof val === 'object' && !Array.isArray(val) && val.image) {
-            const actionMap = {};
-            const nameMap = {};
-            const subNameMap = {};
-            // Find which location owns this sub — use key prefix
-            const locId = key.split('__')[0];
-            const subKey = key.split('__')[1];
-            subs[`${locId}__${subKey}`] = {
-              image: val.image,
-              label: subKey,
-              hotspots: (val.hotspots || []).map(hs => {
-                const act = actionMap[hs.id] || 'enter';
-                const hsObj = {
-                  ...hs,
-                  name: nameMap[hs.id] || hs.name,
-                  label: nameMap[hs.id] || hs.name,
-                  action: act,
-                };
-                if (act === 'sublocation') {
-                  hsObj.subLocation = subNameMap[hs.id] || '';
-                }
-                return hsObj;
-              })
-            };
-          }
-        });
-        return Object.keys(subs).length > 0 ? subs : undefined;
-      })(),
+      });
+      setHotspots(converted);
+
+      // Сброс камеры по центру
+      setPan({ x: 0, y: 0 });
+      setZoom(1);
     };
-    const json = JSON.stringify(data, null, 2);
-    navigator.clipboard.writeText(json).then(() => {
-      showToast('📋 JSON скопирован в буфер обмена');
-    }).catch(() => {
-      showToast('❌ Не удалось скопировать');
-    });
-    if (onExport) onExport(data);
-    saveToStorage();
+    tester.onerror = () => {
+      setNaturalSize({ width: 1280, height: 720 });
+      setHotspots([]);
+    };
+    tester.src = img;
+  }, [selectedLocId]);
+
+  // Конвертация экранных координат мыши в пиксели изображения
+  const getPointerImageCoords = useCallback((clientX, clientY) => {
+    if (!stageViewportRef.current) return { x: 0, y: 0 };
+    const rect = stageViewportRef.current.getBoundingClientRect();
+    const stageCenterX = rect.width / 2;
+    const stageCenterY = rect.height / 2;
+
+    const screenOffsetX = clientX - rect.left;
+    const screenOffsetY = clientY - rect.top;
+
+    // Реверс формулы трансформации:
+    // screenX = stageCenterX + pan.x + (imgX - naturalSize.width / 2) * zoom
+    const imgX = (screenOffsetX - stageCenterX - pan.x) / zoom + naturalSize.width / 2;
+    const imgY = (screenOffsetY - stageCenterY - pan.y) / zoom + naturalSize.height / 2;
+
+    return {
+      x: Math.max(0, Math.min(naturalSize.width, imgX)),
+      y: Math.max(0, Math.min(naturalSize.height, imgY)),
+    };
+  }, [pan, zoom, naturalSize]);
+
+  // Обработчики колесика зума
+  const handleWheel = (e) => {
+    e.preventDefault();
+    const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
+    setZoom((prev) => Math.min(Math.max(prev * zoomFactor, 0.25), 4));
   };
 
-  const clearAll = () => {
-    setHotspots([]);
-    setHotspotPositions([]);
-    setHotspotNames({});
-    localStorage.removeItem(`hotspot_tool_${houseClass}`);
-    showToast('🗑️ Все зоны удалены');
-  };
-
-  const clearAllStorage = () => {
-    if (!confirm('Удалить ВСЕ данные HotspotTool из localStorage? Это освободит место.')) return;
-    const keysToRemove = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && key.startsWith('hotspot_tool_')) {
-        keysToRemove.push(key);
-      }
+  // Начало взаимодействия с холстом
+  const handleStagePointerDown = (e) => {
+    // Средняя кнопка мыши или режим панорамы — скроллим камеру
+    if (e.button === 1 || toolMode === 'pan' || e.altKey || e.spaceKey) {
+      setIsPanning(true);
+      panStartRef.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
+      return;
     }
-    keysToRemove.forEach(k => localStorage.removeItem(k));
-    setHotspots([]);
-    setHotspotPositions([]);
-    setHotspotNames({});
-    setSubHotspots({});
-    setSubselectedImage(null);
-    setSelectedImage(null);
-    showToast(`🗑️ Удалено ${keysToRemove.length} записей`);
+
+    if (toolMode === 'draw') {
+      const coords = getPointerImageCoords(e.clientX, e.clientY);
+      isDrawingRef.current = true;
+      setDrawBox({
+        startX: coords.x,
+        startY: coords.y,
+        currentX: coords.x,
+        currentY: coords.y,
+      });
+      return;
+    }
+
+    // Если кликнули в пустую область — сбрасываем выделение
+    if (e.target === stageViewportRef.current || e.target.tagName === 'IMG') {
+      setSelectedHotspotId(null);
+    }
   };
 
-  // Preview of drawing rect
-  const previewRect = drawing && startPos ? (() => {
-    // Will be updated via mousemove — simplified
-    return null;
-  })() : null;
+  // Перемещение курсора по сцене
+  const handleStagePointerMove = (e) => {
+    if (isPanning) {
+      setPan({
+        x: e.clientX - panStartRef.current.x,
+        y: e.clientY - panStartRef.current.y,
+      });
+      return;
+    }
+
+    if (isDrawingRef.current && drawBox) {
+      const coords = getPointerImageCoords(e.clientX, e.clientY);
+      setDrawBox((prev) => ({
+        ...prev,
+        currentX: coords.x,
+        currentY: coords.y,
+      }));
+      return;
+    }
+
+    if (transforming) {
+      const { type, handle, origBox, startPointer } = transforming;
+      const currentPointer = getPointerImageCoords(e.clientX, e.clientY);
+      const dx = currentPointer.x - startPointer.x;
+      const dy = currentPointer.y - startPointer.y;
+
+      setHotspots((prev) =>
+        prev.map((h) => {
+          if (h.id !== selectedHotspotId) return h;
+
+          if (type === 'move') {
+            const nextX = Math.max(0, Math.min(naturalSize.width - origBox.w, origBox.x + dx));
+            const nextY = Math.max(0, Math.min(naturalSize.height - origBox.h, origBox.y + dy));
+            return { ...h, x: nextX, y: nextY };
+          }
+
+          if (type === 'resize') {
+            let newX = origBox.x;
+            let newY = origBox.y;
+            let newW = origBox.w;
+            let newH = origBox.h;
+
+            if (handle.includes('e')) newW = Math.max(30, origBox.w + dx);
+            if (handle.includes('s')) newH = Math.max(30, origBox.h + dy);
+            if (handle.includes('w')) {
+              const proposedW = origBox.w - dx;
+              if (proposedW >= 30) {
+                newX = origBox.x + dx;
+                newW = proposedW;
+              }
+            }
+            if (handle.includes('n')) {
+              const proposedH = origBox.h - dy;
+              if (proposedH >= 30) {
+                newY = origBox.y + dy;
+                newH = proposedH;
+              }
+            }
+            return { ...h, x: newX, y: newY, w: newW, h: newH };
+          }
+          return h;
+        })
+      );
+    }
+  };
+
+  // Завершение клика/перетаскивания
+  const handleStagePointerUp = () => {
+    setIsPanning(false);
+
+    if (isDrawingRef.current && drawBox) {
+      isDrawingRef.current = false;
+      const x = Math.min(drawBox.startX, drawBox.currentX);
+      const y = Math.min(drawBox.startY, drawBox.currentY);
+      const w = Math.abs(drawBox.currentX - drawBox.startX);
+      const h = Math.abs(drawBox.currentY - drawBox.startY);
+
+      if (w > 15 && h > 15) {
+        const newHs = {
+          id: `hotspot_${Date.now()}`,
+          label: 'Новая зона',
+          action: 'enter',
+          subLocation: '',
+          x,
+          y,
+          w,
+          h,
+          type: 'rect',
+        };
+        setHotspots((prev) => [...prev, newHs]);
+        setSelectedHotspotId(newHs.id);
+        setToolMode('select');
+        showToast('Зона создана!');
+      }
+      setDrawBox(null);
+    }
+
+    if (transforming) {
+      setTransforming(null);
+    }
+  };
+
+  // Старт Drag для хотспота
+  const startDragHotspot = (e, hs) => {
+    e.stopPropagation();
+    setSelectedHotspotId(hs.id);
+    const pointer = getPointerImageCoords(e.clientX, e.clientY);
+    setTransforming({
+      type: 'move',
+      startPointer: pointer,
+      origBox: { x: hs.x, y: hs.y, w: hs.w, h: hs.h },
+    });
+  };
+
+  // Старт Resize за угол
+  const startResizeHotspot = (e, hs, handle) => {
+    e.stopPropagation();
+    setSelectedHotspotId(hs.id);
+    const pointer = getPointerImageCoords(e.clientX, e.clientY);
+    setTransforming({
+      type: 'resize',
+      handle,
+      startPointer: pointer,
+      origBox: { x: hs.x, y: hs.y, w: hs.w, h: hs.h },
+    });
+  };
+
+  // Дублирование зоны
+  const duplicateHotspot = (hs) => {
+    const dup = {
+      ...hs,
+      id: `hs_${Date.now()}`,
+      label: `${hs.label} (Копия)`,
+      x: Math.min(naturalSize.width - hs.w, hs.x + 30),
+      y: Math.min(naturalSize.height - hs.h, hs.y + 30),
+    };
+    setHotspots((prev) => [...prev, dup]);
+    setSelectedHotspotId(dup.id);
+    showToast('Слой продублирован');
+  };
+
+  // Удаление зоны
+  const deleteHotspot = (id) => {
+    setHotspots((prev) => prev.filter((h) => h.id !== id));
+    if (selectedHotspotId === id) setSelectedHotspotId(null);
+    showToast('Зона удалена');
+  };
+
+  // Сохранение в SAMP LocalStorage
+  const handleSaveToStorage = () => {
+    // Переводим обратно в проценты для идеальной совместимости с LocationView.jsx
+    const normalized = hotspots.map((hs) => ({
+      id: hs.id,
+      type: 'rect',
+      label: hs.label,
+      action: hs.action,
+      subLocation: hs.subLocation || undefined,
+      x: Number(((hs.x / naturalSize.width) * 100).toFixed(3)),
+      y: Number(((hs.y / naturalSize.height) * 100).toFixed(3)),
+      w: Number(((hs.w / naturalSize.width) * 100).toFixed(3)),
+      h: Number(((hs.h / naturalSize.height) * 100).toFixed(3)),
+    }));
+
+    const payload = {
+      default: activeImageSrc,
+      hotspots: normalized,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const ok = safeLocalStorageSet(`hotspot_tool_${selectedLocId}`, JSON.stringify(payload));
+    if (ok) {
+      showToast('💾 Сохранено для игры!');
+      if (onExport) onExport(payload);
+    }
+  };
+
+  // Экспорт готового JS-конфига для locationStyles.js
+  const handleCopyCode = () => {
+    const normalized = hotspots.map((hs) => ({
+      id: hs.id,
+      type: 'rect',
+      x: Number(((hs.x / naturalSize.width) * 100).toFixed(2)),
+      y: Number(((hs.y / naturalSize.height) * 100).toFixed(2)),
+      w: Number(((hs.w / naturalSize.width) * 100).toFixed(2)),
+      h: Number(((hs.h / naturalSize.height) * 100).toFixed(2)),
+      action: hs.action,
+      label: hs.label,
+      ...(hs.subLocation ? { subLocation: hs.subLocation } : {}),
+    }));
+
+    const snippet = `// Код для src/data/locationStyles.js:\n'${selectedLocId}': {\n  1: ${JSON.stringify(normalized, null, 4)}\n},`;
+    navigator.clipboard.writeText(snippet);
+    showToast('📋 Код скопирован в буфер!');
+  };
+
+  // Загрузка пользовательской картинки/панорамы
+  const handleImageUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const rawBase64 = ev.target.result;
+      const compressed = await compressImageBase64(rawBase64);
+      setActiveImageSrc(compressed);
+
+      const t = new Image();
+      t.onload = () => {
+        setNaturalSize({ width: t.naturalWidth, height: t.naturalHeight });
+        setPan({ x: 0, y: 0 });
+        setZoom(1);
+        showToast('🖼️ Картинка обновлена!');
+      };
+      t.src = compressed;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const selectedHotspot = useMemo(
+    () => hotspots.find((h) => h.id === selectedHotspotId),
+    [hotspots, selectedHotspotId]
+  );
 
   return (
-    <div className="fixed inset-0 z-[9999] bg-[#020617] flex flex-col text-white font-sans">
-      {/* Toast notification */}
-      {toast && (
-        <div className="absolute top-28 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-green-600/90 backdrop-blur-md border border-green-400/30 shadow-xl text-xs font-black uppercase animate-bounce">
-          {toast}
+    <div className="fixed inset-0 z-[400] bg-[#090d16] text-slate-100 flex flex-col font-sans select-none overflow-hidden">
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 bg-emerald-500 text-slate-950 font-bold px-4 py-2 rounded-xl shadow-2xl flex items-center gap-2 text-xs tracking-wide animate-fade-in">
+          <Check size={16} />
+          <span>{toastMessage}</span>
         </div>
       )}
-      {/* Header */}
-      <div className="absolute top-0 left-0 right-0 z-30 shrink-0 p-4 flex items-center justify-between bg-gradient-to-r from-orange-600/20 to-transparent border-b border-white/10 backdrop-blur-sm">
+
+      {/* Верхняя панель инструментов */}
+      <header className="h-14 bg-slate-900/95 border-b border-slate-800/80 px-4 flex items-center justify-between z-30 backdrop-blur-md">
         <div className="flex items-center gap-3">
-          <span className="text-lg">🛠️</span>
+          <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+            <Compass size={18} />
+          </div>
           <div>
-            <h2 className="text-sm font-black uppercase italic">Hotspot Tool</h2>
-            <p className="text-[10px] text-slate-400 uppercase tracking-widest">Инструмент разметки</p>
+            <h1 className="text-sm font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
+              SAMP Hotspot Studio
+              <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                PRO 60FPS
+              </span>
+            </h1>
+          </div>
+
+          {/* Селектор локаций */}
+          <div className="ml-4 flex items-center gap-2">
+            <select
+              value={selectedLocId}
+              onChange={(e) => setSelectedLocId(e.target.value)}
+              className="bg-slate-800 border border-slate-700 text-xs text-white rounded-lg px-3 py-1.5 focus:outline-none focus:border-emerald-500 max-w-[220px] truncate"
+            >
+              <optgroup label="🏠 Недвижимость">
+                <option value="economy">Эконом дом</option>
+                <option value="comfort">Комфорт дом</option>
+                <option value="business">Бизнес дом</option>
+                <option value="premium">Премиум дом</option>
+              </optgroup>
+              <optgroup label="📍 Локации штата">
+                {Object.keys(CLASS_LABELS).filter(k => !['economy', 'comfort', 'business', 'premium'].includes(k)).map(k => (
+                  <option key={k} value={k}>
+                    {CLASS_LABELS[k]}
+                  </option>
+                ))}
+              </optgroup>
+            </select>
           </div>
         </div>
-        <button onClick={onClose} className="p-2 bg-white/5 rounded-xl active:scale-90">
-          <X size={18} />
-        </button>
-      </div>
 
-      {/* Image area — absolute fills parent */}
-      <div ref={containerRef} className="absolute inset-0 bg-black overflow-hidden">
-        {selectedImage ? (
-          <div
-            className="absolute inset-0 w-full h-full cursor-crosshair select-none"
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            onTouchStart={e => handleMouseDown(e.touches[0])}
-            onTouchMove={e => handleMouseMove(e.touches[0])}
-            onTouchEnd={e => handleMouseUp(e.changedTouches[0])}
+        {/* Быстрые переключатели режима */}
+        <div className="flex items-center bg-slate-800/80 border border-slate-700/80 rounded-xl p-1 gap-1">
+          <button
+            onClick={() => setToolMode('select')}
+            className={`px-3 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
+              toolMode === 'select' ? 'bg-emerald-500 text-slate-950 font-bold shadow' : 'text-slate-400 hover:text-white'
+            }`}
+            title="Выбор и перемещение зон"
           >
-            <img
-              ref={imgRef}
-              src={selectedImage}
-              alt="House"
-              className="absolute inset-0 w-full h-full object-fill"
-              onLoad={() => {
-                console.log('HotspotTool img loaded:', selectedImage);
-                recalcHotspotPositions(hotspotsRef.current);
-              }}
-              onError={(e) => {
-                console.error('HotspotTool img error:', selectedImage, e);
-                setSelectedImage(null);
-              }}
-            />
+            <Settings2 size={14} />
+            Выбор
+          </button>
+          <button
+            onClick={() => setToolMode('draw')}
+            className={`px-3 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
+              toolMode === 'draw' ? 'bg-emerald-500 text-slate-950 font-bold shadow' : 'text-slate-400 hover:text-white'
+            }`}
+            title="Нарисовать новую интерактивную зону"
+          >
+            <Plus size={14} />
+            Создать зону
+          </button>
+          <button
+            onClick={() => setToolMode('pan')}
+            className={`px-3 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
+              toolMode === 'pan' ? 'bg-emerald-500 text-slate-950 font-bold shadow' : 'text-slate-400 hover:text-white'
+            }`}
+            title="Свободное перемещение камеры"
+          >
+            <Maximize2 size={14} />
+            Панорама
+          </button>
+        </div>
 
-            {/* Hotspot overlays */}
-            {hotspotPositions.map(h => {
-              const name = hotspotNames[h.id] || h.name;
-              if (h.type === 'rect') {
-                return (
-                  <div key={h.id}
-                    className="absolute border-2 border-orange-500 bg-orange-500/30 rounded-lg cursor-move group"
-                    style={{
-                      left: `${h._left}px`,
-                      top: `${h._top}px`,
-                      width: `${h._width}px`,
-                      height: `${h._height}px`,
-                      zIndex: 20,
-                    }}
-                  >
-                    <span className="absolute -top-6 left-0 text-[10px] font-black text-orange-300 uppercase whitespace-nowrap drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]">
-                      {name} ({h.x.toFixed(0)}%, {h.y.toFixed(0)}%)
-                    </span>
-                    <button onClick={(e) => { e.stopPropagation(); removeHotspot(h.id); }}
-                      className="absolute -top-2 -right-2 w-5 h-5 bg-red-600 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100">
-                      <X size={10} />
-                    </button>
-                  </div>
-                );
-              }
-              return (
-                <svg key={h.id}
-                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 20 }}
-                  viewBox="0 0 100 100"
-                  preserveAspectRatio="none"
-                  className="pointer-events-none"
-                >
-                  <polygon points={h.points} fill="rgba(255,140,0,0.2)" stroke="#f97316" strokeWidth="1" />
-                </svg>
-              );
-            })}
+        {/* Действия сохранения и экспорта */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="p-2 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 transition-colors"
+            title="Загрузить свою картинку для локации"
+          >
+            <Upload size={16} />
+          </button>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleImageUpload}
+            accept="image/*"
+            className="hidden"
+          />
 
-            {/* Drawing preview */}
-            {drawingRect && (
-              <div
-                className="absolute border-2 border-dashed border-orange-400 bg-orange-400/40 rounded pointer-events-none"
-                style={{
-                  left: `${drawingRect.x}%`,
-                  top: `${drawingRect.y}%`,
-                  width: `${drawingRect.w}%`,
-                  height: `${drawingRect.h}%`,
-                  zIndex: 30,
-                }}
+          <button
+            onClick={() => setShowTwaFrame((v) => !v)}
+            className={`px-3 py-1.5 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors ${
+              showTwaFrame ? 'bg-indigo-600/30 border-indigo-500 text-indigo-300' : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-white'
+            }`}
+            title="Симулятор экрана смартфона Telegram Mini App"
+          >
+            <Smartphone size={15} />
+            TWA 390px
+          </button>
+
+          <button
+            onClick={handleCopyCode}
+            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            title="Скопировать JS-код для вставки в locationStyles.js"
+          >
+            <Download size={14} />
+            Экспорт кода
+          </button>
+
+          <button
+            onClick={handleSaveToStorage}
+            className="px-4 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-500/20 transition-transform active:scale-95"
+          >
+            <Save size={14} />
+            Сохранить
+          </button>
+
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-2 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 ml-2"
+              title="Закрыть редактор"
+            >
+              <X size={16} />
+            </button>
+          )}
+        </div>
+      </header>
+
+      {/* Основная рабочая область */}
+      <div className="flex-1 flex relative overflow-hidden">
+        {/* Интерактивный холст панорамы */}
+        <div
+          ref={stageViewportRef}
+          onWheel={handleWheel}
+          onPointerDown={handleStagePointerDown}
+          onPointerMove={handleStagePointerMove}
+          onPointerUp={handleStagePointerUp}
+          className={`flex-1 relative bg-[#040711] overflow-hidden flex items-center justify-center ${
+            toolMode === 'pan' || isPanning ? 'cursor-grab active:cursor-grabbing' : toolMode === 'draw' ? 'cursor-crosshair' : 'cursor-default'
+          }`}
+        >
+          {/* Сетка холста */}
+          <div
+            className="absolute inset-0 pointer-events-none opacity-15"
+            style={{
+              backgroundImage: 'radial-gradient(#38bdf8 1px, transparent 1px)',
+              backgroundSize: '24px 24px',
+            }}
+          />
+
+          {/* Трансформируемый контейнер сцены */}
+          <div
+            style={{
+              width: naturalSize.width,
+              height: naturalSize.height,
+              transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})`,
+              transformOrigin: 'center center',
+              transition: isPanning || transforming || isDrawingRef.current ? 'none' : 'transform 0.08s ease-out',
+            }}
+            className="relative shadow-2xl border border-slate-700/50 bg-slate-950/80 shrink-0"
+          >
+            {/* Фоновое изображение */}
+            {activeImageSrc && (
+              <img
+                src={activeImageSrc}
+                alt="Panorama Location"
+                draggable={false}
+                className="w-full h-full object-cover block pointer-events-none"
               />
             )}
 
-            {/* Drawing polygon preview */}
-            {polygonPoints.length > 0 && (
-              <svg
-                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', }}
-                viewBox="0 0 100 100"
-                preserveAspectRatio="none"
-                className="pointer-events-none"
-              >
-                {polygonPoints.map((p, i) => (
-                  <circle key={i} cx={`${p.x}%`} cy={`${p.y}%`} r="3" fill="#f97316" />
-                ))}
-                {polygonPoints.length > 1 && (
-                  <polyline points={polygonPoints.map(p => `${p.x},${p.y}`).join(' ')}
-                    fill="none" stroke="#f97316" strokeWidth="1" strokeDasharray="4" />
-                )}
-              </svg>
-            )}
-          </div>
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center text-slate-600">
-            <div className="text-center space-y-4">
-              <div className="text-6xl mb-4">🏠</div>
-              <p className="text-sm font-black uppercase text-slate-500">Нет изображения</p>
-              <p className="text-[10px] mt-2 text-slate-700">Загрузите фото для {CLASS_LABELS[houseClass] || houseClass}</p>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="px-4 py-2 rounded-xl text-xs font-black uppercase bg-purple-600/20 text-purple-300 border border-purple-500/30 active:scale-90 flex items-center gap-2 mx-auto"
-              >
-                <Upload size={14} /> Загрузить изображение
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Bottom panel — controls + zone list, overlaid on image */}
-      <div className="absolute bottom-0 left-0 right-0 z-30 flex flex-col max-h-[45vh] bg-white/[0.02] border-t border-white/5 backdrop-blur-sm">
-        {/* Controls */}
-        <div className="shrink-0 p-4 space-y-2">
-          <div className="flex gap-2 flex-wrap">
-            <select value={houseClass} onChange={e => handleClassChange(e.target.value)}
-              className="bg-[#0a0f0a] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none">
-              <optgroup label="🏡 Дома">
-                <option value="economy" className="bg-[#0a0f0a] text-white">🏡 Эконом-класс</option>
-                <option value="comfort" className="bg-[#0a0f0a] text-white">🏡️ Комфорт-класс</option>
-                <option value="business" className="bg-[#0a0f0a] text-white">🏢 Бизнес-класс</option>
-                <option value="premium" className="bg-[#0a0f0a] text-white">🏼 Премиум-класс</option>
-              </optgroup>
-              {Object.values(getLocationGroups()).map(group => (
-                <optgroup key={group.label} label={group.label}>
-                  {group.keys.map(key => (
-                    <option key={key} value={key} className="bg-[#0a0f0a] text-white">{CLASS_LABELS[key] || key}</option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-            {imagesList.length > 1 && (
-              <select value={selectedImage || ''} onChange={e => setSelectedImage(e.target.value)}
-                className="bg-[#0a0f0a] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none">
-                {imagesList.map(img => <option key={img.src} value={img.src} className="bg-[#0a0f0a] text-white">{img.src.split('/').pop()}</option>)}
-              </select>
-            )}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleImageUpload}
-              className="hidden"
-            />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="px-3 py-2 rounded-xl text-xs font-black uppercase bg-purple-600/20 text-purple-300 border border-purple-500/30 active:scale-90 flex items-center gap-1"
-              title="Загрузить изображение"
-            >
-              <Upload size={12} /> Загрузить
-            </button>
-            <button onClick={() => setMode('rect')}
-              className={`px-3 py-2 rounded-xl text-xs font-black uppercase ${mode === 'rect' ? 'bg-orange-600' : 'bg-white/5'}`}>
-              ⬜ Прямоугольник
-            </button>
-            <button onClick={() => setMode('polygon')}
-              className={`px-3 py-2 rounded-xl text-xs font-black uppercase ${mode === 'polygon' ? 'bg-orange-600' : 'bg-white/5'}`}>
-              🔷 Полигон
-            </button>
-            {mode === 'polygon' && polygonPoints.length > 0 && (
-              <button onClick={finishPolygon} className="px-3 py-2 rounded-xl text-xs font-black uppercase bg-green-600">
-                ✓ Готово ({polygonPoints.length} точек)
-              </button>
-            )}
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] text-slate-500">
-              {mode === 'rect' ? 'Зажмите и потяните для создания зоны' : 'Тапайте чтобы добавить точки, затем нажмите "Готово"'}
-            </span>
-            <div className="flex gap-2">
-              <button onClick={clearAll} className="p-1.5 bg-red-600/20 rounded-lg active:scale-90" title="Очистить зоны">
-                <Trash2 size={12} className="text-red-400" />
-              </button>
-              <button onClick={clearAllStorage} className="p-1.5 bg-red-800/30 rounded-lg active:scale-90" title="Очистить весь localStorage">
-                <Trash2 size={12} className="text-red-600" />🗄️
-              </button>
-              <button onClick={saveToStorage} className="p-1.5 bg-blue-600/20 rounded-lg active:scale-90">
-                <Save size={12} className="text-blue-400" />
-              </button>
-              <button onClick={exportJSON} className="p-1.5 bg-orange-600/20 rounded-lg active:scale-90">
-                <Copy size={12} className="text-orange-400" />
-              </button>
-            </div>
-          </div>
-        </div>
-        {/* Zone list */}
-        <div className="flex-grow overflow-y-auto p-4 pt-0 space-y-1.5">
-          <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest">
-            Зоны ({hotspots.length})
-          </p>
-          {hotspots.map(h => {
-            const action = hotspotActions[h.id] || 'enter';
-            return (
-              <React.Fragment key={h.id}>
-                <div key={h.id} className="flex flex-col gap-1.5 bg-white/[0.03] rounded-xl p-2">
-                  <div className="flex items-center gap-2">
-                    <MapPin size={12} className="text-orange-400 shrink-0" />
-                    <input value={hotspotNames[h.id] || h.name}
-                      onChange={e => renameHotspot(h.id, e.target.value)}
-                      className="flex-grow bg-transparent text-xs text-white outline-none font-black uppercase"
-                      placeholder="Название зоны" />
-                    <span className="text-[9px] text-slate-500 shrink-0">{h.type}</span>
-                    <button onClick={() => removeHotspot(h.id)} className="p-1 text-red-400 shrink-0">
-                      <X size={12} />
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-2 ml-5">
-                    <select value={action}
-                      onChange={e => setHotspotAction(h.id, e.target.value)}
-                      className="bg-[#0a0f0a] border border-white/10 rounded-lg px-2 py-1 text-[10px] text-white outline-none flex-grow">
-                      {(HOTSPOT_ACTIONS[houseClass] || HOTSPOT_ACTIONS.default).map(a => (
-                        <option key={a.value} value={a.value}>{a.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                  {action === 'sublocation' && (
-                    <div className="flex items-center gap-2 ml-5">
-                      <span className="text-[9px] text-cyan-400 shrink-0">→</span>
-                      <input value={hotspotSubNames[h.id] || ''}
-                        onChange={e => setHotspotSubName(h.id, e.target.value)}
-                        className="flex-grow bg-[#0a0f0a] border border-cyan-500/30 rounded-lg px-2 py-1 text-[10px] text-cyan-300 outline-none"
-                        placeholder="Имя подлокации" />
-                      <button
-                        onClick={() => openSubLocationEditor(h.id)}
-                        className="shrink-0 px-2 py-1 rounded-lg text-[9px] font-black uppercase bg-cyan-600/20 text-cyan-300 border border-cyan-500/30 active:scale-90"
-                      >
-                        ✏️ Редактировать
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </React.Fragment>
-            );
-          })}
-          {hotspots.length === 0 && (
-            <p className="text-[10px] text-slate-600 text-center py-2">Нет зон — нарисуйте на изображении</p>
-          )}
-        </div>
-      </div>
-
-      {/* === Sublocation Editor === */}
-      {editingSubLocation && (
-        <div className="fixed inset-0 z-[10000] bg-[#020617] flex flex-col text-white font-sans">
-          {/* Header */}
-          <div className="absolute top-0 left-0 right-0 z-30 shrink-0 p-4 flex items-center justify-between bg-gradient-to-r from-cyan-600/20 to-transparent border-b border-white/10 backdrop-blur-sm">
-            <div className="flex items-center gap-3">
-              <button onClick={closeSubLocationEditor} className="p-2 bg-white/5 rounded-xl active:scale-90">
-                <ArrowLeft size={16} />
-              </button>
-              <div>
-                <h2 className="text-sm font-black uppercase italic">Подлокация: {editingSubLocation.subName}</h2>
-                <p className="text-[10px] text-cyan-400 uppercase tracking-widest">
-                  Родитель: {CLASS_LABELS[editingSubLocation.parentId] || editingSubLocation.parentId}
-                </p>
-              </div>
-            </div>
-            <button onClick={onClose} className="p-2 bg-white/5 rounded-xl active:scale-90">
-              <X size={18} />
-            </button>
-          </div>
-
-          {/* Image area */}
-          <div ref={subContainerRef} className="absolute inset-0 bg-black overflow-hidden">
-            {subselectedImage ? (
-              <div
-                className="absolute inset-0 w-full h-full cursor-crosshair select-none"
-                onMouseDown={handleSubMouseDown}
-                onMouseMove={handleSubMouseMove}
-                onMouseUp={handleSubMouseUp}
-                onTouchStart={e => handleSubMouseDown(e.touches[0])}
-                onTouchMove={e => handleSubMouseMove(e.touches[0])}
-                onTouchEnd={e => handleSubMouseUp(e.changedTouches[0])}
-              >
-                <img
-                  ref={subImgRef}
-                  src={subselectedImage}
-                  alt="Sublocation"
-                  className="absolute inset-0 w-full h-full object-fill"
-                  onLoad={() => {
-                    const subKey = getSubLocationKey();
-                    recalcSubHotspotPositions(subKey);
-                  }}
-                />
-
-                {/* Sublocation hotspot overlays */}
-                {subHotspotPositions.map(h => {
-                  const name = subHotspotNames[h.id] || h.name;
-                  if (h.type === 'rect') {
-                    return (
-                      <div key={h.id}
-                        className="absolute border-2 border-cyan-500 bg-cyan-500/30 rounded-lg cursor-move group"
-                        style={{
-                          left: `${h._left}px`,
-                          top: `${h._top}px`,
-                          width: `${h._width}px`,
-                          height: `${h._height}px`,
-                          zIndex: 20,
-                        }}
-                      >
-                        <span className="absolute -top-6 left-0 text-[10px] font-black text-cyan-300 uppercase whitespace-nowrap drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]">
-                          {name}
-                        </span>
-                        <button onClick={(e) => { e.stopPropagation(); removeSubHotspot(h.id); }}
-                          className="absolute -top-2 -right-2 w-5 h-5 bg-red-600 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100">
-                          <X size={10} />
-                        </button>
-                      </div>
-                    );
-                  }
-                  return (
-                    <svg key={h.id}
-                      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 20 }}
-                      viewBox="0 0 100 100"
-                      preserveAspectRatio="none"
-                      className="pointer-events-none"
-                    >
-                      <polygon points={h.points} fill="rgba(6,182,212,0.2)" stroke="#06b6d4" strokeWidth="1" />
-                    </svg>
-                  );
-                })}
-
-                {subDrawingRect && (
-                  <div
-                    className="absolute border-2 border-dashed border-cyan-400 bg-cyan-400/40 rounded pointer-events-none"
-                    style={{
-                      left: `${subDrawingRect.x}%`,
-                      top: `${subDrawingRect.y}%`,
-                      width: `${subDrawingRect.w}%`,
-                      height: `${subDrawingRect.h}%`,
-                      zIndex: 30,
-                    }}
-                  />
-                )}
-
-                {subPolygonPoints.length > 0 && (
-                  <svg
-                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', }}
-                    viewBox="0 0 100 100"
-                    preserveAspectRatio="none"
-                    className="pointer-events-none"
-                  >
-                    {subPolygonPoints.map((p, i) => (
-                      <circle key={i} cx={`${p.x}%`} cy={`${p.y}%`} r="3" fill="#06b6d4" />
-                    ))}
-                    {subPolygonPoints.length > 1 && (
-                      <polyline points={subPolygonPoints.map(p => `${p.x},${p.y}`).join(' ')}
-                        fill="none" stroke="#06b6d4" strokeWidth="1" strokeDasharray="4" />
-                    )}
-                  </svg>
-                )}
-              </div>
-            ) : (
-              <div className="absolute inset-0 flex items-center justify-center text-slate-600">
-                <div className="text-center space-y-4">
-                  <div className="text-6xl mb-4">🗺️</div>
-                  <p className="text-sm font-black uppercase text-slate-500">Нет изображения</p>
-                  <p className="text-[10px] mt-2 text-slate-700">Загрузите фото подлокации «{editingSubLocation.subName}»</p>
-                  <button
-                    onClick={() => subFileInputRef.current?.click()}
-                    className="px-4 py-2 rounded-xl text-xs font-black uppercase bg-cyan-600/20 text-cyan-300 border border-cyan-500/30 active:scale-90 flex items-center gap-2 mx-auto"
-                  >
-                    <Upload size={14} /> Загрузить изображение
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Bottom panel */}
-          <div className="absolute bottom-0 left-0 right-0 z-30 flex flex-col max-h-[45vh] bg-white/[0.02] border-t border-white/5 backdrop-blur-sm">
-            <div className="shrink-0 p-4 space-y-2">
-              <div className="flex gap-2 flex-wrap">
-                <button
-                  onClick={() => subFileInputRef.current?.click()}
-                  className="px-3 py-2 rounded-xl text-xs font-black uppercase bg-cyan-600/20 text-cyan-300 border border-cyan-500/30 active:scale-90 flex items-center gap-1"
-                >
-                  <Upload size={12} /> Загрузить
-                </button>
-                <input
-                  ref={subFileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleSubImageUpload}
-                  className="hidden"
-                />
-                <button onClick={() => setSubMode('rect')}
-                  className={`px-3 py-2 rounded-xl text-xs font-black uppercase ${subMode === 'rect' ? 'bg-cyan-600' : 'bg-white/5'}`}>
-                  ⬜ Прямоугольник
-                </button>
-                <button onClick={() => setSubMode('polygon')}
-                  className={`px-3 py-2 rounded-xl text-xs font-black uppercase ${subMode === 'polygon' ? 'bg-cyan-600' : 'bg-white/5'}`}>
-                  🔷 Полигон
-                </button>
-                {subMode === 'polygon' && subPolygonPoints.length > 0 && (
-                  <button onClick={finishSubPolygon} className="px-3 py-2 rounded-xl text-xs font-black uppercase bg-green-600">
-                    ✓ Готово ({subPolygonPoints.length} точек)
-                  </button>
-                )}
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] text-slate-500">
-                  {subMode === 'rect' ? 'Зажмите и потяните для создания зоны' : 'Тапайте чтобы добавить точки'}
-                </span>
-                <div className="flex gap-2">
-                  <button onClick={() => saveSubHotspotsList(subHotspots[getSubLocationKey()]?.hotspots || [])} className="p-1.5 bg-blue-600/20 rounded-lg active:scale-90">
-                    <Save size={12} className="text-blue-400" />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Sub hotspots list */}
-            <div className="flex-grow overflow-y-auto p-4 pt-0 space-y-1.5">
-              <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest">
-                Зоны подлокации ({(subHotspots[getSubLocationKey()]?.hotspots || []).length})
-              </p>
-              {(subHotspots[getSubLocationKey()]?.hotspots || []).map(h => {
-                const action = subHotspotActions[h.id] || 'enter';
+            {/* Отрисовка размеченных хотспотов */}
+            {showOverlays &&
+              hotspots.map((hs) => {
+                const isSelected = hs.id === selectedHotspotId;
                 return (
-                  <React.Fragment key={h.id}>
-                    <div className="flex flex-col gap-1.5 bg-white/[0.03] rounded-xl p-2">
-                      <div className="flex items-center gap-2">
-                        <MapPin size={12} className="text-cyan-400 shrink-0" />
-                        <input value={subHotspotNames[h.id] || h.name}
-                          onChange={e => renameSubHotspot(h.id, e.target.value)}
-                          className="flex-grow bg-transparent text-xs text-white outline-none font-black uppercase"
-                          placeholder="Название зоны" />
-                        <span className="text-[9px] text-slate-500 shrink-0">{h.type}</span>
-                        <button onClick={() => removeSubHotspot(h.id)} className="p-1 text-red-400 shrink-0">
-                          <X size={12} />
-                        </button>
+                  <div
+                    key={hs.id}
+                    onPointerDown={(e) => startDragHotspot(e, hs)}
+                    style={{
+                      left: hs.x,
+                      top: hs.y,
+                      width: hs.w,
+                      height: hs.h,
+                    }}
+                    className={`absolute rounded-xl transition-shadow cursor-move flex flex-col items-center justify-center border-2 ${
+                      isSelected
+                        ? 'border-emerald-400 bg-emerald-500/25 shadow-2xl shadow-emerald-500/40 z-20'
+                        : 'border-cyan-400/80 bg-cyan-500/15 hover:border-cyan-300 hover:bg-cyan-500/25 z-10'
+                    }`}
+                  >
+                    {/* Плашка действия */}
+                    <div className="pointer-events-none px-2 py-1 bg-black/80 backdrop-blur-md rounded-lg border border-white/20 text-center max-w-[90%] truncate shadow-lg">
+                      <div className="text-[11px] font-black text-white uppercase tracking-wider truncate">
+                        {hs.label}
                       </div>
-                      <div className="flex items-center gap-2 ml-5">
-                        <select value={action}
-                          onChange={e => setSubHotspotAction(h.id, e.target.value)}
-                          className="bg-[#0a0f0a] border border-white/10 rounded-lg px-2 py-1 text-[10px] text-white outline-none flex-grow">
-                          {(HOTSPOT_ACTIONS[editingSubLocation?.parentId] || HOTSPOT_ACTIONS.default).map(a => (
-                            <option key={a.value} value={a.value}>{a.label}</option>
-                          ))}
-                        </select>
+                      <div className="text-[9px] font-mono text-emerald-400 font-bold lowercase">
+                        {hs.action}
                       </div>
-                      {action === 'sublocation' && (
-                        <div className="flex items-center gap-2 ml-5">
-                          <span className="text-[9px] text-cyan-400 shrink-0">→</span>
-                          <input value={subHotspotSubNames[h.id] || ''}
-                            onChange={e => setSubHotspotSubName(h.id, e.target.value)}
-                            className="flex-grow bg-[#0a0f0a] border border-cyan-500/30 rounded-lg px-2 py-1 text-[10px] text-cyan-300 outline-none"
-                            placeholder="Имя подлокации" />
-                        </div>
-                      )}
                     </div>
-                  </React.Fragment>
+
+                    {/* Манипуляторы ресайза (только у выбранного) */}
+                    {isSelected && (
+                      <>
+                        <div
+                          onPointerDown={(e) => startResizeHotspot(e, hs, 'nw')}
+                          className="absolute -top-2 -left-2 w-4 h-4 bg-emerald-400 border-2 border-slate-950 rounded cursor-nwse-resize shadow"
+                        />
+                        <div
+                          onPointerDown={(e) => startResizeHotspot(e, hs, 'ne')}
+                          className="absolute -top-2 -right-2 w-4 h-4 bg-emerald-400 border-2 border-slate-950 rounded cursor-nesw-resize shadow"
+                        />
+                        <div
+                          onPointerDown={(e) => startResizeHotspot(e, hs, 'sw')}
+                          className="absolute -bottom-2 -left-2 w-4 h-4 bg-emerald-400 border-2 border-slate-950 rounded cursor-nesw-resize shadow"
+                        />
+                        <div
+                          onPointerDown={(e) => startResizeHotspot(e, hs, 'se')}
+                          className="absolute -bottom-2 -right-2 w-4 h-4 bg-emerald-400 border-2 border-slate-950 rounded cursor-nwse-resize shadow"
+                        />
+                      </>
+                    )}
+                  </div>
                 );
               })}
-              {(subHotspots[getSubLocationKey()]?.hotspots || []).length === 0 && (
-                <p className="text-[10px] text-slate-600 text-center py-2">Нет зон — нарисуйте на изображении</p>
-              )}
+
+            {/* Бокс рисования новой зоны */}
+            {drawBox && (
+              <div
+                style={{
+                  left: Math.min(drawBox.startX, drawBox.currentX),
+                  top: Math.min(drawBox.startY, drawBox.currentY),
+                  width: Math.abs(drawBox.currentX - drawBox.startX),
+                  height: Math.abs(drawBox.currentY - drawBox.startY),
+                }}
+                className="absolute border-2 border-dashed border-emerald-400 bg-emerald-500/20 rounded-xl pointer-events-none z-30"
+              />
+            )}
+          </div>
+
+          {/* TWA Frame Overlay (390 x 720 экран смартфона) */}
+          {showTwaFrame && (
+            <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-40">
+              <div className="w-[390px] h-[720px] rounded-[42px] border-4 border-emerald-400/80 shadow-[0_0_0_9999px_rgba(3,7,18,0.75)] flex flex-col justify-between p-4 relative">
+                <div className="w-32 h-4 bg-slate-900 mx-auto rounded-full" />
+                <div className="text-center">
+                  <span className="bg-black/80 text-emerald-400 text-[10px] font-mono font-bold px-3 py-1 rounded-full border border-emerald-500/40">
+                    Telegram Web App 390×720
+                  </span>
+                </div>
+              </div>
             </div>
+          )}
+
+          {/* Нижняя панель зума на холсте */}
+          <div className="absolute bottom-4 left-4 z-30 flex items-center gap-1 bg-slate-900/90 border border-slate-800 rounded-xl p-1 backdrop-blur-md shadow-xl">
+            <button
+              onClick={() => setZoom((z) => Math.max(0.25, z - 0.15))}
+              className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-300"
+              title="Отдалить"
+            >
+              <ZoomOut size={16} />
+            </button>
+            <span className="text-xs font-mono font-bold w-12 text-center text-slate-300">
+              {Math.round(zoom * 100)}%
+            </span>
+            <button
+              onClick={() => setZoom((z) => Math.min(4, z + 0.15))}
+              className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-300"
+              title="Приблизить"
+            >
+              <ZoomIn size={16} />
+            </button>
+            <div className="h-4 w-px bg-slate-700 mx-1" />
+            <button
+              onClick={() => {
+                setPan({ x: 0, y: 0 });
+                setZoom(1);
+              }}
+              className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-300 text-xs"
+              title="Сбросить камеру"
+            >
+              <RefreshCw size={14} />
+            </button>
+            <button
+              onClick={() => setShowOverlays((v) => !v)}
+              className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-300"
+              title="Показать / скрыть оверлеи зон"
+            >
+              {showOverlays ? <Eye size={16} /> : <EyeOff size={16} />}
+            </button>
           </div>
         </div>
-      )}
+
+        {/* Правый сайдбар: Инспектор выбранного хотспота */}
+        <aside className="w-80 bg-slate-900 border-l border-slate-800 flex flex-col z-30 shrink-0">
+          <div className="p-4 border-b border-slate-800">
+            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+              <Layers size={14} />
+              Слои и хотспоты ({hotspots.length})
+            </h2>
+          </div>
+
+          {/* Список зон */}
+          <div className="flex-1 overflow-y-auto p-3 space-y-1.5 max-h-56 border-b border-slate-800">
+            {hotspots.length === 0 ? (
+              <div className="text-center py-6 text-slate-500 text-xs">
+                Нет зон. Нажмите <br />
+                <span className="text-emerald-400 font-bold">«Создать зону»</span>
+              </div>
+            ) : (
+              hotspots.map((hs) => (
+                <div
+                  key={hs.id}
+                  onClick={() => setSelectedHotspotId(hs.id)}
+                  className={`p-2 rounded-xl text-xs flex items-center justify-between cursor-pointer border transition-all ${
+                    hs.id === selectedHotspotId
+                      ? 'bg-emerald-500/15 border-emerald-500/60 text-white shadow-sm'
+                      : 'bg-slate-800/50 border-slate-700/50 text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    <MapPin size={13} className={hs.id === selectedHotspotId ? 'text-emerald-400' : 'text-slate-500'} />
+                    <span className="font-semibold truncate">{hs.label || 'Без названия'}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        duplicateHotspot(hs);
+                      }}
+                      className="p-1 hover:text-white text-slate-400"
+                      title="Дублировать"
+                    >
+                      <Copy size={12} />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteHotspot(hs.id);
+                      }}
+                      className="p-1 hover:text-rose-400 text-slate-400"
+                      title="Удалить"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Инспектор параметров выбранного хотспота */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {selectedHotspot ? (
+              <>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                    Параметры зоны
+                  </span>
+                  <span className="text-[10px] font-mono text-slate-500">ID: {selectedHotspot.id}</span>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-medium text-slate-400 block mb-1">
+                    Название на кнопке:
+                  </label>
+                  <input
+                    type="text"
+                    value={selectedHotspot.label}
+                    onChange={(e) =>
+                      setHotspots((prev) =>
+                        prev.map((h) =>
+                          h.id === selectedHotspot.id ? { ...h, label: e.target.value } : h
+                        )
+                      )
+                    }
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-medium text-slate-400 block mb-1">
+                    Игровое действие (action):
+                  </label>
+                  <select
+                    value={selectedHotspot.action}
+                    onChange={(e) =>
+                      setHotspots((prev) =>
+                        prev.map((h) =>
+                          h.id === selectedHotspot.id ? { ...h, action: e.target.value } : h
+                        )
+                      )
+                    }
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  >
+                    {DEFAULT_HOTSPOT_ACTIONS.map((a) => (
+                      <option key={a.value} value={a.value}>
+                        {a.label} ({a.value})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {selectedHotspot.action === 'sublocation' && (
+                  <div>
+                    <label className="text-[11px] font-medium text-slate-400 block mb-1">
+                      Ключ подлокации (sublocation key):
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="interior_hall, garage_1..."
+                      value={selectedHotspot.subLocation || ''}
+                      onChange={(e) =>
+                        setHotspots((prev) =>
+                          prev.map((h) =>
+                            h.id === selectedHotspot.id ? { ...h, subLocation: e.target.value } : h
+                          )
+                        )
+                      }
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                )}
+
+                {/* Координаты */}
+                <div className="pt-2 border-t border-slate-800">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-2">
+                    Геометрия зоны
+                  </span>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="bg-slate-800/70 p-2 rounded-lg border border-slate-700/50">
+                      <span className="text-slate-500 text-[10px] block">X (%):</span>
+                      <span className="font-mono text-emerald-400 font-bold">
+                        {((selectedHotspot.x / naturalSize.width) * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="bg-slate-800/70 p-2 rounded-lg border border-slate-700/50">
+                      <span className="text-slate-500 text-[10px] block">Y (%):</span>
+                      <span className="font-mono text-emerald-400 font-bold">
+                        {((selectedHotspot.y / naturalSize.height) * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="bg-slate-800/70 p-2 rounded-lg border border-slate-700/50">
+                      <span className="text-slate-500 text-[10px] block">Ширина (%):</span>
+                      <span className="font-mono text-cyan-400 font-bold">
+                        {((selectedHotspot.w / naturalSize.width) * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="bg-slate-800/70 p-2 rounded-lg border border-slate-700/50">
+                      <span className="text-slate-500 text-[10px] block">Высота (%):</span>
+                      <span className="font-mono text-cyan-400 font-bold">
+                        {((selectedHotspot.h / naturalSize.height) * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex gap-2">
+                  <button
+                    onClick={() => duplicateHotspot(selectedHotspot)}
+                    className="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
+                  >
+                    <Copy size={13} />
+                    Дубликат
+                  </button>
+                  <button
+                    onClick={() => deleteHotspot(selectedHotspot.id)}
+                    className="py-1.5 px-3 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg text-xs font-medium flex items-center justify-center transition-colors"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="text-center py-10 text-slate-500 text-xs">
+                Выберите зону на холсте или в списке слоев для редактирования
+              </div>
+            )}
+          </div>
+        </aside>
+      </div>
     </div>
   );
 }

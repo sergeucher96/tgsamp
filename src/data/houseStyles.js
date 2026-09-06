@@ -1,8 +1,7 @@
 // src/data/houseStyles.js
-
 // Hotspots для интерактивных зон дома (дверь, гараж и т.д.)
-// Координаты рассчитываются от картинки (object-contain) — стабильны при любом размере экрана.
-// Нарисуйте зоны через HotspotTool (Ctrl+Shift+H)
+// Координаты рассчитываются в процентах от картинки (object-contain) — стабильны при любом размере экрана.
+
 export const HOUSE_HOTSPOTS = {
   economy: {
     1: [
@@ -15,24 +14,23 @@ export const HOUSE_HOTSPOTS = {
   premium: {}
 };
 
-// Картинки гаражей по классу дома (загрузите через Hotspot Tool)
+// Картинки гаражей по классу дома
 export const HOUSE_GARAGE_IMAGES = {
   economy: {
-    image: null, // загрузите 2D картинку гаража и укажите путь
+    image: '/houses/eco_1_int.webp',
   },
   comfort: {
-    image: null,
+    image: '/houses/eco_1_int.webp',
   },
   business: {
-    image: null,
+    image: '/houses/eco_1_int.webp',
   },
   premium: {
-    image: null,
+    image: '/houses/eco_1_int.webp',
   }
 };
 
-// Хотспоты для гаража — подлокация дома
-// 사용grundlage HotspotTool: создайте хотспоты "exit" (выход из гаража), "drive" (выехать на машине)
+// Хотспоты для гаража
 export const HOUSE_GARAGE_HOTSPOTS = {
   economy: {
     exit: { id: 'exit', type: 'rect', x: 10, y: 40, w: 20, h: 20, action: 'exit', label: 'Назад' },
@@ -48,56 +46,56 @@ export const HOUSE_GARAGE_HOTSPOTS = {
   }
 };
 
-// Реестр изображений (используем индексы v: 1, v: 2 и т.д.)
+// Реестр изображений (используем только реально существующие файлы в public/houses)
 export const HOUSE_PREVIEWS_MAP = {
   economy: {
     images: [
       { id: 1, src: '/houses/eco_1.webp' },
-      { id: 2, src: '/houses/eco_2.webp' },
-      { id: 3, src: '/houses/eco_water.webp' },
+      { id: 2, src: '/houses/eco_1_int.webp' },
+      { id: 3, src: '/houses/houselong.jpg' },
     ],
     default: '/houses/eco_1.webp'
   },
   comfort: {
     images: [
-      { id: 1, src: '/houses/comf_1.webp' },
-      { id: 2, src: '/houses/comf_modern.webp' },
+      { id: 1, src: '/houses/eco_1.webp' },
+      { id: 2, src: '/houses/houselong.jpg' },
     ],
-    default: '/houses/comf_1.webp'
+    default: '/houses/eco_1.webp'
   },
   business: {
     images: [
-      { id: 1, src: '/houses/bus_1.webp' },
+      { id: 1, src: '/houses/houselong.jpg' },
     ],
-    default: '/houses/bus_1.webp'
+    default: '/houses/houselong.jpg'
   },
   premium: {
     images: [
-      { id: 1, src: '/houses/prem_villa.webp' },
+      { id: 1, src: '/houses/houselong.jpg' },
     ],
-    default: '/houses/prem_villa.webp'
+    default: '/houses/houselong.jpg'
   }
 };
 
 const HOUSE_PREVIEWS = {
   economy: {
     1: '/houses/eco_1.webp',
-    2: '/houses/eco_2.webp',
-    3: '/houses/eco_water.webp',
+    2: '/houses/eco_1_int.webp',
+    3: '/houses/houselong.jpg',
     default: '/houses/eco_1.webp'
   },
   comfort: {
-    1: '/houses/comf_1.webp',
-    2: '/houses/comf_modern.webp',
-    default: '/houses/comf_1.webp'
+    1: '/houses/eco_1.webp',
+    2: '/houses/houselong.jpg',
+    default: '/houses/eco_1.webp'
   },
   business: {
-    1: '/houses/bus_1.webp',
-    default: '/houses/bus_1.webp'
+    1: '/houses/houselong.jpg',
+    default: '/houses/houselong.jpg'
   },
   premium: {
-    1: '/houses/prem_villa.webp',
-    default: '/houses/prem_villa.webp'
+    1: '/houses/houselong.jpg',
+    default: '/houses/houselong.jpg'
   }
 };
 
@@ -111,18 +109,16 @@ export const CLASS_BORDERS = {
 
 // 1. Функция получения стиля маркера на карте
 export const getHouseStyle = (house, player) => {
-  let statusColor = 'bg-emerald-600'; // По умолчанию: Свободен (Зеленый)
-
+  let statusColor = 'bg-emerald-600';
   if (house.owner_id) {
     if (house.owner_id === player?.id) {
-      statusColor = 'bg-blue-600'; // Мой дом (Синий)
+      statusColor = 'bg-blue-600';
     } else if (house.is_for_sale) {
-      statusColor = 'bg-amber-500'; // Продается игроком (Желтый)
+      statusColor = 'bg-amber-500';
     } else {
-      statusColor = 'bg-red-600'; // Занят (Красный)
+      statusColor = 'bg-red-600';
     }
   }
-
   return {
     color: statusColor,
     border: CLASS_BORDERS[house.class] || CLASS_BORDERS.economy,
@@ -178,30 +174,28 @@ export const getHouseIcon = (house, player) => {
   return icons[key] || null;
 };
 
-// 2. Функция получения картинки для меню (Маппинг)
+// 2. Функция получения картинки для меню карточки дома (HouseMenu)
 export const getHousePreview = (house) => {
+  if (!house) return '/houses/eco_1.webp';
   const category = HOUSE_PREVIEWS[house.class] || HOUSE_PREVIEWS.economy;
-  // Берем по индексу 'v' из объекта дома, если его нет — берем default
-  return category[house.v] || category.default;
+  return (house.v ? category[house.v] : null) || category.default || '/houses/eco_1.webp';
 };
 
-// Get house hotspots — merges localStorage (HotspotTool) with static data
-// If localStorage has hotspots for the given class+imgIdx, use them. Otherwise fallback to static.
+// 3. Получение хотспотов дома
 export function getHouseHotspots(cls, imgIdx) {
   const staticHs = HOUSE_HOTSPOTS[cls]?.[imgIdx] || [];
   const saved = localStorage.getItem(`hotspot_tool_${cls}`);
   if (saved) {
     try {
       const data = JSON.parse(saved);
-      console.log('[HouseHotspots] cls:', cls, 'saved data:', JSON.stringify(data));
       if (Array.isArray(data) && data.length > 0) return data;
       if (Array.isArray(data?.hotspots) && data.hotspots.length > 0) return data.hotspots;
     } catch (e) {}
   }
-  return staticHs.length > 0 ? staticHs : [];
+  return staticHs.length > 0 ? staticHs : (HOUSE_HOTSPOTS.economy[1] || []);
 }
 
-// Get house sublocations from localStorage (HotspotTool saves sublocations there)
+// 4. Получение подлокаций дома
 export function getHouseSublocations(cls) {
   const saved = localStorage.getItem('hotspot_tool_sublocations');
   if (saved) {
@@ -214,29 +208,37 @@ export function getHouseSublocations(cls) {
           result[label] = value;
         }
       }
-      return result;
+      if (Object.keys(result).length > 0) return result;
     } catch (e) {}
   }
-  return {};
+  return {
+    garage_1: {
+      image: '/houses/eco_1_int.webp',
+      label: 'Гараж',
+      hotspots: [
+        { id: 'exit', type: 'rect', x: 10, y: 40, w: 20, h: 20, action: 'exit', label: 'Назад' }
+      ]
+    }
+  };
 }
 
-// Get house preview image — merges static data with localStorage
-export function getHouseImage(cls, imgIdx) {
+// 5. Получение картинки интерьера дома
+export function getHouseImage(cls, imgIdx = 1) {
   const saved = localStorage.getItem(`hotspot_tool_${cls}`);
   if (saved) {
     try {
       const data = JSON.parse(saved);
-      if (data?.default) return data.default;
+      if (data?.default && typeof data.default === 'string' && data.default.length > 5) return data.default;
       if (data?.images?.length > 0) return data.images[imgIdx - 1]?.src || data.default;
     } catch (e) {}
   }
-  const category = HOUSE_PREVIEWS_MAP[cls];
-  if (!category) return null;
+  const category = HOUSE_PREVIEWS_MAP[cls] || HOUSE_PREVIEWS_MAP.economy;
+  if (!category) return '/houses/eco_1.webp';
   const img = category.images?.find(i => i.id === imgIdx);
-  return img?.src || category.default || null;
+  return img?.src || category.default || '/houses/eco_1.webp';
 }
 
-// Get house garage data from localStorage (HotspotTool sublocations)
+// 6. Получение данных гаража
 export function getHouseGarageData(cls) {
   const saved = localStorage.getItem('hotspot_tool_sublocations');
   if (saved) {
@@ -249,5 +251,5 @@ export function getHouseGarageData(cls) {
       }
     } catch (e) {}
   }
-  return HOUSE_GARAGE_IMAGES[cls] || { image: null };
+  return HOUSE_GARAGE_IMAGES[cls] || { image: '/houses/eco_1_int.webp' };
 }
