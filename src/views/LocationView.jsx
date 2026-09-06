@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { X, ArrowLeft, Move } from 'lucide-react';
 import {
-  LOCATION_IMAGES,
+  getLocationImage,
   getLocationHotspots,
   getLocationLabel,
   getLocationSublocations,
@@ -114,26 +114,8 @@ export default function LocationView({ location, onClose, onAction }) {
   useEffect(() => {
     if (!location) return;
 
-    const saved = localStorage.getItem(`hotspot_tool_${location.id}`);
-    let customImage = null;
-    let customHotspots = [];
-
-    if (saved) {
-      try {
-        const data = JSON.parse(saved);
-        if (data?.default && typeof data.default === 'string') customImage = data.default;
-        else if (data?.images?.length > 0) customImage = data.images[0]?.src || data.default;
-
-        if (Array.isArray(data)) customHotspots = data;
-        else if (Array.isArray(data?.hotspots)) customHotspots = data.hotspots;
-      } catch (e) {
-        console.error(e);
-      }
-    }
-
-    const locData = LOCATION_IMAGES[location.id];
-    const finalImage = customImage || (locData ? locData.default || locData.images?.[0]?.src || null : null) || '/locations/shop_1.webp';
-    const finalHotspots = customHotspots.length > 0 ? customHotspots : getLocationHotspots(location.id, 1) || [];
+    const finalImage = getLocationImage(location.id, 1) || '/locations/shop_1.webp';
+    const finalHotspots = getLocationHotspots(location.id, 1) || [];
 
     setHouseImage(finalImage);
     setHotspots(finalHotspots);
