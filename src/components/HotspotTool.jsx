@@ -434,6 +434,7 @@ export default function HotspotTool({ onClose, onExport }) {
   };
 
   // Сохранение в SAMP LocalStorage
+// Сохранение текущей локации на диск
   const handleSave = async () => {
     const normalized = hotspots.map((hs) => ({
       id: hs.id,
@@ -453,10 +454,10 @@ export default function HotspotTool({ onClose, onExport }) {
       updatedAt: new Date().toISOString(),
     };
 
-    // 1. Сохраняем в localStorage для мгновенного отклика
+    // 1. Всегда пишем в localStorage
     safeLocalStorageSet(`hotspot_tool_${selectedLocId}`, JSON.stringify(payload));
 
-    // 2. Сохраняем на диск в src/data/savedHotspots.json через Vite
+    // 2. Отправляем на запись в реальный файл src/data/savedHotspots.json
     try {
       const res = await fetch('/api/save-hotspots', {
         method: 'POST',
@@ -465,7 +466,7 @@ export default function HotspotTool({ onClose, onExport }) {
       });
 
       if (res.ok) {
-        showToast('💾 Успешно сохранено на диск в src/data/savedHotspots.json!');
+        showToast('✅ Файл savedHotspots.json обновлен на диске! Можно делать git push');
         if (onExport) onExport(payload);
         return;
       }
@@ -473,8 +474,38 @@ export default function HotspotTool({ onClose, onExport }) {
       console.warn('Сервер автосохранения не ответил:', e);
     }
 
-    showToast('💾 Сохранено в браузере!');
+    showToast('⚠️ Сохранено только в браузере. Перезапустите npm run dev!');
     if (onExport) onExport(payload);
+  };
+
+  // Функция переноса ВСЕХ данных из памяти браузера в файл savedHotspots.json
+  const handleSyncAllToFile = async () => {
+    const allData = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('hotspot_tool_') && !key.includes('last_class') && !key.includes('sublocations')) {
+        const id = key.replace('hotspot_tool_', '');
+        try {
+          allData[id] = JSON.parse(localStorage.getItem(key));
+        } catch (e) {}
+      }
+    }
+
+    try {
+      const res = await fetch('/api/save-hotspots', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ allData }),
+      });
+
+      if (res.ok) {
+        showToast('🎉 Все локации из браузера записаны в savedHotspots.json!');
+      } else {
+        showToast('⚠️ Ошибка записи. Проверьте терминал с dev-сервером.');
+      }
+    } catch (e) {
+      showToast('⚠️ Не удалось связаться с dev-сервером.');
+    }
   };
 
   // Экспорт готового JS-конфига для locationStyles.js
@@ -644,13 +675,14 @@ export default function HotspotTool({ onClose, onExport }) {
             Экспорт кода
           </button>
 
-          <button
-            onClick={handleSaveToStorage}
-            className="px-4 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-500/20 transition-transform active:scale-95"
-          >
-            <Save size={14} />
-            Сохранить
-          </button>
+// Измените handleSaveToStorage на handleSave:
+<button
+  onClick={handleSave}
+  className="px-4 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-500/20 transition-transform active:scale-95"
+>
+  <Save size={14} />
+  Сохранить
+</button>
 
           {onClose && (
             <button
