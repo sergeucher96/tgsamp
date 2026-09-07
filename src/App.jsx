@@ -43,6 +43,8 @@ import CarViewer from './components/CarViewer';
 
 // 🌾 ИМПОРТ 3D ФЕРМЫ (СТРОКА 45)
 import FarmHarvestGame from './components/FarmHarvestGame';
+// 🔧 ИМПОРТ 3D АВТОСЕРВИСА (СТО МЕХАНИК)
+import AutoServiceMechanicGame from './components/AutoServiceMechanicGame';
 
 import { Loader2 } from 'lucide-react';
 
@@ -71,6 +73,8 @@ function App() {
 
   // 🌾 Состояние модального окна 3D Фермы
   const [showFarmGame, setShowFarmGame] = useState(false);
+  // 🔧 Состояние модального окна Автосервиса (Механик 3D)
+  const [showMechanicGame, setShowMechanicGame] = useState(false);
 
   // Dev keyboard shortcut: Ctrl+Shift+H
   useEffect(() => {
@@ -133,6 +137,10 @@ function App() {
       }
       
       const handleBack = () => {
+        if (showMechanicGame) {
+          setShowMechanicGame(false);
+          return;
+        }
         if (showFarmGame) {
           setShowFarmGame(false);
           return;
@@ -157,13 +165,28 @@ function App() {
         tg.offEvent('backButtonClicked', handleBack);
       };
     }
-  }, [isTelegram, showFarmGame]);
+  }, [isTelegram, showFarmGame, showMechanicGame]);
 
+  // Начисление денег за смену на ферме
   // Начисление денег за смену на ферме
   const handleFarmFinish = (reward) => {
     if (reward && reward.money) {
       const store = usePlayerStore.getState();
-      if (typeof store.addMoney === 'function') {
+      if (typeof store.addMoney === "function") {
+        store.addMoney(reward.money);
+      } else if (player) {
+        usePlayerStore.setState(prev => ({
+          player: prev.player ? { ...prev.player, money: (Number(prev.player.money) || 0) + reward.money } : null
+        }));
+      }
+    }
+  };
+
+  // 🔧 Начисление зарплаты автомеханика в СТО
+  const handleMechanicFinish = (reward) => {
+    if (reward && reward.money) {
+      const store = usePlayerStore.getState();
+      if (typeof store.addMoney === "function") {
         store.addMoney(reward.money);
       } else if (player) {
         usePlayerStore.setState(prev => ({
@@ -205,6 +228,16 @@ function App() {
           <FarmHarvestGame
             onHarvestFinish={handleFarmFinish}
             onClose={() => setShowFarmGame(false)}
+          />
+        </div>
+      )}
+
+      {/* 🔧 Модальное окно 3D Автосервиса (СТО Механик) */}
+      {showMechanicGame && (
+        <div className="fixed inset-0 z-[100] w-full h-full bg-black overflow-hidden">
+          <AutoServiceMechanicGame
+            onServiceFinish={handleMechanicFinish}
+            onClose={() => setShowMechanicGame(false)}
           />
         </div>
       )}
@@ -282,6 +315,15 @@ function App() {
                 title="Ферма 3D (Flint County)"
               >
                 🌾
+              </button>
+
+              {/* 🔧 КНОПКА АВТОСЕРВИСА (СТО МЕХАНИК) */}
+              <button
+                onClick={() => setShowMechanicGame(true)}
+                className="w-14 h-14 rounded-2xl flex items-center justify-center text-xl transition-all duration-300 gta-button border border-sky-500/50 text-sky-300 shadow-[0_0_20px_rgba(14,165,233,0.3)] active:scale-105 hover:bg-sky-950/30 shrink-0"
+                title="Автосервис 3D (СТО Механик)"
+              >
+                🔧
               </button>
 
               <button

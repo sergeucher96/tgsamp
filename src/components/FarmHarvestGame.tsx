@@ -183,6 +183,11 @@ export const FarmHarvestGame: React.FC<FarmHarvestGameProps> = ({
   const [truckCropsCount, setTruckCropsCount] = useState(0);
   const truckMaxCapacity = 10;
   const [totalEarned, setTotalEarned] = useState(0);
+  const [isTruckChanging, setIsTruckChanging] = useState(false);
+  const isTruckChangingRef = useRef(false);
+  isTruckChangingRef.current = isTruckChanging;
+  const truckPhaseRef = useRef<'idle' | 'driving_out' | 'driving_in'>('idle');
+  const truckGroupRef = useRef<THREE.Group | null>(null);
   const [shiftTime, setShiftTime] = useState(90);
   const [isShiftComplete, setIsShiftComplete] = useState(false);
   const [actionTextDraw, setActionTextDraw] = useState('КЛИКНИТЕ НА СПЕЛЫЙ ЗЕЛЕНЫЙ КУСТ В ПОЛЕ');
@@ -534,6 +539,7 @@ export const FarmHarvestGame: React.FC<FarmHarvestGameProps> = ({
     const truckGroup = new THREE.Group();
     truckGroup.position.copy(truckPosition);
     truckGroup.rotation.y = -Math.PI / 2;
+    truckGroupRef.current = truckGroup;
 
     // Кабина (Cab)
     const cabGeo = new THREE.BoxGeometry(2.4, 1.6, 2.2);
@@ -815,6 +821,28 @@ export const FarmHarvestGame: React.FC<FarmHarvestGameProps> = ({
         }
       });
 
+      // Анимация замены грузовика (отъезд полной и приезд пустой)
+      if (truckGroupRef.current) {
+        const trk = truckGroupRef.current;
+        if (truckPhaseRef.current === 'driving_out') {
+          trk.position.x += delta * 24;
+          if (trk.position.x > 38) {
+            truckBushesMeshesRef.current.forEach(m => (m.visible = false));
+            trk.position.x = -28;
+            truckPhaseRef.current = 'driving_in';
+          }
+        } else if (truckPhaseRef.current === 'driving_in') {
+          trk.position.x += delta * 22;
+          if (trk.position.x >= truckPosition.x) {
+            trk.position.x = truckPosition.x;
+            truckPhaseRef.current = 'idle';
+            setIsTruckChanging(false);
+            isTruckChangingRef.current = false;
+            setActionTextDraw('~g~ПРИБЫЛА ПУСТАЯ МАШИНА (0/10)! МОЖНО ЗАГРУЖАТЬ ДАЛЬШЕ');
+          }
+        }
+      }
+
       // Анимация золотого чекпоинта над кузовом Walton при наличии куста в руках
       const trkMarker = truckGroup.getObjectByName('truckMarker');
       if (trkMarker) {
@@ -901,6 +929,14 @@ export const FarmHarvestGame: React.FC<FarmHarvestGameProps> = ({
 
   // Клик по кусту в 3D сцене
   const handleBushClick = useCallback((index: number) => {
+    if (isTruckChangingRef.current) {
+      setActionTextDraw('~y~МАШИНА В ПУТИ! ПОДОЖДИТЕ ПРИБЫТИЯ');
+      return;
+    }
+    if (truckCropsCountRef.current >= truckMaxCapacity && !hasBushRef.current) {
+      setActionTextDraw('~r~КУЗОВ ЗАПОЛНЕН (10/10)! НАЖМИТЕ [НОВАЯ МАШИНА] ДЛЯ БОНУСА +50$');
+      return;
+    }
     if (hasBushRef.current) {
       setActionTextDraw('~r~У ВАС УЖЕ ЕСТЬ КУСТ В РУКАХ! КЛИКНИТЕ ПО КУЗОВУ ПИКАПА WALTON');
       return;
@@ -954,6 +990,16 @@ export const FarmHarvestGame: React.FC<FarmHarvestGameProps> = ({
 
   // Клик по пикапу Walton
   const handleTruckClick = useCallback(() => {
+    if (isTruckChangingRef.current) {
+      setActionTextDraw('~y~МАШИНА В ПУТИ! ПОДОЖДИТЕ ПРИБЫТИЯ');
+      return;
+    }
+
+    if (truckCropsCountRef.current >= truckMaxCapacity) {
+      setActionTextDraw('~r~КУЗОВ ЗАПОЛНЕН (10/10)! НАЖМИТЕ [НОВАЯ МАШИНА] ДЛЯ БОНУСА +50$');
+      return;
+    }
+
     if (!hasBushRef.current) {
       setActionTextDraw('~r~В РУКАХ ПУСТО! СНАЧАЛА КЛИКНИТЕ НА ЗЕЛЕНЫЙ КУСТ В ПОЛЕ');
       return;
@@ -967,7 +1013,6 @@ export const FarmHarvestGame: React.FC<FarmHarvestGameProps> = ({
       sampAudio.playThrowInTruck();
       hasBushRef.current = false;
       setHasBushInHands(false);
-
       if (playerCarryingBushRef.current) {
         playerCarryingBushRef.current.visible = false;
       }
@@ -975,7 +1020,9 @@ export const FarmHarvestGame: React.FC<FarmHarvestGameProps> = ({
       const nextCount = truckCropsCountRef.current + 1;
       truckCropsCountRef.current = nextCount;
       setTruckCropsCount(nextCount);
-      const earned = totalEarnedRef.current + 750;
+
+      // За 1 собранный куст дают 10$
+      const earned = totalEarnedRef.current + 10;
       totalEarnedRef.current = earned;
       setTotalEarned(earned);
 
@@ -984,14 +1031,39 @@ export const FarmHarvestGame: React.FC<FarmHarvestGameProps> = ({
       }
 
       if (nextCount >= truckMaxCapacity) {
-        setActionTextDraw('~g~КУЗОВ ЗАПОЛНЕН (10/10)! НАЖМИТЕ [СДАТЬ МАШИНУ НА СКЛАД]');
+        setActionTextDraw('~g~КУЗОВ ЗАПОЛНЕН (10/10)! НАЖМИТЕ [НОВАЯ МАШИНА] ДЛЯ БОНУСА +50$');
       } else {
-        setActionTextDraw(`~g~КУСТ ПОГРУЖЕН В КУЗОВ (+750$)!~w~ КЛИКНИТЕ НА СЛЕДУЮЩИЙ КУСТ`);
+        setActionTextDraw(`~g~КУСТ ПОГРУЖЕН В КУЗОВ (+10$)!~w~ КЛИКНИТЕ НА СЛЕДУЮЩИЙ КУСТ (${nextCount}/10)`);
       }
     }, 650);
-  }, [sampAudio]);
-
+  }, [sampAudio, truckMaxCapacity]);
   handleTruckClickRef.current = handleTruckClick;
+
+  // Смена полной машины на новую с бонусом +50$
+  const handleNewTruckClick = useCallback(() => {
+    if (truckCropsCountRef.current < truckMaxCapacity) {
+      setActionTextDraw(`~y~МАШИНА ЕЩЕ НЕ ПОЛНАЯ (${truckCropsCountRef.current}/10)! ЗАПОЛНИТЕ ДО 10 ДЛЯ ЗАМЕНЫ`);
+      return;
+    }
+    if (isTruckChangingRef.current) return;
+
+    setIsTruckChanging(true);
+    isTruckChangingRef.current = true;
+    truckPhaseRef.current = 'driving_out';
+
+    sampAudio.playSampMoney();
+
+    // Бонус +50$ за полную машину
+    const bonusEarned = totalEarnedRef.current + 50;
+    totalEarnedRef.current = bonusEarned;
+    setTotalEarned(bonusEarned);
+
+    // Сброс счетчика кузова
+    truckCropsCountRef.current = 0;
+    setTruckCropsCount(0);
+
+    setActionTextDraw('~g~БОНУС +50$ ПОЛУЧЕН! ПОЛНЫЙ ПИКАП УЕЗЖАЕТ НА ЭЛЕВАТОР...');
+  }, [sampAudio, truckMaxCapacity]);
 
   // Срезать ближайший куст (удобно для сенсорных экранов и смартфонов)
   const harvestNearestBush = useCallback(() => {
@@ -1164,21 +1236,32 @@ export const FarmHarvestGame: React.FC<FarmHarvestGameProps> = ({
 
         {/* ЦЕНТРАЛЬНО-НИЖНЯЯ КНОПКА ДЕЙСТВИЯ (ДЛЯ СМАРТФОНОВ И БЫСТРОГО ТАПА) */}
         <div className="pointer-events-auto self-center mb-2">
-          {hasBushInHands ? (
+          {truckCropsCount >= truckMaxCapacity ? (
+            <div className="animate-bounce">
+              <button
+                onClick={handleNewTruckClick}
+                disabled={isTruckChanging}
+                className="px-6 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-green-400 hover:from-emerald-400 text-stone-950 font-black text-xs sm:text-sm uppercase tracking-wider font-mono shadow-[0_0_35px_rgba(16,185,129,0.85)] flex items-center gap-2 border-2 border-white active:scale-95 transition-transform whitespace-nowrap"
+              >
+                <RefreshCw size={18} className={isTruckChanging ? "animate-spin" : ""} />
+                <span>🚚 НОВАЯ МАШИНА (+50$ БОНУС)</span>
+              </button>
+            </div>
+          ) : hasBushInHands ? (
             <div className="animate-bounce">
               <button
                 onClick={handleTruckClick}
                 className="px-5 sm:px-6 py-3 sm:py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-stone-950 font-black text-xs sm:text-sm uppercase tracking-wider font-mono shadow-[0_0_35px_rgba(245,158,11,0.85)] flex items-center gap-2 border-2 border-white active:scale-95 transition-transform whitespace-nowrap"
               >
                 <Truck size={18} />
-                <span>🚚 Погрузить в Walton (+750$)</span>
+                <span>🚚 Погрузить в Walton (+10$)</span>
               </button>
             </div>
           ) : (
             <div>
               <button
                 onClick={harvestNearestBush}
-                disabled={isHarvesting}
+                disabled={isHarvesting || isTruckChanging}
                 className="px-4 sm:px-5 py-2.5 sm:py-3 rounded-2xl bg-black/85 hover:bg-black text-amber-300 font-bold text-xs uppercase tracking-wider font-mono shadow-xl border border-amber-500/70 flex items-center gap-2 active:scale-95 transition-transform backdrop-blur-md whitespace-nowrap"
               >
                 <span>🌾 Срезать куст</span>
@@ -1210,8 +1293,27 @@ export const FarmHarvestGame: React.FC<FarmHarvestGameProps> = ({
           </div>
 
           <button
+            onClick={handleNewTruckClick}
+            disabled={truckCropsCount < truckMaxCapacity || isTruckChanging}
+            className={`px-3 py-2 rounded-xl text-xs font-bold uppercase tracking-wider font-mono flex items-center gap-1.5 transition-all active:scale-95 ${
+              truckCropsCount >= truckMaxCapacity && !isTruckChanging
+                ? 'bg-amber-500 hover:bg-amber-400 text-stone-950 font-black shadow-[0_0_20px_rgba(245,158,11,0.7)] animate-pulse'
+                : 'bg-stone-900 text-stone-600 cursor-not-allowed border border-stone-800'
+            }`}
+          >
+            <RefreshCw size={13} className={isTruckChanging ? 'animate-spin' : ''} />
+            <span>
+              {isTruckChanging
+                ? 'Едет...'
+                : truckCropsCount >= truckMaxCapacity
+                  ? 'Новая машина (+50$)'
+                  : `Новая (${truckCropsCount}/10)`}
+            </span>
+          </button>
+
+          <button
             onClick={completeShift}
-            disabled={truckCropsCount === 0 || isShiftComplete}
+            disabled={totalEarned === 0 || isShiftComplete}
             className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider font-mono flex items-center justify-center gap-1.5 transition-all active:scale-95 ${
               truckCropsCount > 0 && !isShiftComplete
                 ? 'bg-emerald-600 hover:bg-emerald-500 text-white font-black shadow-[0_0_20px_rgba(16,185,129,0.5)]'

@@ -8,14 +8,22 @@ function CarModel({ url, color, rotation }) {
   const gltf = useLoader(GLTFLoader, url);
 
   useEffect(() => {
-    if (color) {
+    if (color && gltf.scene) {
       gltf.scene.traverse((child) => {
         if (child.isMesh && child.material) {
-          if (Array.isArray(child.material)) {
-            child.material.forEach(mat => mat.color.set(color));
-          } else {
-            child.material.color.set(color);
-          }
+          const materials = Array.isArray(child.material) ? child.material : [child.material];
+          materials.forEach((mat) => {
+            const matName = (mat.name || '').toLowerCase();
+            const meshName = (child.name || '').toLowerCase();
+
+            // Красим только детали с именем Body / Paint / Kuzov
+            const isBody = matName.includes('body') || matName.includes('paint') || 
+                           meshName.includes('body') || matName.includes('kuzov');
+
+            if (isBody) {
+              mat.color.set(color);
+            }
+          });
         }
       });
     }

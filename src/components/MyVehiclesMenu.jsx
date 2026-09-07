@@ -4,6 +4,7 @@ import { VEHICLE_DATABASE } from '../data/vehicleConfig';
 import { useVehicleStore } from '../store/useVehicleStore';
 import { useTravelStore } from '../store/useTravelStore';
 import { LOCATIONS } from '../data/locations';
+import CarPreviewImage from './CarPreviewImage';
 
 export default function MyVehiclesMenu({ onClose }) {
   const myVehicles = useVehicleStore(state => state.myVehicles);
@@ -39,7 +40,6 @@ export default function MyVehiclesMenu({ onClose }) {
   return (
     <div className="fixed inset-0 z-[250] bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="w-full bg-[#0a0f1a] border-t sm:border border-white/10 sm:rounded-3xl overflow-hidden flex flex-col max-h-[85vh] sm:max-h-[600px]">
-
         {/* Header */}
         <div className="shrink-0 flex items-center justify-between px-5 pt-4 pb-2 border-b border-white/5">
           <div className="flex items-center gap-2">
@@ -72,10 +72,12 @@ export default function MyVehiclesMenu({ onClose }) {
                   <div key={vehicle.id} className="bg-white/[0.03] border border-white/6 p-4 rounded-2xl">
                     <div className="flex items-center gap-3 mb-3">
                       <div className="w-12 h-12 rounded-xl bg-white/[0.03] border border-white/5 flex items-center justify-center shrink-0">
-                        <img
-                          src={`/vehicles/${vehicle.model_id}_${vehicle.color}.webp`}
-                          className="w-10 h-10 object-contain"
-                          onError={(e) => { e.target.src = '/car.png'; }}
+                        <CarPreviewImage
+                          modelId={vehicle.model_id}
+                          color={vehicle.color}
+                          viewMode="iso"
+                          className="w-11 h-11 object-contain"
+                          alt={cfg?.name || vehicle.model_id}
                         />
                       </div>
                       <div className="flex-1 min-w-0">
@@ -99,6 +101,7 @@ export default function MyVehiclesMenu({ onClose }) {
                         </div>
                         <span className="text-[10px] font-bold text-slate-300 w-8 text-right">{fuelPercent}%</span>
                       </div>
+
                       <div className="flex items-center gap-2">
                         <Wrench size={12} className="text-emerald-400 shrink-0" />
                         <span className="text-[10px] text-slate-300 w-12">Состояние</span>
@@ -110,6 +113,7 @@ export default function MyVehiclesMenu({ onClose }) {
                         </div>
                         <span className="text-[10px] font-bold text-slate-300 w-8 text-right">{health}%</span>
                       </div>
+
                       <div className="flex items-center gap-2">
                         <Gauge size={12} className="text-blue-400 shrink-0" />
                         <span className="text-[10px] text-slate-300 w-12">Пробег</span>

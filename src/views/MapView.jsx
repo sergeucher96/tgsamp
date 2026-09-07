@@ -58,6 +58,7 @@ import { OrganizationPanel } from './OrganizationView';
 import { 
   Loader2, Crosshair, Navigation, Compass, Target, Search, X, Home 
 } from 'lucide-react';
+import CarPreviewImage from '../components/CarPreviewImage';
 
 function TravelOverlay({ player, activeVehicle, isMoving, remainingPath, routeTarget, currentPosition, currentRotation }) {
   const animatedPosition = useTravelStore(state => state.animatedPosition);
@@ -133,8 +134,14 @@ function TravelOverlay({ player, activeVehicle, isMoving, remainingPath, routeTa
               🗑️
             </div>
           ) : activeVehicle ? (
-            <img src={`/vehicles/${activeVehicle.model_id}_${activeVehicle.color}_map.png`} className="w-16 h-16 object-contain drop-shadow-2xl" onError={(e) => e.target.src = '/car.png'} />
-          ) : (
+  <CarPreviewImage
+    modelId={activeVehicle.model_id}
+    color={activeVehicle.color}
+    viewMode="map"
+    className="w-16 h-16 object-contain drop-shadow-2xl"
+    alt={activeVehicle.model_id}
+  />
+) : (
             <div className="w-10 h-10 bg-blue-600 rounded-full border-4 border-white shadow-2xl flex items-center justify-center text-white">👤</div>
           )}
           <div className="absolute -top-12 bg-blue-600/90 backdrop-blur-md px-3 py-1 rounded-lg border border-white/20 shadow-xl" style={{ transform: `rotate(-${displayRotation}deg)` }}>
