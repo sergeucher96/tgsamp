@@ -179,3 +179,57 @@ export function getLocationSublocations(locationId) {
 
 // Keep the export for backward compatibility
 export const LOCATION_SUBLOCATIONS = {};
+
+// ==========================================
+// ФОНОВАЯ МУЗЫКА ДЛЯ ЛОКАЦИЙ И ПОДЛОКАЦИЙ
+// ==========================================
+/**
+ * Получить музыку для локации или подлокации.
+ * Приоритет:
+ * 1) localStorage (быстрый предпросмотр в браузере при редактировании)
+ * 2) savedHotspots.json (основной источник для сборки Telegram Mini App)
+ * 3) fallback: наследование музыки родительской локации
+ */
+export const getLocationMusic = (locationId, subLocationName = null) => {
+  if (!locationId) return null;
+  const targetKey = subLocationName ? (locationId + '__' + subLocationName) : locationId;
+
+  // 1. Проверяем localStorage браузера
+  if (subLocationName) {
+    try {
+      const subs = JSON.parse(localStorage.getItem('hotspot_tool_sublocations') || '{}');
+      if (subs[targetKey]?.bgMusic !== undefined) {
+        return {
+          url: subs[targetKey].bgMusic,
+          volume: subs[targetKey].musicVolume ?? 0.5,
+        };
+      }
+    } catch (e) {}
+  } else {
+    try {
+      const loc = JSON.parse(localStorage.getItem('hotspot_tool_' + locationId) || '{}');
+      if (loc?.bgMusic !== undefined) {
+        return {
+          url: loc.bgMusic,
+          volume: loc.musicVolume ?? 0.5,
+        };
+      }
+    } catch (e) {}
+  }
+
+  // 2. Проверяем savedHotspots.json (работает в Telegram Mini App без localStorage)
+  const fileData = savedHotspots?.[targetKey];
+  if (fileData?.bgMusic !== undefined) {
+    return {
+      url: fileData.bgMusic,
+      volume: fileData.musicVolume ?? 0.5,
+    };
+  }
+
+  // 3. Если мы в подлокации, а у неё свой трек не указан — наследуем музыку локации
+  if (subLocationName) {
+    return getLocationMusic(locationId, null);
+  }
+
+  return null;
+};

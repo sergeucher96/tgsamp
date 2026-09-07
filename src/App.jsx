@@ -41,6 +41,9 @@ import MyPropertyMenu from './components/MyPropertyMenu';
 import MyVehiclesMenu from './components/MyVehiclesMenu';
 import CarViewer from './components/CarViewer';
 
+// 🌾 ИМПОРТ 3D ФЕРМЫ (СТРОКА 45)
+import FarmHarvestGame from './components/FarmHarvestGame';
+
 import { Loader2 } from 'lucide-react';
 
 function App() {
@@ -51,6 +54,7 @@ function App() {
   const { isTelegram } = useTelegram();
   const { startDecay, stopDecay, startStabilization, stopStabilization } = useTerritoryStore();
   const { completeExpiredWars, fetchWars } = useWarStore();
+  
   const [showQuests, setShowQuests] = useState(false);
   const [showCharacter, setShowCharacter] = useState(false);
   const [showDevTools, setShowDevTools] = useState(false);
@@ -64,6 +68,9 @@ function App() {
   const [showTerritories, setShowTerritories] = useState(false);
   const [showWars, setShowWars] = useState(false);
   const [showCarViewer, setShowCarViewer] = useState(false);
+
+  // 🌾 Состояние модального окна 3D Фермы
+  const [showFarmGame, setShowFarmGame] = useState(false);
 
   // Dev keyboard shortcut: Ctrl+Shift+H
   useEffect(() => {
@@ -85,7 +92,7 @@ function App() {
     startDecay();
     startStabilization();
     return () => {
-      unsubLspd();
+      if (typeof unsubLspd === 'function') unsubLspd();
       stopDecay();
       stopStabilization();
     };
@@ -101,15 +108,15 @@ function App() {
 
   useEffect(() => { 
     login().then(() => {
-        fetchDbHouses();
-        fetchVehicles();
-        useBankStore.getState().startInterestAccrual();
-        useBankStore.getState().startRealtimeSubscription();
-        useWeaponStore.getState().fetchWeapons();
-        useQuestStore.getState().loadProgress();
-        useQuestStore.getState().startQuestTimer();
-        useSmsStore.getState().startRealtimeSubscription();
-        useItemCategoryStore.getState().loadAll();
+      fetchDbHouses();
+      fetchVehicles();
+      useBankStore.getState().startInterestAccrual();
+      useBankStore.getState().startRealtimeSubscription();
+      useWeaponStore.getState().fetchWeapons();
+      useQuestStore.getState().loadProgress();
+      useQuestStore.getState().startQuestTimer();
+      useSmsStore.getState().startRealtimeSubscription();
+      useItemCategoryStore.getState().loadAll();
     });
   }, [login, fetchDbHouses, fetchVehicles]);
 
@@ -118,26 +125,53 @@ function App() {
     if (isTelegram && window.Telegram?.WebApp) {
       const tg = window.Telegram.WebApp;
       
-      // Show back button
-      if (tg.BackButton) {
+      // Кнопка Назад (BackButton) доступна в Telegram начиная с версии 6.1
+      const isBackButtonSupported = typeof tg.isVersionAtLeast === 'function' ? tg.isVersionAtLeast('6.1') : false;
+
+      if (isBackButtonSupported && tg.BackButton) {
         tg.BackButton.show();
       }
       
-      tg.onEvent('backButtonClicked', () => {
+      const handleBack = () => {
+        if (showFarmGame) {
+          setShowFarmGame(false);
+          return;
+        }
         const nav = useNavigationStore.getState();
         if (nav.currentGarage) {
           nav.exitGarage();
         } else if (nav.currentInterior) {
           nav.exitHouse();
         }
-      });
-    }
-    return () => {
-      if (window.Telegram?.WebApp) {
-        window.Telegram.WebApp.offEvent('backButtonClicked');
+      };
+
+      if (isBackButtonSupported && tg.BackButton) {
+        tg.BackButton.onClick(handleBack);
       }
-    };
-  }, [isTelegram]);
+      tg.onEvent('backButtonClicked', handleBack);
+
+      return () => {
+        if (isBackButtonSupported && tg.BackButton) {
+          tg.BackButton.offClick(handleBack);
+        }
+        tg.offEvent('backButtonClicked', handleBack);
+      };
+    }
+  }, [isTelegram, showFarmGame]);
+
+  // Начисление денег за смену на ферме
+  const handleFarmFinish = (reward) => {
+    if (reward && reward.money) {
+      const store = usePlayerStore.getState();
+      if (typeof store.addMoney === 'function') {
+        store.addMoney(reward.money);
+      } else if (player) {
+        usePlayerStore.setState(prev => ({
+          player: prev.player ? { ...prev.player, money: (Number(prev.player.money) || 0) + reward.money } : null
+        }));
+      }
+    }
+  };
 
   if (loading) return (
     <div className="fixed inset-0 bg-[#050805] flex flex-col items-center justify-center">
@@ -154,7 +188,7 @@ function App() {
       {/* Bank Notifications */}
       <BankNotifications />
       
-      {/* Quest View */}
+      {/* Views & Modals */}
       {showQuests && <QuestView onClose={() => setShowQuests(false)} />}
       {showPhone && <PhoneView onClose={closePhone} />}
       {showCharacter && <CharacterView onClose={() => setShowCharacter(false)} />}
@@ -164,8 +198,20 @@ function App() {
       {showTerritories && <TerritoriesView onClose={() => setShowTerritories(false)} />}
       {showWars && <WarsView onClose={() => setShowWars(false)} />}
       {showCarViewer && <CarViewer onClose={() => setShowCarViewer(false)} />}
+
+      {/* 🌾 Модальное окно 3D Фермы SA-MP */}
+      {showFarmGame && (
+        <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+          <div className="w-full max-w-4xl relative my-auto">
+            <FarmHarvestGame
+              onHarvestFinish={handleFarmFinish}
+              onClose={() => setShowFarmGame(false)}
+            />
+          </div>
+        </div>
+      )}
       
-      {/* Dev Tools (development only) */}
+      {/* Dev Tools */}
       {IS_DEV && HotspotTool && showDevTools && (
         <Suspense fallback={null}>
           <HotspotTool onClose={() => setShowDevTools(false)} />
@@ -192,13 +238,13 @@ function App() {
         </Suspense>
       )}
       
-      {/* СЛОЙ 1: ГАРАЖ (Самый верхний) */}
+      {/* СЛОЙ 1: ГАРАЖ */}
       {currentGarage && <GarageView />}
 
-      {/* СЛОЙ 2: ИНТЕРЬЕР (Показывается, если мы в доме и НЕ в гараже) */}
+      {/* СЛОЙ 2: ИНТЕРЬЕР */}
       {currentInterior && !currentGarage && <HouseInterior />}
 
-      {/* СЛОЙ 3: ОБЫЧНЫЙ МИР (Скрыт, если мы в интерьере или гараже) */}
+      {/* СЛОЙ 3: ОБЫЧНЫЙ МИР */}
       {!currentInterior && !currentGarage && (
         <>
           <header className="shrink-0 h-24 px-6 bg-[#071006]/95 border-b border-[#68ff79]/15 backdrop-blur-sm z-50 flex items-center justify-between gta-panel gta-frame">
@@ -211,8 +257,8 @@ function App() {
               </div>
               <div className="text-right">
                   <div className="text-[#9eff52] font-black italic text-2xl leading-none">
-    ${Number(player?.money || 0).toLocaleString()}
-</div>
+                    ${Number(player?.money || 0).toLocaleString()}
+                  </div>
                   <div className="text-[8px] text-[#b8ff84] font-black uppercase mt-1 tracking-[0.45em]">{player?.energy}% Энергия</div>
               </div>
           </header>
@@ -225,15 +271,25 @@ function App() {
             </div>
           </main>
 
-          <footer className="shrink-0 h-24 bg-[#071006]/95 border-t border-[#68ff79]/10 backdrop-blur-xl flex items-center justify-around px-6 pb-6 z-50 gta-panel gta-frame">
+          <footer className="shrink-0 h-24 bg-[#071006]/95 border-t border-[#68ff79]/10 backdrop-blur-xl flex items-center justify-around px-6 pb-6 z-50 gta-panel gta-frame overflow-x-auto no-scrollbar gap-2">
               <NavButton active={activeTab === 'map'} onClick={() => setActiveTab('map')} icon="🗺️" />
               <NavButton active={activeTab === 'profile'} onClick={() => setActiveTab('profile')} icon="👤" />
               <NavButton active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} icon="🎒" />
               <NavButton active={showQuests} onClick={() => setShowQuests(true)} icon="📜" />
+              
+              {/* 🌾 КНОПКА ФЕРМЫ */}
+              <button
+                onClick={() => setShowFarmGame(true)}
+                className="w-14 h-14 rounded-2xl flex items-center justify-center text-xl transition-all duration-300 gta-button border border-amber-500/50 text-amber-300 shadow-[0_0_20px_rgba(245,158,11,0.25)] active:scale-105 hover:bg-amber-950/30 shrink-0"
+                title="Ферма 3D (Flint County)"
+              >
+                🌾
+              </button>
+
               <button
                 onClick={() => activeVehicle && setShowVehicleInfo(true)}
                 disabled={!activeVehicle}
-                className={`w-14 h-14 rounded-2xl flex items-center justify-center text-xl transition-all duration-300 gta-button ${
+                className={`w-14 h-14 rounded-2xl flex items-center justify-center text-xl transition-all duration-300 gta-button shrink-0 ${
                   activeVehicle
                     ? 'border border-[#7eff63]/40 text-[#e8ffc4] shadow-[0_0_20px_rgba(130,255,100,0.22)] active:scale-105'
                     : 'border border-white/10 text-[#8ebc88] opacity-40 cursor-not-allowed'
@@ -247,7 +303,7 @@ function App() {
                   <button
                     onClick={() => ownedCount > 0 && setShowMyProperty(true)}
                     disabled={ownedCount === 0}
-                    className={`w-14 h-14 rounded-2xl flex items-center justify-center text-xl transition-all duration-300 gta-button ${
+                    className={`w-14 h-14 rounded-2xl flex items-center justify-center text-xl transition-all duration-300 gta-button shrink-0 ${
                       ownedCount > 0
                         ? 'border border-[#7eff63]/40 text-[#e8ffc4] shadow-[0_0_20px_rgba(130,255,100,0.22)] active:scale-105'
                         : 'border border-white/10 text-[#8ebc88] opacity-40 cursor-not-allowed'
@@ -263,7 +319,7 @@ function App() {
                   <button
                     onClick={() => vehicleCount > 0 && setShowMyVehicles(true)}
                     disabled={vehicleCount === 0}
-                    className={`w-14 h-14 rounded-2xl flex items-center justify-center text-xl transition-all duration-300 gta-button ${
+                    className={`w-14 h-14 rounded-2xl flex items-center justify-center text-xl transition-all duration-300 gta-button shrink-0 ${
                       vehicleCount > 0
                         ? 'border border-[#7eff63]/40 text-[#e8ffc4] shadow-[0_0_20px_rgba(130,255,100,0.22)] active:scale-105'
                         : 'border border-white/10 text-[#8ebc88] opacity-40 cursor-not-allowed'
@@ -272,16 +328,16 @@ function App() {
                     🚗
                   </button>
                 );
-              })(              )}
+              })()}
               <button
                 onClick={() => setShowTerritories(true)}
-                className={`w-14 h-14 rounded-2xl flex items-center justify-center text-xl transition-all duration-300 gta-button border border-[#7eff63]/40 text-[#e8ffc4] shadow-[0_0_20px_rgba(130,255,100,0.22)] active:scale-105`}
+                className="w-14 h-14 rounded-2xl flex items-center justify-center text-xl transition-all duration-300 gta-button border border-[#7eff63]/40 text-[#e8ffc4] shadow-[0_0_20px_rgba(130,255,100,0.22)] active:scale-105 shrink-0"
               >
                 🏙️
               </button>
               <button
                 onClick={() => setShowWars(true)}
-                className={`w-14 h-14 rounded-2xl flex items-center justify-center text-xl transition-all duration-300 gta-button border border-[#7eff63]/40 text-[#e8ffc4] shadow-[0_0_20px_rgba(130,255,100,0.22)] active:scale-95`}
+                className="w-14 h-14 rounded-2xl flex items-center justify-center text-xl transition-all duration-300 gta-button border border-[#7eff63]/40 text-[#e8ffc4] shadow-[0_0_20px_rgba(130,255,100,0.22)] active:scale-95 shrink-0"
               >
                 ⚔️
               </button>
@@ -299,11 +355,18 @@ function App() {
 }
 
 function NavButton({ active, onClick, icon }) {
-    return (
-        <button onClick={onClick} className={`w-14 h-14 rounded-2xl flex items-center justify-center text-xl transition-all duration-300 gta-button ${active ? 'border border-[#7eff63]/40 text-[#e8ffc4] shadow-[0_0_20px_rgba(130,255,100,0.22)] scale-105' : 'border border-white/10 text-[#8ebc88]'}`}>
-            {icon}
-        </button>
-    );
+  return (
+    <button 
+      onClick={onClick} 
+      className={`w-14 h-14 rounded-2xl flex items-center justify-center text-xl transition-all duration-300 gta-button shrink-0 ${
+        active 
+          ? 'border border-[#7eff63]/40 text-[#e8ffc4] shadow-[0_0_20px_rgba(130,255,100,0.22)] scale-105' 
+          : 'border border-white/10 text-[#8ebc88]'
+      }`}
+    >
+      {icon}
+    </button>
+  );
 }
 
 export default App;

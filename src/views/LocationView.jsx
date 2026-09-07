@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { X, ArrowLeft, Move } from 'lucide-react';
+import { X, ArrowLeft, Move, Volume2, VolumeX, Volume1 } from 'lucide-react';
 import {
   getLocationImage,
   getLocationHotspots,
   getLocationLabel,
   getLocationSublocations,
+  getLocationMusic,
 } from '../data/locationStyles';
 
 const PHYSICS_CONFIG = {
@@ -47,6 +48,81 @@ export default function LocationView({ location, onClose, onAction }) {
   const rafIdRef = useRef(null);
 
   const inSubLocation = subLocationImage !== null;
+
+  // Управление фоновой музыкой локации
+  const [masterVolume, setMasterVolume] = useState(() => {
+    return parseFloat(localStorage.getItem('tgsamp_music_volume') || '0.5');
+  });
+  const [isMuted, setIsMuted] = useState(() => {
+    return localStorage.getItem('tgsamp_music_muted') === 'true';
+  });
+
+  const audioRef = useRef(null);
+  const currentMusicUrlRef = useRef(null);
+
+  // Синхронизация и воспроизведение музыки
+  useEffect(() => {
+    if (!location?.id) return;
+    const musicConfig = getLocationMusic(
+      location.id,
+      inSubLocation ? currentSubLocation : null
+    );
+
+    if (!audioRef.current) {
+      audioRef.current = new Audio();
+      audioRef.current.loop = true;
+    }
+
+    const audio = audioRef.current;
+    const trackUrl = musicConfig?.url || '';
+    const trackVolume = (musicConfig?.volume ?? 0.5) * masterVolume;
+
+    audio.volume = isMuted ? 0 : Math.max(0, Math.min(1, trackVolume));
+
+    if (!trackUrl) {
+      audio.pause();
+      currentMusicUrlRef.current = null;
+      return;
+    }
+
+    // Если этот же трек уже играет — не прерываем воспроизведение
+    if (currentMusicUrlRef.current === trackUrl && !audio.paused) {
+      return;
+    }
+
+    currentMusicUrlRef.current = trackUrl;
+    audio.src = trackUrl;
+
+    // Безопасный запуск для Telegram Webview (обход автоплей блокировки)
+    const playPromise = audio.play();
+    if (playPromise !== undefined) {
+      playPromise.catch(() => {
+        const unlockAudio = () => {
+          if (currentMusicUrlRef.current === trackUrl) {
+            audio.play().catch(() => {});
+          }
+          window.removeEventListener('pointerdown', unlockAudio);
+        };
+        window.addEventListener('pointerdown', unlockAudio);
+      });
+    }
+
+    return () => {
+      if (!inSubLocation) {
+        audio.pause();
+      }
+    };
+  }, [location?.id, inSubLocation, currentSubLocation, masterVolume, isMuted]);
+
+  // Остановка при размонтировании всего окна локации
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = '';
+      }
+    };
+  }, []);
   const scaledWidth = viewportHeight > 0 ? viewportHeight * imageAspect : 0;
   const maxCameraX = Math.max(0, scaledWidth - viewportWidth);
 

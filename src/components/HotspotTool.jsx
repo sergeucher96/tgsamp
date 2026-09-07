@@ -1,9 +1,10 @@
+import { LOCATION_AUDIO_TRACKS } from '../data/audioTracks';
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import {
   X, Copy, Trash2, MapPin, Save, Upload, Plus, ZoomIn, ZoomOut,
   Maximize2, Eye, EyeOff, Check, AlertCircle, RefreshCw, Layers,
   Compass, ArrowRight, ArrowLeft, Settings2, Sparkles, Smartphone, Download,
-  Sliders, PlusCircle
+  Sliders, PlusCircle, Music, Play, Square, Volume2
 } from 'lucide-react';
 import { HOUSE_PREVIEWS_MAP } from '../data/houseStyles';
 import { LOCATION_IMAGES } from '../data/locationStyles';
@@ -120,6 +121,11 @@ export default function HotspotTool({ onClose, onExport }) {
   const [transforming, setTransforming] = useState(null);
 
   const [toastMessage, setToastMessage] = useState(null);
+  const [activeMusic, setActiveMusic] = useState('');
+  const [musicVolume, setMusicVolume] = useState(0.5);
+  const [isPlayingPreview, setIsPlayingPreview] = useState(false);
+  const previewAudioRef = useRef(null);
+  const musicInputRef = useRef(null);
   const showToast = (msg) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 2400);
@@ -201,6 +207,8 @@ export default function HotspotTool({ onClose, onExport }) {
       }
 
       setActiveImageSrc(loadedImg);
+      setActiveMusic(subMusic);
+      setMusicVolume(subVol);
       setSelectedHotspotId(null);
 
       const tester = new Image();
@@ -240,12 +248,16 @@ export default function HotspotTool({ onClose, onExport }) {
     const saved = localStorage.getItem(`hotspot_tool_${selectedLocId}`);
     let img = null;
     let loadedHotspots = [];
+    let locMusic = '';
+    let locVol = 0.5;
 
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         if (parsed?.default) img = parsed.default;
         else if (parsed?.images?.[0]?.src) img = parsed.images[0].src;
+        locMusic = parsed?.bgMusic || '';
+        locVol = parsed?.musicVolume ?? 0.5;
 
         if (Array.isArray(parsed)) loadedHotspots = parsed;
         else if (Array.isArray(parsed?.hotspots)) loadedHotspots = parsed.hotspots;
@@ -258,6 +270,8 @@ export default function HotspotTool({ onClose, onExport }) {
     }
 
     setActiveImageSrc(img);
+    setActiveMusic(locMusic);
+    setMusicVolume(locVol);
     setSelectedHotspotId(null);
 
     const tester = new Image();
@@ -477,6 +491,8 @@ export default function HotspotTool({ onClose, onExport }) {
       const payload = {
         image: activeImageSrc,
         label: editingSubLocation.subName,
+        bgMusic: activeMusic,
+        musicVolume: Number(musicVolume),
         hotspots: normalized,
         updatedAt: new Date().toISOString(),
       };
@@ -506,6 +522,8 @@ export default function HotspotTool({ onClose, onExport }) {
 
     const payload = {
       default: activeImageSrc,
+      bgMusic: activeMusic,
+      musicVolume: Number(musicVolume),
       hotspots: normalized,
       updatedAt: new Date().toISOString(),
     };
@@ -673,6 +691,94 @@ export default function HotspotTool({ onClose, onExport }) {
 
         {/* Действия сохранения и загрузки */}
         <div className="flex items-center gap-2">
+          {/* Селектор музыки и предпрослушивание */}
+          <input
+            type="file"
+            ref={musicInputRef}
+            accept="audio/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              const reader = new FileReader();
+              reader.onload = (ev) => {
+                setActiveMusic(ev.target.result);
+                showToast();
+              };
+              reader.readAsDataURL(file);
+            }}
+          />
+
+          <div className="flex items-center gap-1.5 bg-slate-800/90 border border-slate-700 rounded-lg px-2 py-1">
+            <Music size={14} className="text-amber-400" />
+            <select
+              value={activeMusic.startsWith('data:') ? 'custom' : activeMusic}
+              onChange={(e) => {
+                if (e.target.value === 'upload') {
+                  musicInputRef.current?.click();
+                } else {
+                  setActiveMusic(e.target.value);
+                }
+              }}
+              className="bg-transparent text-xs text-slate-200 focus:outline-none max-w-[150px] truncate"
+              title="Фоновая музыка для локации"
+            >
+              {LOCATION_AUDIO_TRACKS.map(t => (
+                <option key={t.id} value={t.url} className="bg-slate-900 text-white">
+                  {t.name}
+                </option>
+              ))}
+              {activeMusic.startsWith('data:') && (
+                <option value="custom" className="bg-slate-900 text-amber-300">
+                  📁 Загруженный аудиофайл
+                </option>
+              )}
+              <option value="upload" className="bg-slate-900 text-emerald-400 font-bold">
+                ➕ Загрузить свой .mp3...
+              </option>
+            </select>
+
+            {activeMusic && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (isPlayingPreview && previewAudioRef.current) {
+                    previewAudioRef.current.pause();
+                    setIsPlayingPreview(false);
+                  } else {
+                    if (!previewAudioRef.current) previewAudioRef.current = new Audio();
+                    previewAudioRef.current.src = activeMusic;
+                    previewAudioRef.current.volume = musicVolume;
+                    previewAudioRef.current.play();
+                    setIsPlayingPreview(true);
+                    previewAudioRef.current.onended = () => setIsPlayingPreview(false);
+                  }
+                }}
+                className="p-1 hover:bg-slate-700 rounded text-slate-300 hover:text-white transition-colors"
+                title={isPlayingPreview ? "Остановить" : "Прослушать трек"}
+              >
+                {isPlayingPreview ? <Square size={13} className="text-red-400 fill-current" /> : <Play size={13} />}
+              </button>
+            )}
+
+            {/* Ползунок громкости */}
+            <div className="flex items-center gap-1.5 px-1.5 border-l border-slate-700">
+              <Volume2 size={14} className={activeMusic ? 'text-amber-400' : 'text-slate-600'} />
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={musicVolume}
+                onChange={(e) => setMusicVolume(Number(e.target.value))}
+                disabled={!activeMusic}
+                className="w-16 h-1 accent-amber-400 cursor-pointer disabled:opacity-30"
+                title={`Громкость: ${Math.round(musicVolume * 100)}%`}
+              />
+              <span className="text-[10px] font-mono text-slate-400 w-7">{Math.round(musicVolume * 100)}%</span>
+            </div>
+          </div>
+
           <button
             onClick={() => fileInputRef.current?.click()}
             className="p-2 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 transition-colors"
