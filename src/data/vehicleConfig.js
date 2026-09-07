@@ -6,104 +6,104 @@ export const VEHICLE_DATABASE = {
     name: 'Clover',
     desc: 'Классический маслкар эконом-класса. Надежный выбор для старта.',
     price: 45000,
-    baseSpeed: 100,
     speed: 400,
     acceleration: 50,
     handling: 50,
     fuelType: '92',
     fuelMax: 50,
-    colors: ['white', 'black', 'red', 'blue', 'green']
+    colors: ['white', 'black', 'red', 'blue', 'green'],
+    model3d: '/models/cars/test.glb'
   },
   'scooter': {
     id: 'scooter',
     name: 'Скутер доставки',
     desc: 'Легкий городской скутер для доставки пиццы.',
     price: 0,
-    baseSpeed: 70,
     speed: 280,
     acceleration: 60,
     handling: 70,
     fuelType: '92',
     fuelMax: 20,
-    colors: ['yellow', 'black']
+    colors: ['yellow', 'black'],
+    model3d: '/models/cars/test.glb'
   },
   'bus': {
     id: 'bus',
     name: 'Городской автобус',
     desc: 'Служебный автобус городского автопарка. Выдается на время смены.',
     price: 0,
-    baseSpeed: 60,
     speed: 300,
     acceleration: 30,
     handling: 40,
     fuelType: '92',
     fuelMax: 120,
-    colors: ['yellow', 'white']
+    colors: ['yellow', 'white'],
+    model3d: '/models/cars/test.glb'
   },
   'taxi': {
     id: 'taxi',
     name: 'Такси',
     desc: 'Служебная машина таксопарка со счетчиком. Выдается на время смены.',
     price: 0,
-    baseSpeed: 110,
     speed: 450,
     acceleration: 65,
     handling: 60,
     fuelType: '92',
     fuelMax: 55,
-    colors: ['yellow', 'black']
+    colors: ['yellow', 'black'],
+    model3d: '/models/cars/test.glb'
   },
   'truck': {
     id: 'truck',
     name: 'Тягач с прицепом',
     desc: 'Магистральный тягач грузового терминала. Медленный, но берет тяжелый груз.',
     price: 0,
-    baseSpeed: 50,
     speed: 250,
     acceleration: 20,
     handling: 30,
     fuelType: '92',
     fuelMax: 300,
-    colors: ['white', 'black', 'red']
+    colors: ['white', 'black', 'red'],
+    model3d: '/models/cars/test.glb'
   },
   'garbage_truck': {
     id: 'garbage_truck',
     name: 'Мусоровоз',
     desc: 'Служебный мусоровоз для уборки города. Выдается на время смены.',
     price: 0,
-    baseSpeed: 40,
     speed: 200,
     acceleration: 25,
     handling: 35,
     fuelType: '92',
     fuelMax: 150,
-    colors: ['green', 'white']
+    colors: ['green', 'white'],
+    model3d: '/models/cars/test.glb'
   },
   'sentinel': {
     id: 'sentinel',
     name: 'Sentinel',
     desc: 'Представительский седан. Сочетание немецкой мощи и комфорта.',
     price: 180000,
-    baseSpeed: 140,
     speed: 550,
     acceleration: 75,
     handling: 70,
     fuelType: '95',
     fuelMax: 65,
-    colors: ['white', 'black', 'red', 'blue', 'green']
+    colors: ['white', 'black', 'red', 'blue', 'green'],
+    model3d: '/models/cars/test.glb'
   },
   'infernus': {
     id: 'infernus',
     name: 'Infernus',
     desc: 'Самый быстрый автомобиль в штате. Только для настоящих королей дорог.',
     price: 2500000,
-    baseSpeed: 240,
     speed: 950,
     acceleration: 90,
     handling: 85,
     fuelType: '98',
     fuelMax: 80,
-    colors: ['white', 'black', 'red']
+    colors: ['white', 'black', 'red'],
+    model3d: '/models/cars/test.glb'
   }
 };
 

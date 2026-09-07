@@ -65,6 +65,7 @@ export const LOCATION_ACTIONS = {
   // --- Автосалон ---
   showroom: [
     { value: 'enter',         label: '🚗 Войти в автосалон' },
+    { value: 'buy_vehicle',   label: '🛒 Купить авто' },
     { value: 'atm',           label: '� Использовать банкомат' },
     { value: 'sublocation',   label: '📍 Часть локации' },
   ],

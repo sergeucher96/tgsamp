@@ -650,6 +650,7 @@ export default function MapView() {
              if (action === 'atm' || action === 'open_atm') { setShowATM(true); return; }
             if (action === 'buy_business') { setSelectedBusiness(loc.id); return; }
             if (action === 'open_hotel') { setSelectedHotel(loc.id); return; }
+            if (action === 'buy_vehicle') { setLocationView(null); setShowShowroom(true); return; }
             // Enter/Default — маршрутизация по типу локации
             if (action === 'enter' || action === 'default' || action === 'refuel') {
               if (loc.type === 'bank') { setShowBank(true); }

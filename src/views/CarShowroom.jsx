@@ -1,7 +1,83 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect, lazy, Suspense } from 'react';
 import { VEHICLE_DATABASE, VEHICLE_COLORS } from '../data/vehicleConfig';
 import { useVehicleStore } from '../store/useVehicleStore';
-import { ChevronLeft, ChevronRight, X, Zap, Fuel, Gauge, ShoppingCart, ArrowDownToLine } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X, Zap, Fuel, Gauge, ShoppingCart, ArrowDownToLine, Loader2 } from 'lucide-react';
+import { Canvas } from '@react-three/fiber';
+import { OrbitControls, ContactShadows } from '@react-three/drei';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
+import { useLoader } from '@react-three/fiber';
+
+/* --- 3D Car Preview Components --- */
+function CarModel({ url, color }) {
+  const group = useRef();
+  const gltf = useLoader(GLTFLoader, url);
+
+  useEffect(() => {
+    if (color && gltf.scene) {
+      gltf.scene.traverse((child) => {
+        if (child.isMesh && child.material) {
+          if (Array.isArray(child.material)) {
+            child.material.forEach(mat => mat.color.set(color));
+          } else {
+            child.material.color.set(color);
+          }
+        }
+      });
+    }
+  }, [color, gltf]);
+
+  return (
+    <group ref={group} dispose={null}>
+      <primitive object={gltf.scene} scale={1.2} />
+    </group>
+  );
+}
+
+function Lights() {
+  return (
+    <>
+      <ambientLight intensity={0.5} />
+      <directionalLight position={[5, 5, 5]} intensity={0.8} />
+      <directionalLight position={[-5, 3, -5]} intensity={0.3} />
+      <hemisphereLight skyColor="#87ceeb" groundColor="#080c14" intensity={0.3} />
+    </>
+  );
+}
+
+function CarMiniScene({ model, color, autoRotate = true }) {
+  return (
+    <Canvas
+      className="w-full h-full"
+      camera={{ position: [0, 1.5, 4], fov: 40, near: 0.1, far: 100 }}
+      style={{ background: 'transparent' }}
+    >
+      <Lights />
+      <ContactShadows position={[0, -0.01, 0]} opacity={0.5} scale={8} blur={2} far={2} resolution={128} color="#000000" />
+      <Suspense fallback={
+        <mesh>
+          <boxGeometry args={[2, 0.8, 1]} />
+          <meshStandardMaterial color="#1a2030" />
+        </mesh>
+      }>
+        <group rotation={[0, 0, 0]}>
+          <group>
+            <CarModel url={model} color={color} />
+          </group>
+        </group>
+      </Suspense>
+      <OrbitControls
+        enablePan={false}
+        enableZoom={false}
+        minPolarAngle={Math.PI / 3.5}
+        maxPolarAngle={Math.PI / 2.2}
+        enableDamping={true}
+        dampingFactor={0.08}
+        autoRotate={autoRotate}
+        autoRotateSpeed={1.5}
+      />
+    </Canvas>
+  );
+}
 
 export default function CarShowroom({ onClose, playerHouses, playerPos, showroomPos }) {
   const models = Object.keys(VEHICLE_DATABASE).filter(m => VEHICLE_DATABASE[m].price > 0);
@@ -13,6 +89,8 @@ export default function CarShowroom({ onClose, playerHouses, playerPos, showroom
   const { buyVehicle, isLoading } = useVehicleStore();
   const isAtShowroom = Math.hypot(playerPos.x - showroomPos.x, playerPos.y - showroomPos.y) < 50;
 
+  const colorHex = VEHICLE_COLORS.find(v => v.id === selectedColor)?.hex || '#ffffff';
+
   const handleBuy = async () => {
     if (!isAtShowroom) return alert("Вы далеко!");
     const house = playerHouses.find(h => h.id_name === selectedHouseId);
@@ -21,8 +99,13 @@ export default function CarShowroom({ onClose, playerHouses, playerPos, showroom
 
   const maxSpeed = 950;
 
+  // Reset color when model changes
+  useEffect(() => {
+    if (config.colors.length > 0) setSelectedColor(config.colors[0]);
+  }, [modelIndex]);
+
   return (
-    <div className="fixed inset-0 z-[300] bg-[#080c14] flex flex-col text-white overflow-y-auto no-scrollbar">
+    <div className="fixed inset-0 z-[400] bg-[#080c14] flex flex-col text-white overflow-y-auto no-scrollbar">
       
       {/* Header */}
       <div className="flex justify-between items-center px-5 pt-5 pb-3">
@@ -49,13 +132,10 @@ export default function CarShowroom({ onClose, playerHouses, playerPos, showroom
         </button>
       </div>
 
-      {/* Car image */}
+      {/* 3D Car Preview */}
       <div className="px-5 mb-4">
-        <div className="bg-gradient-to-b from-white/[0.03] to-transparent rounded-3xl p-6 border border-white/5">
-          <img 
-            src={`/vehicles/${models[modelIndex]}_${selectedColor}.webp`} 
-            className="w-full aspect-[4/3] object-contain drop-shadow-2xl" 
-          />
+        <div className="bg-gradient-to-b from-white/[0.03] to-transparent rounded-3xl border border-white/5 overflow-hidden relative" style={{ height: '240px' }}>
+          <CarMiniScene model={config.model3d || '/models/cars/test.glb'} color={colorHex} />
         </div>
       </div>
 
