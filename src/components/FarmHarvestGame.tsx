@@ -5,7 +5,8 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { 
   Truck, Volume2, VolumeX, RefreshCw, Trophy, Clock,
   DollarSign, Package, Footprints, AlertCircle, Compass, RotateCcw,
-  User, Upload, Check, Sparkles, X, FileCode, Play, Layers
+  User, Upload, Check, Sparkles, X, FileCode, Play, Layers,
+  Maximize2, Minimize2
 } from 'lucide-react';
 
 // Web Audio API движок для аутентичных звуков SA-MP фермы
@@ -193,6 +194,25 @@ export const FarmHarvestGame: React.FC<FarmHarvestGameProps> = ({
   const [isHarvesting, setIsHarvesting] = useState(false);
   const [harvestProgress, setHarvestProgress] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen?.().catch(() => {});
+      setIsFullscreen(true);
+    } else {
+      document.exitFullscreen?.().catch(() => {});
+      setIsFullscreen(false);
+    }
+  };
+
+  useEffect(() => {
+    const handleFsChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, []);
 
   // Character Skin & Custom Model states
   const [showSkinModal, setShowSkinModal] = useState(false);
@@ -431,8 +451,8 @@ export const FarmHarvestGame: React.FC<FarmHarvestGameProps> = ({
     const container = containerRef.current;
     if (!container) return;
 
-    const width = container.clientWidth || 800;
-    const height = 480;
+    const width = container.clientWidth || window.innerWidth || 800;
+    const height = container.clientHeight || window.innerHeight || 600;
 
     // 1. Scene
     const scene = new THREE.Scene();
@@ -840,8 +860,8 @@ export const FarmHarvestGame: React.FC<FarmHarvestGameProps> = ({
     // Адаптивное масштабирование камеры под смартфоны (9:16) и десктопы
     const updateCameraView = () => {
       if (!container || !renderer || !camera) return;
-      const w = container.clientWidth || 360;
-      const h = container.clientHeight || 500;
+      const w = container.clientWidth || window.innerWidth || 360;
+      const h = container.clientHeight || window.innerHeight || 640;
       const aspect = w / h;
       camera.aspect = aspect;
 
@@ -1145,96 +1165,119 @@ export const FarmHarvestGame: React.FC<FarmHarvestGameProps> = ({
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto select-none font-sans text-stone-100 relative">
-      <div className="bg-gradient-to-b from-[#2b2014] via-[#1a130c] to-[#0f0b07] rounded-3xl border-4 border-[#5c4028] shadow-[0_20px_50px_rgba(0,0,0,0.9)] p-4 sm:p-5 relative overflow-hidden">
+    <div className="relative w-full h-full min-h-[100dvh] h-screen overflow-hidden select-none font-sans text-stone-100 bg-[#0d0906]">
+      
+      {/* 1. THREE.JS 3D CANVAS - НА ВЕСЬ ЭКРАН (БЕЗ ПОЛЕЙ, РАМОК И ВНЕШНИХ ОТСТУПОВ) */}
+      <div 
+        ref={containerRef} 
+        className="absolute inset-0 w-full h-full cursor-pointer touch-none select-none z-0"
+        title="Кликните на куст или пикап Walton"
+        style={{ touchAction: 'none' }}
+      />
+
+      {/* 2. ПЛАВАЮЩИЙ HUD SA-MP ПОВЕРХ 3D СЦЕНЫ */}
+      <div className="absolute inset-0 z-10 pointer-events-none flex flex-col justify-between p-2 sm:p-4">
         
-        {/* Шапка SA-MP с таймером и контроллерами */}
-        <div className="w-full flex items-center justify-between border-b border-[#5c4028]/80 pb-3 mb-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-[#422c1b] border-2 border-amber-600 flex items-center justify-center text-amber-400 shadow-md">
-              <Truck size={22} className="drop-shadow" />
+        {/* ВЕРХНИЙ БАР: СЕРВЕР, ТАЙМЕР, СКИН, ЗВУК, ПОЛНЫЙ ЭКРАН */}
+        <div className="w-full flex items-center justify-between gap-2 pointer-events-auto">
+          <div className="flex items-center gap-2 bg-black/80 backdrop-blur-md border border-amber-800/60 rounded-2xl px-3 py-1.5 shadow-xl">
+            <div className="w-8 h-8 rounded-xl bg-[#422c1b] border border-amber-600 flex items-center justify-center text-amber-400 shadow">
+              <Truck size={17} className="drop-shadow" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <span className="text-xs font-black uppercase tracking-wider text-amber-300 font-mono">
-                  [SA-MP 3D LOW-POLY] ФЕРМА №1 (FLINT COUNTY)
+                  [SA-MP] ФЕРМА №1
                 </span>
-                <span className="text-[10px] bg-emerald-950 border border-emerald-600 text-emerald-300 px-2 py-0.2 rounded font-mono font-bold">
-                  3D СЦЕНА
+                <span className="hidden xs:inline text-[9px] bg-emerald-950 border border-emerald-600 text-emerald-300 px-1 rounded font-mono font-bold">
+                  3D
                 </span>
               </div>
-              <p className="text-[11px] text-stone-400 font-mono">
-                Кликайте по 3D-кустам в поле, а затем по пикапу Walton!
+              <p className="text-[10px] text-stone-400 font-mono hidden sm:block">
+                Flint County • Сбор урожая
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 font-mono">
+          <div className="flex items-center gap-1.5 font-mono">
             {/* Кнопка смены скина / загрузки своей 3D модели */}
             <button
               onClick={() => setShowSkinModal(true)}
-              className="px-3 py-1.5 rounded-xl bg-amber-950/80 border border-amber-600 text-amber-300 hover:bg-amber-900 text-xs font-bold flex items-center gap-1.5 shadow transition-all active:scale-95"
+              className="px-2.5 py-1.5 rounded-xl bg-amber-950/85 border border-amber-600/80 text-amber-300 hover:bg-amber-900 text-xs font-bold flex items-center gap-1.5 shadow backdrop-blur-sm transition-all active:scale-95"
               title="Выбрать скин или загрузить свою 3D модель"
             >
-              <User size={13} />
+              <User size={14} />
               <span className="hidden sm:inline">Скин:</span>
-              <span className="text-white uppercase font-bold">
-                {currentSkin === 'custom' ? (customModelFileName?.slice(0, 10) || 'Свой 3D') : currentSkin}
+              <span className="text-white uppercase font-bold text-[11px]">
+                {currentSkin === 'custom' ? (customModelFileName?.slice(0, 8) || 'Свой 3D') : currentSkin}
               </span>
             </button>
 
             {/* Таймер смены */}
-            <div className="px-3 py-1.5 rounded-xl bg-black/60 border border-stone-700 text-xs text-amber-300 font-bold flex items-center gap-1.5 shadow">
+            <div className="px-2.5 py-1.5 rounded-xl bg-black/80 backdrop-blur-md border border-stone-700 text-xs text-amber-300 font-bold flex items-center gap-1.5 shadow">
               <Clock size={13} />
               <span>{Math.floor(shiftTime / 60)}:{(shiftTime % 60).toString().padStart(2, '0')}</span>
             </div>
 
+            {/* Звук */}
             <button
               onClick={() => {
                 const next = !isMuted;
                 setIsMuted(next);
                 sampAudio.muted = next;
               }}
-              className="p-2 rounded-xl bg-black/60 border border-stone-700 text-stone-300 hover:text-white"
+              className="p-2 rounded-xl bg-black/80 backdrop-blur-md border border-stone-700 text-stone-300 hover:text-white transition-all active:scale-95"
+              title={isMuted ? "Включить звук" : "Выключить звук"}
             >
               {isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
             </button>
 
+            {/* Перезапуск */}
             <button
               onClick={restart}
-              className="p-2 rounded-xl bg-black/60 border border-stone-700 text-stone-300 hover:text-white"
+              className="p-2 rounded-xl bg-black/80 backdrop-blur-md border border-stone-700 text-stone-300 hover:text-white transition-all active:scale-95"
               title="Начать сначала"
             >
               <RefreshCw size={15} />
             </button>
 
+            {/* Полноэкранный режим */}
+            <button
+              onClick={toggleFullscreen}
+              className="p-2 rounded-xl bg-black/80 backdrop-blur-md border border-stone-700 text-stone-300 hover:text-white transition-all active:scale-95"
+              title={isFullscreen ? "Выйти из полного экрана" : "На весь экран"}
+            >
+              {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+            </button>
+
             {onClose && (
               <button
                 onClick={onClose}
-                className="p-2 rounded-xl bg-black/60 border border-stone-700 text-stone-300 hover:text-white"
+                className="p-2 rounded-xl bg-black/80 backdrop-blur-md border border-stone-700 text-stone-300 hover:text-white transition-all active:scale-95"
+                title="Закрыть игру"
               >
-                ✕
+                <X size={16} />
               </button>
             )}
           </div>
         </div>
 
-        {/* Текстдрав SA-MP */}
-        <div className="w-full bg-black/85 border-2 border-stone-800 rounded-xl px-4 py-2 mb-3 shadow-inner flex items-center justify-between font-mono">
-          <div className="flex items-center gap-2">
-            <span className="text-amber-400 font-black text-xs uppercase tracking-wider animate-pulse">
+        {/* ТЕКСТДРАВ-ПОДСКАЗКА SA-MP В ВЕРХНЕЙ ЧАСТИ ЭКРАНА */}
+        <div className="pointer-events-auto self-center max-w-xl w-full mt-1 bg-black/80 backdrop-blur-md border border-amber-900/60 rounded-2xl px-3 py-1.5 sm:px-4 sm:py-2 shadow-2xl flex items-center justify-between font-mono gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-amber-400 font-black text-[10px] sm:text-xs uppercase tracking-wider shrink-0 animate-pulse">
               ПОДСКАЗКА:
             </span>
-            <span className="text-xs text-stone-100 font-bold">
+            <span className="text-[11px] sm:text-xs text-stone-100 font-bold truncate">
               {actionTextDraw.replace(/~[rgwy]~/g, '')}
             </span>
           </div>
 
-          <div className="flex items-center gap-2 text-xs">
-            <span className="text-stone-400 font-mono">В руках:</span>
-            <span className={`px-2 py-0.5 rounded font-mono font-bold text-[11px] ${
+          <div className="flex items-center gap-1 text-xs shrink-0">
+            <span className="text-stone-400 font-mono text-[10px] hidden xs:inline">В руках:</span>
+            <span className={`px-2 py-0.5 rounded font-mono font-bold text-[10px] sm:text-[11px] ${
               hasBushInHands 
-                ? 'bg-amber-500 text-stone-950 animate-bounce' 
+                ? 'bg-amber-500 text-stone-950 animate-bounce shadow-[0_0_15px_rgba(245,158,11,0.8)]' 
                 : 'bg-stone-800 text-stone-400'
             }`}>
               {hasBushInHands ? '🌿 ТЯЖЕЛЫЙ КУСТ' : 'ПУСТО'}
@@ -1242,76 +1285,64 @@ export const FarmHarvestGame: React.FC<FarmHarvestGameProps> = ({
           </div>
         </div>
 
-        {/* 3D CANVAS КОНТЕЙНЕР (THREE.JS АДАПТИРОВАН ПОД 9:16 И ДЕСКТОП) */}
-        <div className="relative w-full rounded-2xl overflow-hidden border-2 border-[#5c4028] shadow-[inset_0_4px_25px_rgba(0,0,0,0.8)]">
-          
-          <div 
-            ref={containerRef} 
-            className="w-full h-[520px] xs:h-[560px] sm:h-[480px] max-h-[70vh] cursor-pointer touch-none select-none relative"
-            title="Кликните на куст или пикап Walton"
-            style={{ touchAction: 'none' }}
-          />
-
-          {/* Плашка прогресса сбора куста поверх 3D сцены */}
-          {isHarvesting && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-black/85 border-2 border-amber-500 rounded-2xl px-5 py-2.5 shadow-2xl flex items-center gap-3">
-              <span className="text-xs font-mono font-bold text-amber-300">
-                СРЕЗ СНОПА: {harvestProgress}%
-              </span>
-              <div className="w-32 bg-stone-800 h-2.5 rounded-full overflow-hidden border border-stone-700">
-                <div 
-                  className="h-full bg-amber-500 transition-all duration-200"
-                  style={{ width: `${harvestProgress}%` }}
-                />
-              </div>
+        {/* ЦЕНТРАЛЬНАЯ ПЛАШКА ПРОГРЕССА СРЕЗА КУСТА */}
+        {isHarvesting && (
+          <div className="self-center bg-black/90 backdrop-blur-md border-2 border-amber-500 rounded-2xl px-5 py-2.5 shadow-2xl flex items-center gap-3 animate-fade-in pointer-events-none">
+            <span className="text-xs font-mono font-bold text-amber-300">
+              СРЕЗ СНОПА: {harvestProgress}%
+            </span>
+            <div className="w-32 bg-stone-800 h-2.5 rounded-full overflow-hidden border border-stone-700">
+              <div 
+                className="h-full bg-amber-500 transition-all duration-150"
+                style={{ width: `${harvestProgress}%` }}
+              />
             </div>
-          )}
+          </div>
+        )}
 
-          {/* КНОПКИ ДЕЙСТВИЯ ДЛЯ СМАРТФОНОВ (9:16) И УДОБНОГО ТАПА */}
+        {/* ЦЕНТРАЛЬНО-НИЖНЯЯ КНОПКА ДЕЙСТВИЯ (ДЛЯ СМАРТФОНОВ И БЫСТРОГО ТАПА) */}
+        <div className="pointer-events-auto self-center mb-2">
           {hasBushInHands ? (
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 animate-bounce">
+            <div className="animate-bounce">
               <button
                 onClick={handleTruckClick}
-                className="px-5 py-3 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-stone-950 font-black text-xs sm:text-sm uppercase tracking-wider font-mono shadow-[0_0_30px_rgba(245,158,11,0.8)] flex items-center gap-2 border-2 border-white active:scale-95 transition-transform whitespace-nowrap"
+                className="px-5 sm:px-6 py-3 sm:py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-stone-950 font-black text-xs sm:text-sm uppercase tracking-wider font-mono shadow-[0_0_35px_rgba(245,158,11,0.85)] flex items-center gap-2 border-2 border-white active:scale-95 transition-transform whitespace-nowrap"
               >
                 <Truck size={18} />
                 <span>🚚 Погрузить в Walton (+750$)</span>
               </button>
             </div>
           ) : (
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30">
+            <div>
               <button
                 onClick={harvestNearestBush}
                 disabled={isHarvesting}
-                className="px-4 py-2.5 rounded-xl bg-black/85 hover:bg-black text-amber-300 font-bold text-xs uppercase tracking-wider font-mono shadow-lg border border-amber-500/60 flex items-center gap-2 active:scale-95 transition-transform backdrop-blur-sm whitespace-nowrap"
+                className="px-4 sm:px-5 py-2.5 sm:py-3 rounded-2xl bg-black/85 hover:bg-black text-amber-300 font-bold text-xs uppercase tracking-wider font-mono shadow-xl border border-amber-500/70 flex items-center gap-2 active:scale-95 transition-transform backdrop-blur-md whitespace-nowrap"
               >
                 <span>🌾 Срезать куст</span>
               </button>
             </div>
           )}
-
-          {/* Интерактивные подсказки по бокам (скрываются на узких экранах, чтобы не мешать) */}
-          <div className="hidden sm:block absolute bottom-3 left-3 pointer-events-none bg-black/60 backdrop-blur-sm border border-stone-800 rounded-xl px-3 py-1.5 text-[10px] font-mono text-stone-300">
-            🌾 1. Кликните на зеленый куст
-          </div>
-
-          <div className="hidden sm:block absolute bottom-3 right-3 pointer-events-none bg-black/60 backdrop-blur-sm border border-stone-800 rounded-xl px-3 py-1.5 text-[10px] font-mono text-stone-300">
-            🚚 2. Кликните на пикап Walton
-          </div>
         </div>
 
-        {/* НИЖНЯЯ ПАНЕЛЬ СТАТИСТИКИ И КНОПКА СДАЧИ */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3 font-mono">
-          <div className="bg-black/60 border border-stone-800 rounded-xl p-2.5 flex items-center justify-between">
-            <span className="text-[10px] text-stone-400 uppercase">В кузове пикапа:</span>
-            <span className="text-xs font-bold text-amber-300 font-mono">
+        {/* НИЖНЯЯ ПАНЕЛЬ СТАТИСТИКИ И КНОПКА СДАЧИ СМЕНЫ */}
+        <div className="pointer-events-auto w-full bg-black/85 backdrop-blur-md border border-amber-900/60 rounded-2xl p-2 sm:p-3 shadow-2xl flex flex-wrap items-center justify-between gap-2 font-mono">
+          <div className="flex items-center gap-2 bg-stone-900/80 px-3 py-1.5 rounded-xl border border-stone-800">
+            <span className="text-[10px] text-stone-400 uppercase">В кузове:</span>
+            <span className="text-xs font-bold text-amber-300">
               {truckCropsCount} / {truckMaxCapacity} снопов
             </span>
+            <div className="w-16 bg-stone-800 h-2 rounded-full overflow-hidden border border-stone-700 hidden sm:block">
+              <div 
+                className="h-full bg-amber-500 transition-all duration-300"
+                style={{ width: `${(truckCropsCount / truckMaxCapacity) * 100}%` }}
+              />
+            </div>
           </div>
 
-          <div className="bg-black/60 border border-stone-800 rounded-xl p-2.5 flex items-center justify-between">
-            <span className="text-[10px] text-stone-400 uppercase">Зарплата за смену:</span>
-            <span className="text-xs font-black text-emerald-400 font-mono">
+          <div className="flex items-center gap-2 bg-stone-900/80 px-3 py-1.5 rounded-xl border border-stone-800">
+            <span className="text-[10px] text-stone-400 uppercase">Зарплата:</span>
+            <span className="text-xs font-black text-emerald-400">
               +${totalEarned.toLocaleString()}
             </span>
           </div>
@@ -1319,21 +1350,23 @@ export const FarmHarvestGame: React.FC<FarmHarvestGameProps> = ({
           <button
             onClick={completeShift}
             disabled={truckCropsCount === 0 || isShiftComplete}
-            className={`py-2 rounded-xl text-xs font-bold uppercase tracking-wider font-mono flex items-center justify-center gap-1.5 transition-all active:scale-95 ${
+            className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider font-mono flex items-center justify-center gap-1.5 transition-all active:scale-95 ${
               truckCropsCount > 0 && !isShiftComplete
-                ? 'bg-emerald-600 hover:bg-emerald-500 text-white font-black shadow-md'
+                ? 'bg-emerald-600 hover:bg-emerald-500 text-white font-black shadow-[0_0_20px_rgba(16,185,129,0.5)]'
                 : 'bg-stone-900 text-stone-600 cursor-not-allowed border border-stone-800'
             }`}
           >
             <Truck size={14} />
-            <span>Сдать машину на склад (${totalEarned})</span>
+            <span>Сдать на склад (${totalEarned})</span>
           </button>
         </div>
 
-        {/* МОДАЛЬНОЕ ОКНО: ВЫБОР СКИНА ИЛИ ЗАГРУЗКА СВОЕЙ 3D МОДЕЛИ (.GLB / .GLTF / .OBJ) */}
-        {showSkinModal && (
-          <div className="absolute inset-0 z-40 bg-black/85 backdrop-blur-md rounded-3xl flex items-center justify-center p-4 sm:p-6 animate-fade-in">
-            <div className="w-full max-w-lg bg-[#1c150e] border-2 border-amber-600 rounded-2xl p-5 shadow-[0_0_50px_rgba(0,0,0,0.95)] text-stone-200 font-mono">
+      </div>
+
+      {/* МОДАЛЬНОЕ ОКНО: ВЫБОР СКИНА ИЛИ ЗАГРУЗКА СВОЕЙ 3D МОДЕЛИ */}
+      {showSkinModal && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 animate-fade-in">
+          <div className="w-full max-w-lg bg-[#1c150e] border-2 border-amber-600 rounded-2xl p-5 shadow-[0_0_50px_rgba(0,0,0,0.95)] text-stone-200 font-mono max-h-[90vh] overflow-y-auto">
               
               <div className="flex items-center justify-between border-b border-stone-800 pb-3 mb-4">
                 <div className="flex items-center gap-2">
@@ -1485,47 +1518,46 @@ export const FarmHarvestGame: React.FC<FarmHarvestGameProps> = ({
           </div>
         )}
 
-        {/* ДИАЛОГ ОКНА ОКОНЧАНИЯ СМЕНЫ В СТИЛЕ SA-MP DIALOG */}
-        {isShiftComplete && (
-          <div className="absolute inset-0 z-30 bg-black/85 backdrop-blur-sm rounded-3xl flex items-center justify-center p-6">
-            <div className="w-full max-w-md bg-[#1f1710] border-2 border-amber-600 rounded-2xl p-5 shadow-[0_0_50px_rgba(0,0,0,0.9)] text-center font-mono animate-fade-in">
-              <div className="w-14 h-14 rounded-2xl bg-amber-950 border-2 border-amber-500 text-amber-400 flex items-center justify-center mx-auto mb-3 shadow-lg">
-                <Trophy size={28} />
-              </div>
-
-              <h3 className="text-sm font-black text-white uppercase tracking-wider mb-1">
-                ФЕРМА: СМЕНА УСПЕШНО СДАНА!
-              </h3>
-              <p className="text-xs text-stone-300 mb-4">
-                Пикап Walton с урожаем кустов доставлен на элеватор Flint County. Деньги начислены на ваш баланс.
-              </p>
-
-              <div className="bg-black/70 border border-stone-800 rounded-xl p-3 mb-4 text-xs space-y-1.5 text-left">
-                <div className="flex items-center justify-between text-stone-300">
-                  <span>Погружено кустов в кузов:</span>
-                  <span className="text-white font-bold">{truckCropsCount} шт</span>
-                </div>
-                <div className="flex items-center justify-between text-stone-300">
-                  <span>Выручка комбайнёра:</span>
-                  <span className="text-emerald-400 font-bold text-sm">+${totalEarned.toLocaleString()}</span>
-                </div>
-                <div className="flex items-center justify-between text-stone-300 border-t border-stone-800 pt-1">
-                  <span>Опыт работы (EXP):</span>
-                  <span className="text-amber-400 font-bold">+{Math.floor(totalEarned / 250)} EXP</span>
-                </div>
-              </div>
-
-              <button
-                onClick={restart}
-                className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-xs uppercase tracking-wider shadow-lg active:scale-95 transition-all"
-              >
-                Взять новую смену на ферме
-              </button>
+      {/* ДИАЛОГ ОКНА ОКОНЧАНИЯ СМЕНЫ В СТИЛЕ SA-MP DIALOG */}
+      {isShiftComplete && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 animate-fade-in">
+          <div className="w-full max-w-md bg-[#1f1710] border-2 border-amber-600 rounded-2xl p-5 shadow-[0_0_50px_rgba(0,0,0,0.9)] text-center font-mono animate-fade-in">
+            <div className="w-14 h-14 rounded-2xl bg-amber-950 border-2 border-amber-500 text-amber-400 flex items-center justify-center mx-auto mb-3 shadow-lg">
+              <Trophy size={28} />
             </div>
-          </div>
-        )}
 
-      </div>
+            <h3 className="text-sm font-black text-white uppercase tracking-wider mb-1">
+              ФЕРМА: СМЕНА УСПЕШНО СДАНА!
+            </h3>
+            <p className="text-xs text-stone-300 mb-4">
+              Пикап Walton с урожаем кустов доставлен на элеватор Flint County. Деньги начислены на ваш баланс.
+            </p>
+
+            <div className="bg-black/70 border border-stone-800 rounded-xl p-3 mb-4 text-xs space-y-1.5 text-left">
+              <div className="flex items-center justify-between text-stone-300">
+                <span>Погружено кустов в кузов:</span>
+                <span className="text-white font-bold">{truckCropsCount} шт</span>
+              </div>
+              <div className="flex items-center justify-between text-stone-300">
+                <span>Выручка комбайнёра:</span>
+                <span className="text-emerald-400 font-bold text-sm">+${totalEarned.toLocaleString()}</span>
+              </div>
+              <div className="flex items-center justify-between text-stone-300 border-t border-stone-800 pt-1">
+                <span>Опыт работы (EXP):</span>
+                <span className="text-amber-400 font-bold">+{Math.floor(totalEarned / 250)} EXP</span>
+              </div>
+            </div>
+
+            <button
+              onClick={restart}
+              className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-xs uppercase tracking-wider shadow-lg active:scale-95 transition-all"
+            >
+              Взять новую смену на ферме
+            </button>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

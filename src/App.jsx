@@ -199,15 +199,13 @@ function App() {
       {showWars && <WarsView onClose={() => setShowWars(false)} />}
       {showCarViewer && <CarViewer onClose={() => setShowCarViewer(false)} />}
 
-      {/* 🌾 Модальное окно 3D Фермы SA-MP */}
+      {/* 🌾 Модальное окно 3D Фермы SA-MP (НА ВЕСЬ ЭКРАН БЕЗ ПОЛЕЙ И РАМОК) */}
       {showFarmGame && (
-        <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
-          <div className="w-full max-w-4xl relative my-auto">
-            <FarmHarvestGame
-              onHarvestFinish={handleFarmFinish}
-              onClose={() => setShowFarmGame(false)}
-            />
-          </div>
+        <div className="fixed inset-0 z-[100] w-full h-full bg-black overflow-hidden">
+          <FarmHarvestGame
+            onHarvestFinish={handleFarmFinish}
+            onClose={() => setShowFarmGame(false)}
+          />
         </div>
       )}
       
