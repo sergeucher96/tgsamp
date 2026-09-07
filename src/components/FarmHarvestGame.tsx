@@ -1,12 +1,9 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { 
   Truck, Volume2, VolumeX, RefreshCw, Trophy, Clock,
-  DollarSign, Package, Footprints, AlertCircle, Compass, RotateCcw,
-  User, Upload, Check, Sparkles, X, FileCode, Play, Layers,
-  Maximize2, Minimize2
+  DollarSign, Package, Footprints, AlertCircle, Compass,
+  Sparkles, X, Maximize2, Minimize2
 } from 'lucide-react';
 
 // Web Audio API движок для аутентичных звуков SA-MP фермы
@@ -175,8 +172,6 @@ interface BushData {
   growth: number;
 }
 
-export type SkinPreset = 'farmer' | 'cj' | 'grove' | 'builder' | 'custom';
-
 export const FarmHarvestGame: React.FC<FarmHarvestGameProps> = ({
   onHarvestFinish,
   onClose,
@@ -213,14 +208,6 @@ export const FarmHarvestGame: React.FC<FarmHarvestGameProps> = ({
     document.addEventListener('fullscreenchange', handleFsChange);
     return () => document.removeEventListener('fullscreenchange', handleFsChange);
   }, []);
-
-  // Character Skin & Custom Model states
-  const [showSkinModal, setShowSkinModal] = useState(false);
-  const [currentSkin, setCurrentSkin] = useState<SkinPreset>('farmer');
-  const [customModelFileName, setCustomModelFileName] = useState<string | null>(null);
-  const [customModelInfo, setCustomModelInfo] = useState<string | null>(null);
-  const [modelLoadError, setModelLoadError] = useState<string | null>(null);
-  const [isModelLoading, setIsModelLoading] = useState(false);
 
   // References for Three.js state
   const bushesRef = useRef<BushData[]>([]);
@@ -263,187 +250,64 @@ export const FarmHarvestGame: React.FC<FarmHarvestGameProps> = ({
     return () => clearInterval(timer);
   }, [isShiftComplete]);
 
-  // Функция для сборки процедурных пресетов персонажей
-  const buildPresetCharacter = useCallback((skin: SkinPreset, targetGroup: THREE.Group) => {
+  // Процедурная сборка классического фермера Red County (Skin ID 158)
+  const buildFarmerCharacter = useCallback((targetGroup: THREE.Group) => {
     targetGroup.clear();
 
-    // Очистить миксер анимаций, если был кастомный
     mixerRef.current = null;
     walkActionRef.current = null;
     idleActionRef.current = null;
 
-    if (skin === 'cj') {
-      // КАРЛ "CJ" ДЖОНСОН (Skin ID 0)
-      // Синие джинсы
-      const legMat = new THREE.MeshLambertMaterial({ color: 0x1f3c66 });
-      const leftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.9, 0.35), legMat);
-      leftLeg.position.set(-0.2, 0.45, 0);
-      leftLeg.castShadow = true;
-      targetGroup.add(leftLeg);
+    // Синие джинсы
+    const legMat = new THREE.MeshLambertMaterial({ color: 0x2b4c7e });
+    const leftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.9, 0.35), legMat);
+    leftLeg.position.set(-0.2, 0.45, 0);
+    leftLeg.castShadow = true;
+    targetGroup.add(leftLeg);
 
-      const rightLeg = leftLeg.clone();
-      rightLeg.position.set(0.2, 0.45, 0);
-      targetGroup.add(rightLeg);
+    const rightLeg = leftLeg.clone();
+    rightLeg.position.set(0.2, 0.45, 0);
+    targetGroup.add(rightLeg);
 
-      // Кеды
-      const shoeMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
-      const leftShoe = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.15, 0.45), shoeMat);
-      leftShoe.position.set(-0.2, 0.08, 0.05);
-      targetGroup.add(leftShoe);
-      const rightShoe = leftShoe.clone();
-      rightShoe.position.set(0.2, 0.08, 0.05);
-      targetGroup.add(rightShoe);
+    // Рабочие ботинки
+    const shoeMat = new THREE.MeshLambertMaterial({ color: 0x22160d });
+    const leftShoe = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.15, 0.45), shoeMat);
+    leftShoe.position.set(-0.2, 0.08, 0.05);
+    targetGroup.add(leftShoe);
+    const rightShoe = leftShoe.clone();
+    rightShoe.position.set(0.2, 0.08, 0.05);
+    targetGroup.add(rightShoe);
 
-      // Белая майка-алкоголичка (White Tank Top)
-      const tankMat = new THREE.MeshLambertMaterial({ color: 0xeeeeee });
-      const torso = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.85, 0.42), tankMat);
-      torso.position.set(0, 1.32, 0);
-      torso.castShadow = true;
-      targetGroup.add(torso);
+    // Клетчатая красно-коричневая рубашка фермера
+    const torsoMat = new THREE.MeshLambertMaterial({ color: 0x9c3d28 });
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.9, 0.45), torsoMat);
+    torso.position.set(0, 1.35, 0);
+    torso.castShadow = true;
+    targetGroup.add(torso);
 
-      // Мускулистые руки цвета кожи CJ
-      const skinTone = new THREE.MeshLambertMaterial({ color: 0x5c3826 });
-      const leftArm = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.75, 0.25), skinTone);
-      leftArm.position.set(-0.48, 1.3, 0);
-      leftArm.castShadow = true;
-      targetGroup.add(leftArm);
-      const rightArm = leftArm.clone();
-      rightArm.position.set(0.48, 1.3, 0);
-      targetGroup.add(rightArm);
+    // Рукава
+    const leftArm = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.75, 0.28), torsoMat);
+    leftArm.position.set(-0.48, 1.3, 0);
+    leftArm.castShadow = true;
+    targetGroup.add(leftArm);
+    const rightArm = leftArm.clone();
+    rightArm.position.set(0.48, 1.3, 0);
+    targetGroup.add(rightArm);
 
-      // Золотая цепочка на шее
-      const chain = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.03, 8, 16), new THREE.MeshLambertMaterial({ color: 0xf6ad55 }));
-      chain.rotation.x = Math.PI / 3;
-      chain.position.set(0, 1.72, 0.08);
-      targetGroup.add(chain);
+    // Голова
+    const headMat = new THREE.MeshLambertMaterial({ color: 0xe0a97c });
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), headMat);
+    head.position.set(0, 1.95, 0);
+    head.castShadow = true;
+    targetGroup.add(head);
 
-      // Голова Карла
-      const head = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.42, 0.38), skinTone);
-      head.position.set(0, 1.95, 0);
-      head.castShadow = true;
-      targetGroup.add(head);
-
-      // Прическа Цезарь (короткие черные волосы)
-      const hair = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.15, 0.4), new THREE.MeshLambertMaterial({ color: 0x1a1a1a }));
-      hair.position.set(0, 2.15, 0);
-      targetGroup.add(hair);
-
-    } else if (skin === 'grove') {
-      // GROVE STREET GANGSTA (Skin ID 105)
-      // Темные брюки
-      const legMat = new THREE.MeshLambertMaterial({ color: 0x1a202c });
-      const leftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.9, 0.35), legMat);
-      leftLeg.position.set(-0.2, 0.45, 0);
-      leftLeg.castShadow = true;
-      targetGroup.add(leftLeg);
-      const rightLeg = leftLeg.clone();
-      rightLeg.position.set(0.2, 0.45, 0);
-      targetGroup.add(rightLeg);
-
-      // Фирменная зеленая худи оверсайз Grove Street
-      const hoodieMat = new THREE.MeshLambertMaterial({ color: 0x276749 });
-      const torso = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.95, 0.5), hoodieMat);
-      torso.position.set(0, 1.35, 0);
-      torso.castShadow = true;
-      targetGroup.add(torso);
-
-      // Рукава худи
-      const leftArm = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.78, 0.3), hoodieMat);
-      leftArm.position.set(-0.52, 1.32, 0);
-      targetGroup.add(leftArm);
-      const rightArm = leftArm.clone();
-      rightArm.position.set(0.52, 1.32, 0);
-      targetGroup.add(rightArm);
-
-      // Голова
-      const skinTone = new THREE.MeshLambertMaterial({ color: 0x5c3826 });
-      const head = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.4, 0.38), skinTone);
-      head.position.set(0, 1.95, 0);
-      head.castShadow = true;
-      targetGroup.add(head);
-
-      // Зеленая бейсболка задом наперед
-      const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.44, 0.2, 12), hoodieMat);
-      cap.position.set(0, 2.15, 0);
-      targetGroup.add(cap);
-      const visor = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.05, 0.3), hoodieMat);
-      visor.position.set(0, 2.1, -0.3); // козырек назад
-      targetGroup.add(visor);
-
-    } else if (skin === 'builder') {
-      // РАБОТЯГА В КАСКЕ (Skin ID 27)
-      // Синие рабочие штаны
-      const pantsMat = new THREE.MeshLambertMaterial({ color: 0x2c5282 });
-      const leftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.9, 0.35), pantsMat);
-      leftLeg.position.set(-0.2, 0.45, 0);
-      leftLeg.castShadow = true;
-      targetGroup.add(leftLeg);
-      const rightLeg = leftLeg.clone();
-      rightLeg.position.set(0.2, 0.45, 0);
-      targetGroup.add(rightLeg);
-
-      // Рабочая куртка с оранжевым светоотражающим жилетом
-      const vestMat = new THREE.MeshLambertMaterial({ color: 0xdd6b20 });
-      const torso = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.9, 0.45), vestMat);
-      torso.position.set(0, 1.35, 0);
-      torso.castShadow = true;
-      targetGroup.add(torso);
-
-      // Светоотражающая полоса
-      const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.12, 0.47), new THREE.MeshLambertMaterial({ color: 0xedf2f7 }));
-      stripe.position.set(0, 1.35, 0);
-      targetGroup.add(stripe);
-
-      // Голова
-      const skinTone = new THREE.MeshLambertMaterial({ color: 0xe0a97c });
-      const head = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), skinTone);
-      head.position.set(0, 1.95, 0);
-      head.castShadow = true;
-      targetGroup.add(head);
-
-      // Защитная желтая каска строителя
-      const hardhatMat = new THREE.MeshLambertMaterial({ color: 0xf6e05e });
-      const hardhatDome = new THREE.Mesh(new THREE.SphereGeometry(0.44, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), hardhatMat);
-      hardhatDome.position.set(0, 2.1, 0);
-      targetGroup.add(hardhatDome);
-      const hardhatBrim = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 0.06, 12), hardhatMat);
-      hardhatBrim.position.set(0, 2.1, 0);
-      targetGroup.add(hardhatBrim);
-
-    } else {
-      // ДЕФОЛТ: КЛАССИЧЕСКИЙ ФЕРМЕР RED COUNTY (Skin ID 158)
-      const legMat = new THREE.MeshLambertMaterial({ color: 0x2b4c7e });
-      const leftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.9, 0.35), legMat);
-      leftLeg.position.set(-0.2, 0.45, 0);
-      leftLeg.castShadow = true;
-      targetGroup.add(leftLeg);
-
-      const rightLeg = leftLeg.clone();
-      rightLeg.position.set(0.2, 0.45, 0);
-      targetGroup.add(rightLeg);
-
-      // Клетчатая красно-коричневая рубашка
-      const torsoMat = new THREE.MeshLambertMaterial({ color: 0x9c3d28 });
-      const torso = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.9, 0.45), torsoMat);
-      torso.position.set(0, 1.35, 0);
-      torso.castShadow = true;
-      targetGroup.add(torso);
-
-      // Голова
-      const headMat = new THREE.MeshLambertMaterial({ color: 0xe0a97c });
-      const head = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), headMat);
-      head.position.set(0, 1.95, 0);
-      head.castShadow = true;
-      targetGroup.add(head);
-
-      // Соломенная шляпа фермера
-      const hatBrim = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.65, 0.08, 12), new THREE.MeshLambertMaterial({ color: 0xd4a359 }));
-      hatBrim.position.set(0, 2.15, 0);
-      targetGroup.add(hatBrim);
-      const hatCrown = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.38, 0.35, 12), new THREE.MeshLambertMaterial({ color: 0xb58238 }));
-      hatCrown.position.set(0, 2.35, 0);
-      targetGroup.add(hatCrown);
-    }
+    // Соломенная шляпа фермера
+    const hatBrim = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.65, 0.08, 12), new THREE.MeshLambertMaterial({ color: 0xd4a359 }));
+    hatBrim.position.set(0, 2.15, 0);
+    targetGroup.add(hatBrim);
+    const hatCrown = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.38, 0.35, 12), new THREE.MeshLambertMaterial({ color: 0xb58238 }));
+    hatCrown.position.set(0, 2.35, 0);
+    targetGroup.add(hatCrown);
   }, []);
 
   // Three.js Scene Setup
@@ -456,8 +320,8 @@ export const FarmHarvestGame: React.FC<FarmHarvestGameProps> = ({
 
     // 1. Scene
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xd6a868); // Теплый сан-андреасовский воздух
-    scene.fog = new THREE.FogExp2(0xd6a868, 0.025);
+    scene.background = new THREE.Color(0xd29d60); // Теплый солнечный горизонт San Andreas
+    scene.fog = new THREE.Fog(0xd29d60, 45, 190);
 
     // 2. Camera (Изометрический ракурс классической GTA)
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
@@ -473,52 +337,75 @@ export const FarmHarvestGame: React.FC<FarmHarvestGameProps> = ({
     container.appendChild(renderer.domElement);
 
     // 4. Lights
-    const hemiLight = new THREE.HemisphereLight(0xffecd2, 0x8d6034, 0.85);
+    const hemiLight = new THREE.HemisphereLight(0xffecd2, 0x8d6034, 0.9);
     scene.add(hemiLight);
 
-    const dirLight = new THREE.DirectionalLight(0xfff3d6, 1.2);
+    const dirLight = new THREE.DirectionalLight(0xfff3d6, 1.25);
     dirLight.position.set(15, 25, 12);
     dirLight.castShadow = true;
     dirLight.shadow.mapSize.width = 1024;
     dirLight.shadow.mapSize.height = 1024;
     dirLight.shadow.camera.near = 0.5;
-    dirLight.shadow.camera.far = 60;
-    const d = 16;
+    dirLight.shadow.camera.far = 70;
+    const d = 22;
     dirLight.shadow.camera.left = -d;
     dirLight.shadow.camera.right = d;
     dirLight.shadow.camera.top = d;
     dirLight.shadow.camera.bottom = -d;
     scene.add(dirLight);
 
-    // 5. Environment: Ground / Soil / Field furrow (Борозды поля)
-    const groundGeo = new THREE.PlaneGeometry(36, 26, 32, 32);
-    const groundMat = new THREE.MeshLambertMaterial({ color: 0x4a321f });
-    const ground = new THREE.Mesh(groundGeo, groundMat);
-    ground.rotation.x = -Math.PI / 2;
-    ground.receiveShadow = true;
-    scene.add(ground);
+    // 5. Environment: Grand Grounded Countryside Landscape (Полномасштабный ландшафт фермы Flint County)
+    // Бескрайняя земля во все стороны на 1200 единиц - полностью покрывает всё видимое пространство
+    const worldTerrainGeo = new THREE.PlaneGeometry(1200, 1200, 32, 32);
+    const worldTerrainMat = new THREE.MeshLambertMaterial({ color: 0x5e442c }); // Теплый сухой грунт и степная трава Flint County
+    const worldTerrain = new THREE.Mesh(worldTerrainGeo, worldTerrainMat);
+    worldTerrain.rotation.x = -Math.PI / 2;
+    worldTerrain.position.y = -0.05;
+    worldTerrain.receiveShadow = true;
+    scene.add(worldTerrain);
 
-    // Борозды земли (грядки слева)
-    for (let i = -5; i <= 2; i++) {
-      const furrowGeo = new THREE.BoxGeometry(16, 0.12, 1.2);
-      const furrowMat = new THREE.MeshLambertMaterial({ color: i % 2 === 0 ? 0x3d2717 : 0x543924 });
+    // Вспаханное поле для сбора урожая (активная рабочая зона фермы)
+    const cropFieldGeo = new THREE.PlaneGeometry(36, 28);
+    const cropFieldMat = new THREE.MeshLambertMaterial({ color: 0x3d2716 }); // Вспаханный плодородный темный чернозем
+    const cropField = new THREE.Mesh(cropFieldGeo, cropFieldMat);
+    cropField.rotation.x = -Math.PI / 2;
+    cropField.position.set(-3.5, 0.01, 0);
+    cropField.receiveShadow = true;
+    scene.add(cropField);
+
+    // Борозды земли (грядки поля)
+    for (let i = -5; i <= 3; i++) {
+      const furrowGeo = new THREE.BoxGeometry(20, 0.12, 1.2);
+      const furrowMat = new THREE.MeshLambertMaterial({ color: i % 2 === 0 ? 0x342012 : 0x48301c });
       const furrow = new THREE.Mesh(furrowGeo, furrowMat);
       furrow.position.set(-4.5, 0.06, i * 1.8);
       furrow.receiveShadow = true;
       scene.add(furrow);
     }
 
-    // Грунтовая дорога к пикапу справа
-    const roadGeo = new THREE.PlaneGeometry(8, 26);
-    const roadMat = new THREE.MeshLambertMaterial({ color: 0x826040 });
+    // Бескрайняя сельская грунтовая дорога, уходящая вдаль к горизонту
+    const roadGeo = new THREE.PlaneGeometry(8, 1200);
+    const roadMat = new THREE.MeshLambertMaterial({ color: 0x7a5b3a }); // Пыльная накатанная глина
     const road = new THREE.Mesh(roadGeo, roadMat);
     road.rotation.x = -Math.PI / 2;
     road.position.set(7.5, 0.02, 0);
     road.receiveShadow = true;
     scene.add(road);
 
-    // Заборчик по периметру фермы
-    for (let x = -16; x <= 16; x += 3.5) {
+    // Обочины грунтовой дороги
+    const shoulderLeft = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 1200), new THREE.MeshLambertMaterial({ color: 0x6e5033 }));
+    shoulderLeft.rotation.x = -Math.PI / 2;
+    shoulderLeft.position.set(3.2, 0.025, 0);
+    scene.add(shoulderLeft);
+
+    const shoulderRight = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 1200), new THREE.MeshLambertMaterial({ color: 0x6e5033 }));
+    shoulderRight.rotation.x = -Math.PI / 2;
+    shoulderRight.position.set(11.8, 0.025, 0);
+    scene.add(shoulderRight);
+
+    // Деревянный заборчик по периметру пашни
+    for (let x = -18; x <= 16; x += 3.5) {
+      if (x > 5 && x < 10) continue; // въезд для пикапа с дороги
       const postGeo = new THREE.BoxGeometry(0.2, 1.2, 0.2);
       const postMat = new THREE.MeshLambertMaterial({ color: 0x6e523b });
       const postNorth = new THREE.Mesh(postGeo, postMat);
@@ -531,12 +418,117 @@ export const FarmHarvestGame: React.FC<FarmHarvestGameProps> = ({
       postSouth.castShadow = true;
       scene.add(postSouth);
     }
-    const railNorth = new THREE.Mesh(new THREE.BoxGeometry(34, 0.1, 0.08), new THREE.MeshLambertMaterial({ color: 0x5a412e }));
-    railNorth.position.set(0, 0.9, -12);
+    const railNorth = new THREE.Mesh(new THREE.BoxGeometry(36, 0.1, 0.08), new THREE.MeshLambertMaterial({ color: 0x5a412e }));
+    railNorth.position.set(-1, 0.9, -12);
     scene.add(railNorth);
     const railSouth = railNorth.clone();
-    railSouth.position.set(0, 0.9, 12);
+    railSouth.position.set(-1, 0.9, 12);
     scene.add(railSouth);
+
+    // Холмы и горы округов Flint и Red County на горизонте
+    const hillMat = new THREE.MeshLambertMaterial({ color: 0x4e3a27, flatShading: true });
+    const greenHillMat = new THREE.MeshLambertMaterial({ color: 0x3e4225, flatShading: true });
+    const hillConfigs = [
+      { x: -70, z: -90, radius: 45, height: 22, mat: hillMat },
+      { x: -10, z: -110, radius: 65, height: 26, mat: greenHillMat },
+      { x: 70, z: -95, radius: 55, height: 24, mat: hillMat },
+      { x: -110, z: -30, radius: 45, height: 18, mat: greenHillMat },
+      { x: -90, z: 60, radius: 55, height: 22, mat: hillMat },
+      { x: 95, z: 50, radius: 50, height: 18, mat: greenHillMat },
+      { x: 60, z: 100, radius: 50, height: 20, mat: hillMat },
+      { x: -40, z: 110, radius: 60, height: 23, mat: greenHillMat },
+    ];
+    hillConfigs.forEach(h => {
+      const hill = new THREE.Mesh(new THREE.ConeGeometry(h.radius, h.height, 9), h.mat);
+      hill.position.set(h.x, h.height / 2 - 2, h.z);
+      scene.add(hill);
+    });
+
+    // Деревья San Andreas вокруг фермы (сосны и дубы)
+    const trunkMat = new THREE.MeshLambertMaterial({ color: 0x3d2817 });
+    const foliageMat1 = new THREE.MeshLambertMaterial({ color: 0x2e4a23, flatShading: true });
+    const foliageMat2 = new THREE.MeshLambertMaterial({ color: 0x3b5c2a, flatShading: true });
+    const treeCoords = [
+      [-20, -15], [-24, -7], [-22, 4], [-21, 13], [-18, 18],
+      [19, -15], [23, -5], [21, 7], [24, 16],
+      [-40, -35], [-12, -40], [28, -38], [45, -28],
+      [-35, 35], [0, 42], [32, 36]
+    ];
+    treeCoords.forEach(([tx, tz], idx) => {
+      const treeGroup = new THREE.Group();
+      treeGroup.position.set(tx, 0, tz);
+
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.45, 2.5, 6), trunkMat);
+      trunk.position.y = 1.25;
+      trunk.castShadow = true;
+      treeGroup.add(trunk);
+
+      const fMat = idx % 2 === 0 ? foliageMat1 : foliageMat2;
+      if (idx % 3 === 0) {
+        for (let l = 0; l < 3; l++) {
+          const cone = new THREE.Mesh(new THREE.ConeGeometry(2.2 - l * 0.5, 2.0, 7), fMat);
+          cone.position.y = 2.4 + l * 1.3;
+          cone.castShadow = true;
+          treeGroup.add(cone);
+        }
+      } else {
+        const crown = new THREE.Mesh(new THREE.DodecahedronGeometry(2.0, 1), fMat);
+        crown.position.y = 3.2;
+        crown.scale.set(1, 1.2, 1);
+        crown.castShadow = true;
+        treeGroup.add(crown);
+      }
+      scene.add(treeGroup);
+    });
+
+    // Тюки сена по краям поля
+    const hayMat = new THREE.MeshLambertMaterial({ color: 0xd4a44c });
+    const hayCoords = [
+      [-16, -9, 0.2], [-17.5, -7.5, 0.8], [-15, 11, -0.4],
+      [14, -8, 0.1], [15, 6, 0.5], [13.5, 9, -0.3]
+    ];
+    hayCoords.forEach(([hx, hz, rot]) => {
+      const hay = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 1.4, 10), hayMat);
+      hay.rotation.z = Math.PI / 2;
+      hay.rotation.y = rot;
+      hay.position.set(hx, 0.8, hz);
+      hay.castShadow = true;
+      hay.receiveShadow = true;
+      scene.add(hay);
+    });
+
+    // Красный сельский амбар вдалеке
+    const barnGroup = new THREE.Group();
+    barnGroup.position.set(24, 0, -11);
+    barnGroup.rotation.y = -Math.PI / 6;
+    const barnWalls = new THREE.Mesh(new THREE.BoxGeometry(7, 4.5, 9), new THREE.MeshLambertMaterial({ color: 0x822f25 }));
+    barnWalls.position.y = 2.25;
+    barnWalls.castShadow = true;
+    barnGroup.add(barnWalls);
+    const barnRoof = new THREE.Mesh(new THREE.ConeGeometry(6, 2.8, 4), new THREE.MeshLambertMaterial({ color: 0x2d2d2d }));
+    barnRoof.position.y = 5.6;
+    barnRoof.rotation.y = Math.PI / 4;
+    barnRoof.scale.set(0.9, 1, 1.3);
+    barnGroup.add(barnRoof);
+    const barnDoor = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 3.2), new THREE.MeshLambertMaterial({ color: 0x4a1812 }));
+    barnDoor.position.set(-3.51, 1.6, 0);
+    barnDoor.rotation.y = -Math.PI / 2;
+    barnGroup.add(barnDoor);
+    scene.add(barnGroup);
+
+    // Столбы электропередач вдоль дороги
+    for (let pz = -90; pz <= 90; pz += 35) {
+      const poleGroup = new THREE.Group();
+      poleGroup.position.set(12.5, 0, pz);
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 7, 6), new THREE.MeshLambertMaterial({ color: 0x4a3625 }));
+      pole.position.y = 3.5;
+      pole.castShadow = true;
+      poleGroup.add(pole);
+      const crossbar = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.12, 2.2), new THREE.MeshLambertMaterial({ color: 0x3d2b1c }));
+      crossbar.position.set(0, 6.4, 0);
+      poleGroup.add(crossbar);
+      scene.add(poleGroup);
+    }
 
     // 6. BUILD LOW-POLY TRUCK: WALTON / SADLER (ID 478)
     const truckGroup = new THREE.Group();
@@ -738,7 +730,7 @@ export const FarmHarvestGame: React.FC<FarmHarvestGameProps> = ({
     playerVisualRootRef.current = characterVisualRoot;
 
     // Собираем дефолтный скин фермера
-    buildPresetCharacter('farmer', characterVisualRoot);
+    buildFarmerCharacter(characterVisualRoot);
 
     // Куст в руках у персонажа
     const carriedBush = new THREE.Mesh(
@@ -905,124 +897,7 @@ export const FarmHarvestGame: React.FC<FarmHarvestGameProps> = ({
       }
       renderer.dispose();
     };
-  }, [buildPresetCharacter]);
-
-  // Загрузка кастомной 3D модели пользователя (.glb / .gltf / .obj)
-  const handleCustomModelUpload = (file: File) => {
-    const targetVisualRoot = playerVisualRootRef.current;
-    if (!targetVisualRoot) return;
-
-    setIsModelLoading(true);
-    setModelLoadError(null);
-    const fileName = file.name.toLowerCase();
-
-    const fileUrl = URL.createObjectURL(file);
-
-    const onModelReady = (loadedObject: THREE.Object3D, animations?: THREE.AnimationClip[]) => {
-      try {
-        targetVisualRoot.clear();
-
-        // Расчет BoundingBox для авто-масштабирования к росту человека (~1.85 юнитов)
-        const box = new THREE.Box3().setFromObject(loadedObject);
-        const size = box.getSize(new THREE.Vector3());
-        const center = box.getCenter(new THREE.Vector3());
-
-        const targetHeight = 1.85;
-        const maxDim = Math.max(size.y, 0.001);
-        const scale = targetHeight / maxDim;
-
-        loadedObject.scale.set(scale, scale, scale);
-
-        // Центрируем модель так, чтобы ноги касались y = 0
-        loadedObject.position.x = -center.x * scale;
-        loadedObject.position.y = -box.min.y * scale;
-        loadedObject.position.z = -center.z * scale;
-
-        // Включаем мягкие тени на всех мешах
-        let totalVertices = 0;
-        loadedObject.traverse((child) => {
-          if ((child as THREE.Mesh).isMesh) {
-            const m = child as THREE.Mesh;
-            m.castShadow = true;
-            m.receiveShadow = true;
-            if (m.geometry) {
-              totalVertices += m.geometry.attributes.position ? m.geometry.attributes.position.count : 0;
-            }
-          }
-        });
-
-        targetVisualRoot.add(loadedObject);
-
-        // Инициализация анимаций (если есть)
-        if (animations && animations.length > 0) {
-          const mixer = new THREE.AnimationMixer(loadedObject);
-          mixerRef.current = mixer;
-          const action = mixer.clipAction(animations[0]);
-          action.play();
-          setCustomModelInfo(`${(file.size / 1024).toFixed(1)} КБ | ${totalVertices.toLocaleString()} вершин | ${animations.length} анимаций`);
-        } else {
-          mixerRef.current = null;
-          setCustomModelInfo(`${(file.size / 1024).toFixed(1)} КБ | ${totalVertices.toLocaleString()} вершин | Low-Poly сетка`);
-        }
-
-        setCurrentSkin('custom');
-        setCustomModelFileName(file.name);
-        setIsModelLoading(false);
-        setActionTextDraw(`~g~ВАША МОДЕЛЬ [${file.name.slice(0, 15)}] УСПЕШНО ЗАГРУЖЕНА НА СЦЕНУ!`);
-        sampAudio.playPickBush();
-      } catch (err: any) {
-        console.error(err);
-        setModelLoadError('Ошибка настройки масштаба модели');
-        setIsModelLoading(false);
-      } finally {
-        URL.revokeObjectURL(fileUrl);
-      }
-    };
-
-    if (fileName.endsWith('.glb') || fileName.endsWith('.gltf')) {
-      const loader = new GLTFLoader();
-      loader.load(
-        fileUrl,
-        (gltf) => {
-          onModelReady(gltf.scene, gltf.animations);
-        },
-        undefined,
-        (err) => {
-          console.error(err);
-          setModelLoadError('Не удалось прочитать .GLB / .GLTF файл');
-          setIsModelLoading(false);
-        }
-      );
-    } else if (fileName.endsWith('.obj')) {
-      const loader = new OBJLoader();
-      loader.load(
-        fileUrl,
-        (obj) => {
-          onModelReady(obj);
-        },
-        undefined,
-        (err) => {
-          console.error(err);
-          setModelLoadError('Не удалось прочитать .OBJ файл');
-          setIsModelLoading(false);
-        }
-      );
-    } else {
-      setModelLoadError('Поддерживаются форматы .glb, .gltf или .obj');
-      setIsModelLoading(false);
-    }
-  };
-
-  // Переключение на встроенный SA-MP пресет
-  const handleSelectPreset = (skin: SkinPreset) => {
-    setCurrentSkin(skin);
-    if (playerVisualRootRef.current) {
-      buildPresetCharacter(skin, playerVisualRootRef.current);
-    }
-    sampAudio.playPickBush();
-    setShowSkinModal(false);
-    setActionTextDraw(`~w~ВЫБРАН СКИН: ~y~${skin.toUpperCase()}`);
-  };
+  }, [buildFarmerCharacter]);
 
   // Клик по кусту в 3D сцене
   const handleBushClick = useCallback((index: number) => {
@@ -1200,19 +1075,6 @@ export const FarmHarvestGame: React.FC<FarmHarvestGameProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 font-mono">
-            {/* Кнопка смены скина / загрузки своей 3D модели */}
-            <button
-              onClick={() => setShowSkinModal(true)}
-              className="px-2.5 py-1.5 rounded-xl bg-amber-950/85 border border-amber-600/80 text-amber-300 hover:bg-amber-900 text-xs font-bold flex items-center gap-1.5 shadow backdrop-blur-sm transition-all active:scale-95"
-              title="Выбрать скин или загрузить свою 3D модель"
-            >
-              <User size={14} />
-              <span className="hidden sm:inline">Скин:</span>
-              <span className="text-white uppercase font-bold text-[11px]">
-                {currentSkin === 'custom' ? (customModelFileName?.slice(0, 8) || 'Свой 3D') : currentSkin}
-              </span>
-            </button>
-
             {/* Таймер смены */}
             <div className="px-2.5 py-1.5 rounded-xl bg-black/80 backdrop-blur-md border border-stone-700 text-xs text-amber-300 font-bold flex items-center gap-1.5 shadow">
               <Clock size={13} />
@@ -1362,161 +1224,6 @@ export const FarmHarvestGame: React.FC<FarmHarvestGameProps> = ({
         </div>
 
       </div>
-
-      {/* МОДАЛЬНОЕ ОКНО: ВЫБОР СКИНА ИЛИ ЗАГРУЗКА СВОЕЙ 3D МОДЕЛИ */}
-      {showSkinModal && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 animate-fade-in">
-          <div className="w-full max-w-lg bg-[#1c150e] border-2 border-amber-600 rounded-2xl p-5 shadow-[0_0_50px_rgba(0,0,0,0.95)] text-stone-200 font-mono max-h-[90vh] overflow-y-auto">
-              
-              <div className="flex items-center justify-between border-b border-stone-800 pb-3 mb-4">
-                <div className="flex items-center gap-2">
-                  <User className="text-amber-400" size={20} />
-                  <h3 className="text-sm font-black text-white uppercase tracking-wider">
-                    [ГАРДЕРОБ SA-MP / СВОЯ 3D МОДЕЛЬ]
-                  </h3>
-                </div>
-                <button
-                  onClick={() => setShowSkinModal(false)}
-                  className="p-1 rounded-lg bg-stone-900 text-stone-400 hover:text-white"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-
-              {/* 1. БЫСТРЫЕ ВСТРОЕННЫЕ ПРЕСЕТЫ СКИНОB SA-MP */}
-              <div className="mb-4">
-                <div className="text-[11px] text-stone-400 uppercase font-bold mb-2">
-                  Встроенные скины San Andreas:
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <button
-                    onClick={() => handleSelectPreset('farmer')}
-                    className={`p-2.5 rounded-xl border text-center transition-all ${
-                      currentSkin === 'farmer'
-                        ? 'bg-amber-950/80 border-amber-500 text-amber-300 shadow-md'
-                        : 'bg-stone-900/80 border-stone-800 text-stone-300 hover:border-stone-600'
-                    }`}
-                  >
-                    <div className="text-xl mb-1">🌾🤠</div>
-                    <div className="text-[10px] font-bold uppercase leading-tight">Фермер #158</div>
-                    <div className="text-[9px] text-stone-400">Шляпа и роба</div>
-                  </button>
-
-                  <button
-                    onClick={() => handleSelectPreset('cj')}
-                    className={`p-2.5 rounded-xl border text-center transition-all ${
-                      currentSkin === 'cj'
-                        ? 'bg-amber-950/80 border-amber-500 text-amber-300 shadow-md'
-                        : 'bg-stone-900/80 border-stone-800 text-stone-300 hover:border-stone-600'
-                    }`}
-                  >
-                    <div className="text-xl mb-1">👕🏃</div>
-                    <div className="text-[10px] font-bold uppercase leading-tight">CJ #0</div>
-                    <div className="text-[9px] text-stone-400">Майка и джинсы</div>
-                  </button>
-
-                  <button
-                    onClick={() => handleSelectPreset('grove')}
-                    className={`p-2.5 rounded-xl border text-center transition-all ${
-                      currentSkin === 'grove'
-                        ? 'bg-amber-950/80 border-amber-500 text-amber-300 shadow-md'
-                        : 'bg-stone-900/80 border-stone-800 text-stone-300 hover:border-stone-600'
-                    }`}
-                  >
-                    <div className="text-xl mb-1">🟢🧢</div>
-                    <div className="text-[10px] font-bold uppercase leading-tight">Grove #105</div>
-                    <div className="text-[9px] text-stone-400">Зеленая худи</div>
-                  </button>
-
-                  <button
-                    onClick={() => handleSelectPreset('builder')}
-                    className={`p-2.5 rounded-xl border text-center transition-all ${
-                      currentSkin === 'builder'
-                        ? 'bg-amber-950/80 border-amber-500 text-amber-300 shadow-md'
-                        : 'bg-stone-900/80 border-stone-800 text-stone-300 hover:border-stone-600'
-                    }`}
-                  >
-                    <div className="text-xl mb-1">🦺👷</div>
-                    <div className="text-[10px] font-bold uppercase leading-tight">Рабочий #27</div>
-                    <div className="text-[9px] text-stone-400">Каска и жилет</div>
-                  </button>
-                </div>
-              </div>
-
-              {/* 2. ЗАГРУЗКА СОБСТВЕННОЙ 3D МОДЕЛИ (.GLB / .GLTF / .OBJ) */}
-              <div className="bg-black/60 border-2 border-dashed border-amber-700/60 rounded-xl p-4 text-center">
-                <div className="w-10 h-10 rounded-xl bg-amber-950 border border-amber-600 text-amber-400 flex items-center justify-center mx-auto mb-2 shadow">
-                  <Upload size={20} />
-                </div>
-
-                <div className="text-xs font-bold text-white mb-1">
-                  Загрузить свою 3D модель (.glb, .gltf или .obj)
-                </div>
-                <p className="text-[11px] text-stone-400 mb-3 max-w-sm mx-auto leading-relaxed">
-                  Перетащите файл или выберите с устройства. Модель автоматически масштабируется под пропорции поля и сможет переносить снопы кустов!
-                </p>
-
-                <label className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-xs uppercase tracking-wider cursor-pointer shadow-lg active:scale-95 transition-all">
-                  <Upload size={14} />
-                  <span>Выбрать 3D файл</span>
-                  <input
-                    type="file"
-                    accept=".glb,.gltf,.obj"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) handleCustomModelUpload(f);
-                    }}
-                  />
-                </label>
-
-                {isModelLoading && (
-                  <div className="mt-3 text-xs text-amber-300 flex items-center justify-center gap-2">
-                    <Clock size={14} className="animate-spin" />
-                    <span>Импорт 3D сетки и настройка анимаций...</span>
-                  </div>
-                )}
-
-                {modelLoadError && (
-                  <div className="mt-3 text-xs text-rose-400 font-bold bg-rose-950/60 border border-rose-800 p-2 rounded-lg">
-                    {modelLoadError}
-                  </div>
-                )}
-
-                {customModelFileName && currentSkin === 'custom' && (
-                  <div className="mt-3 bg-emerald-950/60 border border-emerald-700/80 rounded-xl p-2.5 text-left text-xs text-emerald-300 flex items-center justify-between">
-                    <div>
-                      <div className="font-bold flex items-center gap-1.5">
-                        <Check size={14} /> Активна модель: {customModelFileName}
-                      </div>
-                      {customModelInfo && (
-                        <div className="text-[10px] text-emerald-400 font-mono mt-0.5">
-                          {customModelInfo}
-                        </div>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => handleSelectPreset('farmer')}
-                      className="px-2 py-1 bg-stone-900 text-stone-300 hover:text-white rounded text-[10px]"
-                    >
-                      Сброс
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-4 pt-3 border-t border-stone-800 flex justify-end">
-                <button
-                  onClick={() => setShowSkinModal(false)}
-                  className="px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-xs font-bold uppercase font-mono text-white transition-all"
-                >
-                  Вернуться на поле
-                </button>
-              </div>
-
-            </div>
-          </div>
-        )}
 
       {/* ДИАЛОГ ОКНА ОКОНЧАНИЯ СМЕНЫ В СТИЛЕ SA-MP DIALOG */}
       {isShiftComplete && (
