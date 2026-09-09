@@ -116,15 +116,6 @@ export default function RoadEditor({ onClose }) {
   const [routeBusStops, setRouteBusStops] = useState({});  // { waypoint_id: "stop_name" }
   const [editingStopId, setEditingStopId] = useState(null);
   const [editingStopName, setEditingStopName] = useState('');
-  const [savedRoutes, setSavedRoutes] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('roadEditorBusRoutes') || '[]'); }
-    catch { return []; }
-  });
-
-  // Save bus routes to localStorage
-  useEffect(() => {
-    localStorage.setItem('roadEditorBusRoutes', JSON.stringify(savedRoutes));
-  }, [savedRoutes]);
   
   // LSPD patrol route builder state
   const [patrolName, setPatrolName] = useState('');
@@ -466,7 +457,7 @@ export default function RoadEditor({ onClose }) {
     const locs = locations.filter(l => !l.moved).map(l => `{ id: '${l.id}', x: ${l.x}, y: ${l.y}, name: '${l.name}', type: '${l.type}', nearestWaypoint: '${l.nearestWaypoint}' },`).join('\n');
     const movedLocs = locations.filter(l => l.moved).map(l => `{ id: '${l.id}', x: ${l.x}, y: ${l.y}, name: '${l.name}', type: '${l.type}' },`).join('\n');
     const hs = hotspots.map(h => `{ id: '${h.locationId}', img: ${h.imageIndex}, x: ${h.x.toFixed(2)}, y: ${h.y.toFixed(2)}, w: ${h.w.toFixed(2)}, h: ${h.h.toFixed(2)}, action: '${h.action}', label: '${h.label}' }`).join(',\n      ');
-    const busRoutes = savedRoutes.length > 0 ? savedRoutes.map(r => `  {\n    id: '${r.id}',\n    name: '${r.name}',\n    stops: ${JSON.stringify(r.stops)},\n    pay: ${JSON.stringify(r.pay)},\n    exp: ${r.exp},\n    description: '${(r.description || '').replace(/'/g, "\\'")}',\n  }`).join(',\n') : '';
+    const busRoutes = ''; // маршруты только в Supabase
     const patrolRoutes = savedPatrols.length > 0 ? savedPatrols.map(p => `  {\n    id: '${p.id}',\n    name: '${p.name}',\n    stops: ${JSON.stringify(p.stops)},\n    description: '${(p.description || '').replace(/'/g, "\\'")}',\n  }`).join(',\n') : '';
     let out = '';
     if (wp) out += `// Новые точки\n${wp}\n\n`;
@@ -720,63 +711,19 @@ export default function RoadEditor({ onClose }) {
             )}
             
             {routeStops.length >= 2 && routeName && (
-              <div className="flex gap-2">
-                <button onClick={() => {
-                  const route = {
-                    id: `route_custom_${Date.now()}`,
-                    name: routeName,
-                    stops: [...routeStops],
-                    pay: routePay,
-                    exp: routeExp,
-                    description: routeDescription || 'Пользовательский маршрут',
-                    busStops: { ...routeBusStops },
-                  };
-                  setSavedRoutes(prev => [...prev, route]);
+              <button onClick={async () => {
+                if (routeStops.length < 2 || !routeName) { notify('Добавьте минимум 2 точки и название', 'error'); return; }
+                try {
+                  const code = `route_custom_${Date.now()}`;
+                  const { error } = await supabase.from('bus_routes').insert({
+                    code, name: routeName, stops: routeStops, bus_stops: routeBusStops,
+                    description: routeDescription || 'Кастомный маршрут', pay: routePay, exp: routeExp,
+                  });
+                  if (error) throw error;
                   setRouteStops([]); setRouteBusStops({}); setRouteName(''); setRouteDescription(''); setRoutePay(750); setRouteExp(10);
-                  notify(`Маршрут "${routeName}" сохранён!`);
-                }} className="flex-1 px-3 py-2 bg-yellow-600 hover:bg-yellow-500 rounded-xl text-[10px] font-black uppercase">💾 Сохранить</button>
-                <button onClick={async () => {
-                  if (routeStops.length < 2 || !routeName) { notify('Добавьте минимум 2 точки и название', 'error'); return; }
-                  try {
-                    const code = `route_custom_${Date.now()}`;
-                    const { error } = await supabase.from('bus_routes').insert({
-                      code, name: routeName, stops: routeStops, bus_stops: routeBusStops,
-                      description: routeDescription || 'Кастомный маршрут', pay: routePay, exp: routeExp,
-                    });
-                    if (error) throw error;
-                    setRouteStops([]); setRouteBusStops({}); setRouteName(''); setRouteDescription(''); setRoutePay(750); setRouteExp(10);
-                    notify(`Маршрут "${routeName}" в Supabase!`);
-                  } catch (e) { console.error(e); notify('Ошибка сохранения в БД', 'error'); }
-                }} className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-[10px] font-black uppercase">☁ В БД</button>
-              </div>
-            )}
-            
-            {savedRoutes.length > 0 && (
-              <div className="space-y-1 max-h-24 overflow-y-auto">
-                <span className="text-[9px] text-slate-500">Сохранённые маршруты:</span>
-                {savedRoutes.map((r, i) => (
-                  <div key={i} className="flex items-center justify-between px-2 py-1 bg-white/5 rounded-lg">
-                    <span className="text-[9px] text-yellow-200">🚌 {r.name} ({r.stops.length} остановок)</span>
-                    <button onClick={() => setSavedRoutes(prev => prev.filter((_, idx) => idx !== i))} className="text-[9px] text-red-400">×</button>
-                  </div>
-                ))}
-              </div>
-            )}
-            
-            {savedRoutes.length > 0 && (
-              <button onClick={() => {
-                const exportText = savedRoutes.map(r => `  {
-    id: '${r.id}',
-    name: '${r.name}',
-    stops: ${JSON.stringify(r.stops)},
-    pay: ${r.pay},
-    exp: ${r.exp},
-    description: '${(r.description || '').replace(/'/g, "\\'")}',
-    busStops: ${JSON.stringify(r.busStops || {})},
-  }`).join(',\n') + '\n';
-                copyToClipboard(exportText);
-                notify('Маршруты скопированы! Добавьте в useBusStore.js → BUS_ROUTES');
-              }} className="w-full px-3 py-2 bg-[#7eff67]/20 hover:bg-[#7eff67]/30 border border-[#7eff67]/30 rounded-xl text-[10px] font-black uppercase text-[#7eff67]">📋 Экспорт маршрутов</button>
+                  notify(`Маршрут "${routeName}" сохранён! (Виден всем игрокам)`);
+                } catch (e) { console.error(e); notify('Ошибка сохранения в БД', 'error'); }
+              }} className="w-full px-3 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-[10px] font-black uppercase">☁ Сохранить маршрут (для всех игроков)</button>
             )}
             </>
             )}

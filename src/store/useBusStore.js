@@ -6,10 +6,10 @@ import { useTravelStore } from './useTravelStore';
 import { supabase } from '../api/supabase';
 
 const BASE_ROUTES = [
-  { id: 'route_1', name: 'Центральный круг', stops: ['404','405','406','254','407','408','330','409','329','410','411','383','403','404'], pay: 750, exp: 10, description: 'Центр города через главные магистрали', busStops: [] },
-  { id: 'route_2', name: 'Западный экспресс', stops: ['373','374','375','376','107','377','378','379','380','381','382','308','383','396','395','309','394','393','378','377','376','375','374','373'], pay: 1000, exp: 15, description: 'Западный район промышленных зон', busStops: [] },
-  { id: 'route_3', name: 'Южный маршрут', stops: ['350','351','352','353','354','355','356','288','357','358','359','360','361','291','362','363','364','365','279','196','197','198','279','281','280','279','291','361','360','359','358','357','288','356','355','354','353','352','351','350'], pay: 1250, exp: 20, description: 'Юг города — длинные расстояния, высокая оплата', busStops: [] },
-  { id: 'route_4', name: 'Восточная петля', stops: ['466','467','468','469','470','471','472','468','467','466'], pay: 650, exp: 8, description: 'Короткий маршрут восточного района', busStops: [] },
+  { id: 'route_1', name: 'Центральный круг', stops: ['404','405','406','254','407','408','330','409','329','410','411','383','403','404'], pay: 750, exp: 10, description: 'Центр города через главные магистрали', busStops: {} },
+  { id: 'route_2', name: 'Западный экспресс', stops: ['373','374','375','376','107','377','378','379','380','381','382','308','383','396','395','309','394','393','378','377','376','375','374','373'], pay: 1000, exp: 15, description: 'Западный район промышленных зон', busStops: {} },
+  { id: 'route_3', name: 'Южный маршрут', stops: ['350','351','352','353','354','355','356','288','357','358','359','360','361','291','362','363','364','365','279','196','197','198','279','281','280','279','291','361','360','359','358','357','288','356','355','354','353','352','351','350'], pay: 1250, exp: 20, description: 'Юг города — длинные расстояния, высокая оплата', busStops: {} },
+  { id: 'route_4', name: 'Восточная петля', stops: ['466','467','468','469','470','471','472','468','467','466'], pay: 650, exp: 8, description: 'Короткий маршрут восточного района', busStops: {} },
 ];
 
 const BUS_DEPOT = { x: 5252, y: 4982 };
@@ -17,7 +17,6 @@ const BONUS_PER_ROUTE = 50;
 const STOP_DURATION = 10000;
 
 async function loadBusRoutes() {
-  const customLocal = (() => { try { return JSON.parse(localStorage.getItem('roadEditorBusRoutes') || '[]'); } catch { return []; } })();
   let customSupabase = [];
   try {
     const { data } = await supabase.from('bus_routes').select('*').order('created_at', { ascending: true });
@@ -26,7 +25,7 @@ async function loadBusRoutes() {
       return { id: r.id, name: r.name, stops: typeof r.stops === 'string' ? JSON.parse(r.stops) : r.stops, pay: r.pay, exp: r.exp || 10, description: r.description || '', busStops: typeof busStops === 'object' && !Array.isArray(busStops) ? busStops : {} };
     });
   } catch (e) { console.warn('[Bus] Failed to load routes:', e); }
-  return [...BASE_ROUTES, ...customLocal, ...customSupabase];
+  return [...BASE_ROUTES, ...customSupabase];
 }
 
 export const useBusStore = create((set, get) => ({
