@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, Fuel, Wrench, Gauge, Settings, CarFront } from 'lucide-react';
 import { VEHICLE_DATABASE, VEHICLE_COLORS, TUNING_CONFIG } from '../data/vehicleConfig';
+import { calculateOverallCondition, getPerformanceMultiplier } from '../utils/vehicleWear';
 
 export default function VehicleInfoMenu({ vehicle, onClose }) {
   if (!vehicle) return null;
@@ -8,9 +9,10 @@ export default function VehicleInfoMenu({ vehicle, onClose }) {
   const cfg = VEHICLE_DATABASE[vehicle.model_id];
   const fuelMax = cfg?.fuelMax || vehicle.max_fuel || 100;
   const fuelPercent = Math.round((vehicle.fuel / fuelMax) * 100);
-  const health = vehicle.health || 0;
+  const condition = Math.round(calculateOverallCondition(vehicle));
   const mileage = Math.round(vehicle.mileage || 0);
   const colorData = VEHICLE_COLORS.find(c => c.id === vehicle.color);
+  const perf = getPerformanceMultiplier(condition / 100);
 
   const tuningItems = [
     { key: 'engine_stage', ...TUNING_CONFIG.engine, current: vehicle.engine_stage || 0 },
@@ -75,17 +77,17 @@ export default function VehicleInfoMenu({ vehicle, onClose }) {
                 <span className="text-[11px] font-bold text-slate-300 w-10 text-right">{fuelPercent}%</span>
               </div>
 
-              {/* Health */}
+              {/* Condition */}
               <div className="flex items-center gap-3">
                 <Wrench size={14} className="text-emerald-400 shrink-0" />
                 <span className="text-[11px] text-slate-300 w-14">Состояние</span>
                 <div className="flex-1 h-1.5 bg-white/5 rounded-full overflow-hidden">
                   <div 
-                    className={`h-full rounded-full ${health > 50 ? 'bg-emerald-500' : health > 20 ? 'bg-amber-500' : 'bg-red-500'}`}
-                    style={{ width: `${health}%` }}
+                    className={`h-full rounded-full ${condition > 50 ? 'bg-emerald-500' : condition > 20 ? 'bg-amber-500' : 'bg-red-500'}`}
+                    style={{ width: `${condition}%` }}
                   />
                 </div>
-                <span className="text-[11px] font-bold text-slate-300 w-10 text-right">{health}%</span>
+                <span className="text-[11px] font-bold text-slate-300 w-14 text-right">{condition}%</span>
               </div>
 
               {/* Mileage */}

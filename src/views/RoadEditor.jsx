@@ -6,6 +6,7 @@ import { getLinkedLocations, saveEditorLocations, resetEditorLocations, getSaved
 import { LOCATION_IMAGES } from '../data/locationStyles';
 import { HOUSE_PREVIEWS_MAP } from '../data/houseStyles';
 import { isImageIcon } from '../utils/iconHelper';
+import { supabase } from '../api/supabase';
 
 export default function RoadEditor({ onClose }) {
   const [waypoints, setWaypoints] = useState({ ...WAYPOINTS });
@@ -108,11 +109,13 @@ export default function RoadEditor({ onClose }) {
   
   // Bus route builder state
   const [routeName, setRouteName] = useState('');
-  const [routePayMin, setRoutePayMin] = useState(500);
-  const [routePayMax, setRoutePayMax] = useState(800);
+  const [routePay, setRoutePay] = useState(750);
   const [routeExp, setRouteExp] = useState(10);
   const [routeDescription, setRouteDescription] = useState('');
   const [routeStops, setRouteStops] = useState([]);
+  const [routeBusStops, setRouteBusStops] = useState({});  // { waypoint_id: "stop_name" }
+  const [editingStopId, setEditingStopId] = useState(null);
+  const [editingStopName, setEditingStopName] = useState('');
   const [savedRoutes, setSavedRoutes] = useState(() => {
     try { return JSON.parse(localStorage.getItem('roadEditorBusRoutes') || '[]'); }
     catch { return []; }
@@ -566,7 +569,7 @@ export default function RoadEditor({ onClose }) {
           {mode === 'location' && `📍 Двойной клик — добавить локацию (${locations.length} добавлено)`}
           {mode === 'move' && '✋ Перетащите маркер локации на новое место'}
           {mode === 'zone' && (drawingZone ? '✅ Кликните ещё раз для завершения зоны' : '🖱️ Нажмите и потяните для рисования зоны входа')}
-          {mode === 'busroute' && `🗺️ Двойной клик по waypoint — добавить точку маршрута (${activeStops.length} точек)`}
+          {mode === 'busroute' && `🗺️ Двойной клик по waypoint — добавить точку маршрута (${activeStops.length} точек, ${routeTab === 'bus' ? Object.keys(routeBusStops).length + ' остановок' : ''})`}
         </div>
         {mode === 'move' && (() => {
           const moved = locations.filter(l => l.moved);
@@ -652,7 +655,7 @@ export default function RoadEditor({ onClose }) {
             {/* Route organization tabs */}
             <div className="flex gap-2">
               <button onClick={() => setRouteTab('bus')} className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${routeTab === 'bus' ? 'bg-yellow-600 text-white' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}>🚌 Автобус</button>
-              <button onClick={() => setRouteTab('patrol')} className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${routeTab === 'patrol' ? 'bg-blue-600 text-white' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}>� LSPD</button>
+              <button onClick={() => setRouteTab('patrol')} className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${routeTab === 'patrol' ? 'bg-blue-600 text-white' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}>🚔 LSPD</button>
             </div>
             
             {/* === BUS ROUTE TAB === */}
@@ -660,24 +663,61 @@ export default function RoadEditor({ onClose }) {
             <>
             <div className="flex gap-2 flex-wrap">
               <input value={routeName} onChange={e => setRouteName(e.target.value)} placeholder="Название маршрута" className="flex-1 min-w-[120px] px-2 py-1 bg-white/5 border border-white/20 rounded-lg text-[10px] text-white placeholder-slate-500" />
-              <input type="number" value={routePayMin} onChange={e => setRoutePayMin(Number(e.target.value))} className="w-20 px-2 py-1 bg-white/5 border border-white/20 rounded-lg text-[10px] text-white" title="Мин. оплата" />
-              <input type="number" value={routePayMax} onChange={e => setRoutePayMax(Number(e.target.value))} className="w-20 px-2 py-1 bg-white/5 border border-white/20 rounded-lg text-[10px] text-white" title="Макс. оплата" />
+              <input type="number" value={routePay} onChange={e => setRoutePay(Number(e.target.value))} className="w-24 px-2 py-1 bg-white/5 border border-white/20 rounded-lg text-[10px] text-white" title="Фиксированная оплата" />
               <input type="number" value={routeExp} onChange={e => setRouteExp(Number(e.target.value))} className="w-16 px-2 py-1 bg-white/5 border border-white/20 rounded-lg text-[10px] text-white" title="XP" />
             </div>
             <input value={routeDescription} onChange={e => setRouteDescription(e.target.value)} placeholder="Описание маршрута" className="px-2 py-1 bg-white/5 border border-white/20 rounded-lg text-[10px] text-white placeholder-slate-500" />
             
             <div className="flex flex-wrap gap-1 items-center">
               <span className="text-[9px] text-yellow-400">Остановки:</span>
-              {routeStops.map((stop, idx) => (
-                <span key={idx} className="inline-flex items-center gap-1 px-2 py-0.5 bg-yellow-500/20 border border-yellow-500/30 rounded-lg text-[9px] text-yellow-200">
-                  {idx + 1}. {stop}
-                  <button onClick={() => setRouteStops(prev => prev.filter((_, i) => i !== idx))} className="text-yellow-400 hover:text-red-400">×</button>
-                </span>
-              ))}
+              {routeStops.map((stop, idx) => {
+                const isBusStop = routeBusStops[stop] !== undefined;
+                return (
+                  <span key={idx} className={`inline-flex items-center gap-1 px-2 py-0.5 border rounded-lg text-[9px] ${isBusStop ? 'bg-green-500/20 border-green-500/30 text-green-200' : 'bg-yellow-500/20 border-yellow-500/30 text-yellow-200'}`}>
+                    {idx + 1}. {stop}
+                    <button onClick={() => {
+                      if (routeBusStops[stop] !== undefined) {
+                        const n = { ...routeBusStops }; delete n[stop]; setRouteBusStops(n);
+                        notify(`Остановка ${stop} убрана`);
+                      } else {
+                        setRouteBusStops(p => ({ ...p, [stop]: '' }));
+                        notify(`🚏 Остановка ${stop} добавлена (10 сек)`);
+                      }
+                    }} className={`cursor-pointer ${isBusStop ? 'text-green-400' : 'text-yellow-400 hover:text-green-400'}`} title="Сделать/убрать автобусную остановку">
+                      {isBusStop ? '🚏' : '○'}
+                    </button>
+                    <button onClick={() => { setEditingStopId(stop); setEditingStopName(routeBusStops[stop] || ''); }} className="text-yellow-400 hover:text-green-400" title="Назвать остановку">✎</button>
+                    <button onClick={() => setRouteStops(prev => prev.filter((_, i) => i !== idx))} className="text-yellow-400 hover:text-red-400">×</button>
+                  </span>
+                );
+              })}
               {routeStops.length > 0 && (
-                <button onClick={() => { setRouteStops([]); setRouteName(''); setRouteDescription(''); }} className="px-2 py-0.5 bg-red-500/20 border border-red-500/30 rounded-lg text-[9px] text-red-400">Очистить</button>
+                <button onClick={() => { setRouteStops([]); setRouteBusStops({}); setRouteName(''); setRouteDescription(''); }} className="px-2 py-0.5 bg-red-500/20 border border-red-500/30 rounded-lg text-[9px] text-red-400">Очистить</button>
               )}
             </div>
+            
+            {/* Bus stop naming dialog */}
+            {editingStopId && (
+              <div className="flex gap-2 items-center p-2 bg-green-900/20 border border-green-500/30 rounded-xl">
+                <span className="text-[9px] text-green-400">🚏 Название для точки {editingStopId}:</span>
+                <input autoFocus value={editingStopName} onChange={e => setEditingStopName(e.target.value)} placeholder="Напр. Центральная (пусто = без названия)" className="flex-1 px-2 py-1 bg-white/5 border border-white/20 rounded-lg text-[10px] text-white" onKeyDown={e => { if (e.key === 'Enter') { setRouteBusStops(p => ({ ...p, [editingStopId]: editingStopName.trim() })); setEditingStopId(null); setEditingStopName(''); } else if (e.key === 'Escape') { setEditingStopId(null); } }} />
+                <button onClick={() => { setRouteBusStops(p => ({ ...p, [editingStopId]: editingStopName.trim() })); setEditingStopId(null); setEditingStopName(''); }} className="px-2 py-1 bg-green-600 rounded-lg text-[9px] font-black">✓</button>
+                <button onClick={() => { if (editingStopId in routeBusStops) { setRouteBusStops(p => { const n = { ...p }; delete n[editingStopId]; return n; }); setEditingStopId(null); } }} className="px-2 py-1 bg-red-600 rounded-lg text-[9px] font-black">×</button>
+              </div>
+            )}
+            
+            {/* Bus stops list */}
+            {Object.keys(routeBusStops).length > 0 && (
+              <div className="flex flex-wrap gap-1 items-center">
+                <span className="text-[9px] text-green-400">Автобусные остановки (10 сек):</span>
+                {Object.entries(routeBusStops).map(([wpId, name]) => (
+                  <span key={wpId} className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-500/20 border border-green-500/30 rounded-lg text-[9px] text-green-200">
+                    🚏 {name || wpId}
+                    <button onClick={() => { const n = { ...routeBusStops }; delete n[wpId]; setRouteBusStops(n); }} className="text-green-400 hover:text-red-400">×</button>
+                  </span>
+                ))}
+              </div>
+            )}
             
             {routeStops.length >= 2 && routeName && (
               <div className="flex gap-2">
@@ -686,14 +726,28 @@ export default function RoadEditor({ onClose }) {
                     id: `route_custom_${Date.now()}`,
                     name: routeName,
                     stops: [...routeStops],
-                    pay: [routePayMin, routePayMax],
+                    pay: routePay,
                     exp: routeExp,
                     description: routeDescription || 'Пользовательский маршрут',
+                    busStops: { ...routeBusStops },
                   };
                   setSavedRoutes(prev => [...prev, route]);
-                  setRouteStops([]); setRouteName(''); setRouteDescription(''); setRoutePayMin(500); setRoutePayMax(800); setRouteExp(10);
+                  setRouteStops([]); setRouteBusStops({}); setRouteName(''); setRouteDescription(''); setRoutePay(750); setRouteExp(10);
                   notify(`Маршрут "${routeName}" сохранён!`);
-                }} className="flex-1 px-3 py-2 bg-yellow-600 hover:bg-yellow-500 rounded-xl text-[10px] font-black uppercase">💾 Сохранить маршрут</button>
+                }} className="flex-1 px-3 py-2 bg-yellow-600 hover:bg-yellow-500 rounded-xl text-[10px] font-black uppercase">💾 Сохранить</button>
+                <button onClick={async () => {
+                  if (routeStops.length < 2 || !routeName) { notify('Добавьте минимум 2 точки и название', 'error'); return; }
+                  try {
+                    const code = `route_custom_${Date.now()}`;
+                    const { error } = await supabase.from('bus_routes').insert({
+                      code, name: routeName, stops: routeStops, bus_stops: routeBusStops,
+                      description: routeDescription || 'Кастомный маршрут', pay: routePay, exp: routeExp,
+                    });
+                    if (error) throw error;
+                    setRouteStops([]); setRouteBusStops({}); setRouteName(''); setRouteDescription(''); setRoutePay(750); setRouteExp(10);
+                    notify(`Маршрут "${routeName}" в Supabase!`);
+                  } catch (e) { console.error(e); notify('Ошибка сохранения в БД', 'error'); }
+                }} className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-[10px] font-black uppercase">☁ В БД</button>
               </div>
             )}
             
@@ -715,9 +769,10 @@ export default function RoadEditor({ onClose }) {
     id: '${r.id}',
     name: '${r.name}',
     stops: ${JSON.stringify(r.stops)},
-    pay: ${JSON.stringify(r.pay)},
+    pay: ${r.pay},
     exp: ${r.exp},
     description: '${(r.description || '').replace(/'/g, "\\'")}',
+    busStops: ${JSON.stringify(r.busStops || {})},
   }`).join(',\n') + '\n';
                 copyToClipboard(exportText);
                 notify('Маршруты скопированы! Добавьте в useBusStore.js → BUS_ROUTES');
@@ -869,11 +924,15 @@ export default function RoadEditor({ onClose }) {
               {mode === 'busroute' && routeTab === 'bus' && routeStops.map((stopId, idx) => {
                 const pt = waypoints[stopId];
                 if (!pt) return null;
+                const isBusStop = routeBusStops[stopId] !== undefined;
                 return (
                   <g key={`bs${idx}`}>
-                    <circle cx={pt.x} cy={pt.y} r="12" fill="#eab308" fillOpacity="0.3" />
-                    <circle cx={pt.x} cy={pt.y} r="8" fill="#ca8a04" />
+                    <circle cx={pt.x} cy={pt.y} r={isBusStop ? "14" : "12"} fill={isBusStop ? "#22c55e" : "#eab308"} fillOpacity="0.3" />
+                    <circle cx={pt.x} cy={pt.y} r={isBusStop ? "10" : "8"} fill={isBusStop ? "#16a34a" : "#ca8a04"} />
                     <text x={pt.x} y={pt.y + 3} textAnchor="middle" fill="white" fontSize="10" fontWeight="bold">{idx + 1}</text>
+                    {isBusStop && (
+                      <text x={pt.x} y={pt.y - 16} textAnchor="middle" fill="#4ade80" fontSize="8" fontWeight="bold">{routeBusStops[stopId] || '🚏'}</text>
+                    )}
                   </g>
                 );
               })}

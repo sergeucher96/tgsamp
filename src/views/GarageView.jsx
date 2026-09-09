@@ -3,6 +3,7 @@ import { useNavigationStore } from '../store/useNavigationStore';
 import { useVehicleStore } from '../store/useVehicleStore';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { VEHICLE_DATABASE, VEHICLE_COLORS } from '../data/vehicleConfig';
+import { calculateOverallCondition } from '../utils/vehicleWear';
 import { ArrowLeft, Fuel, Wrench, Gauge, Power, Paintbrush, ParkingCircle } from 'lucide-react';
 
 export default function GarageView() {
@@ -35,6 +36,7 @@ export default function GarageView() {
     const veh = selectedVehicle;
     const cfg = VEHICLE_DATABASE[veh.model_id];
     const fuelPercent = cfg?.fuelMax ? Math.round((veh.fuel / cfg.fuelMax) * 100) : 0;
+    const condition = Math.round(calculateOverallCondition(veh));
 
     return (
       <div className="fixed inset-0 z-[300] bg-[#080c14] flex flex-col text-white">
@@ -76,9 +78,9 @@ export default function GarageView() {
               <Wrench size={16} className="text-emerald-400 shrink-0" />
               <span className="text-[11px] text-slate-300 w-16">Состояние</span>
               <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
-                <div className={`h-full rounded-full ${veh.health > 50 ? 'bg-emerald-500' : veh.health > 20 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${veh.health}%` }} />
+                <div className={`h-full rounded-full ${condition > 50 ? 'bg-emerald-500' : condition > 20 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${condition}%` }} />
               </div>
-              <span className="text-[11px] font-bold text-slate-300 w-10 text-right">{veh.health}%</span>
+              <span className="text-[11px] font-bold text-slate-300 w-10 text-right">{condition}%</span>
             </div>
             <div className="flex items-center gap-3">
               <Gauge size={16} className="text-blue-400 shrink-0" />
@@ -208,7 +210,7 @@ export default function GarageView() {
                     </div>
                     <div className="flex items-center gap-1">
                       <Wrench size={10} className="text-emerald-400" />
-                      <span className="text-[10px] text-slate-400">{veh.health}%</span>
+                      <span className="text-[10px] text-slate-400">{Math.round(calculateOverallCondition(veh))}%</span>
                     </div>
                   </div>
                 </div>

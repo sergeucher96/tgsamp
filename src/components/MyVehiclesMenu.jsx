@@ -4,6 +4,7 @@ import { VEHICLE_DATABASE } from '../data/vehicleConfig';
 import { useVehicleStore } from '../store/useVehicleStore';
 import { useTravelStore } from '../store/useTravelStore';
 import { LOCATIONS } from '../data/locations';
+import { calculateOverallCondition } from '../utils/vehicleWear';
 import CarPreviewImage from './CarPreviewImage';
 
 export default function MyVehiclesMenu({ onClose }) {
@@ -66,7 +67,7 @@ export default function MyVehiclesMenu({ onClose }) {
                 const status = getVehicleStatus(vehicle);
                 const fuelMax = cfg?.fuelMax || vehicle.max_fuel || 100;
                 const fuelPercent = Math.round((vehicle.fuel / fuelMax) * 100);
-                const health = vehicle.health || 0;
+                const condition = Math.round(calculateOverallCondition(vehicle));
 
                 return (
                   <div key={vehicle.id} className="bg-white/[0.03] border border-white/6 p-4 rounded-2xl">
@@ -107,11 +108,11 @@ export default function MyVehiclesMenu({ onClose }) {
                         <span className="text-[10px] text-slate-300 w-12">Состояние</span>
                         <div className="flex-1 h-1.5 bg-white/5 rounded-full overflow-hidden">
                           <div
-                            className={`h-full rounded-full ${health > 50 ? 'bg-emerald-500' : health > 20 ? 'bg-amber-500' : 'bg-red-500'}`}
-                            style={{ width: `${health}%` }}
+                            className={`h-full rounded-full ${condition > 50 ? 'bg-emerald-500' : condition > 20 ? 'bg-amber-500' : 'bg-red-500'}`}
+                            style={{ width: `${condition}%` }}
                           />
                         </div>
-                        <span className="text-[10px] font-bold text-slate-300 w-8 text-right">{health}%</span>
+                        <span className="text-[10px] font-bold text-slate-300 w-8 text-right">{condition}%</span>
                       </div>
 
                       <div className="flex items-center gap-2">

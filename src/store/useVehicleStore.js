@@ -4,7 +4,8 @@ import { usePlayerStore } from './usePlayerStore';
 import { useInventoryStore } from './useInventoryStore';
 import { useQuestStore } from './useQuestStore';
 import { HOUSE_CLASSES } from '../data/houseConfig';
-import { VEHICLE_DATABASE, TUNING_CONFIG, HEALTH_PENALTIES, REPAIR_COST_PER_PERCENT } from '../data/vehicleConfig';
+import { VEHICLE_DATABASE, TUNING_CONFIG, HEALTH_PENALTIES, REPAIR_COST_PER_PERCENT, DIAGNOSTIC_COST } from '../data/vehicleConfig';
+import { getDiagnosis, getServiceUpdates, calculateOverallCondition, getPerformanceMultiplier } from '../utils/vehicleWear';
 
 // Calculate effective speed based on tuning and health
 export function calculateEffectiveSpeed(vehicle) {
@@ -390,6 +391,74 @@ export const useVehicleStore = create((set, get) => ({
     } finally {
       set({ isLoading: false });
     }
+  },
+
+  // Diagnostic — returns the diagnosis data for a vehicle
+  diagnoseVehicle: (vehicleId) => {
+    const vehicles = get().myVehicles;
+    const vehicle = vehicles.find(v => v.id === vehicleId);
+    if (!vehicle) return null;
+    return getDiagnosis(vehicle);
+  },
+
+  // Service a specific wear system
+  serviceWearSystem: async (vehicleId, systemKey) => {
+    const { player, updateProfile } = usePlayerStore.getState();
+    const vehicles = get().myVehicles;
+    const vehicle = vehicles.find(v => v.id === vehicleId);
+    if (!vehicle) return alert("Машина не найдена!");
+
+    const WEAR_SYSTEMS = (await import('../data/vehicleConfig')).WEAR_SYSTEMS;
+    const sys = WEAR_SYSTEMS[systemKey];
+    if (!sys) return alert("Неизвестная система!");
+
+    if (Number(player.money) < sys.cost) {
+      alert(`Недостаточно денег! Нужно ${sys.cost.toLocaleString()} ₽`);
+      return false;
+    }
+
+    set({ isLoading: true });
+    try {
+      const updates = getServiceUpdates(vehicle, systemKey);
+      // Recalculate overall condition
+      const tempVehicle = { ...vehicle, ...updates };
+      updates.condition = calculateOverallCondition(tempVehicle);
+      // Backwards-compat: set health to condition
+      updates.health = updates.condition;
+
+      const { error } = await supabase
+        .from('vehicles')
+        .update(updates)
+        .eq('id', vehicleId);
+
+      if (error) throw error;
+      await updateProfile({ money: Number(player.money) - sys.cost });
+      await get().fetchVehicles();
+      alert(`${sys.name} — ${sys.action.toLowerCase()}!`);
+      return true;
+    } catch (e) {
+      console.error(e);
+      alert("Ошибка при обслуживании!");
+      return false;
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  // Diagnostic cost payment
+  diagnosticVehicle: async (vehicleId) => {
+    const { player, updateProfile } = usePlayerStore.getState();
+    const vehicles = get().myVehicles;
+    const vehicle = vehicles.find(v => v.id === vehicleId);
+    if (!vehicle) return null;
+
+    if (Number(player.money) < DIAGNOSTIC_COST) {
+      alert(`Недостаточно денег! Нужно ${DIAGNOSTIC_COST.toLocaleString()} ₽`);
+      return null;
+    }
+
+    await updateProfile({ money: Number(player.money) - DIAGNOSTIC_COST });
+    return getDiagnosis(vehicle);
   },
 
 }));

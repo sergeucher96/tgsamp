@@ -4,7 +4,8 @@ import { useVehicleStore } from './useVehicleStore';
 import { WAYPOINTS } from '../data/roads';
 import { getMergedLocations, refreshFinalLocations } from '../data/locations';
 import { findShortestPath } from '../utils/pathfinder';
-import { VEHICLE_DATABASE, HEALTH_WEAR_RATE } from '../data/vehicleConfig';
+import { VEHICLE_DATABASE } from '../data/vehicleConfig';
+import { applyWear, calculateOverallCondition, getPerformanceMultiplier } from '../utils/vehicleWear';
 
 export const useTravelStore = create((set, get) => ({
   isMoving: false,
@@ -75,34 +76,42 @@ export const useTravelStore = create((set, get) => ({
       animatedRotation: player.rotation || 0,
     });
 
-    // Calculate health loss if driving a vehicle
-    // Health degrades proportionally to distance traveled
+    // Apply wear system
     let effectiveSpeed = moveSpeed;
     let vehicleId = null;
     if (activeVehicle) {
       vehicleId = activeVehicle.id;
-      const currentHealth = activeVehicle.health || 100;
+      const vehicleUpdates = applyWear(activeVehicle, totalDistance);
+      const condition = vehicleUpdates.condition || 100;
+      const perf = getPerformanceMultiplier(condition);
+      effectiveSpeed = Math.round(moveSpeed * perf.speed);
 
-      // Apply health penalty to speed (before health degradation)
-      if (currentHealth < 30) {
-        effectiveSpeed = moveSpeed * 0.5;  // Below 30%: 50% slower
-      } else if (currentHealth < 50) {
-        effectiveSpeed = moveSpeed * 0.8;  // Below 50%: 20% slower
+      // Apply speed penalty based on condition
+      if (condition < 30) {
+        effectiveSpeed = moveSpeed * 0.5;
+      } else if (condition < 50) {
+        effectiveSpeed = moveSpeed * 0.8;
       }
 
-      // Calculate average health for the trip (assuming linear degradation)
-      // 1% health per 500 distance units
-      const healthLoss = Math.min(currentHealth, totalDistance / 500);
-      const newHealth = Math.max(0, currentHealth - healthLoss);
-
-      // If health drops significantly during travel, use average speed penalty
-      if (newHealth < 30 && currentHealth >= 50) {
-        effectiveSpeed = moveSpeed * 0.7;  // Average penalty during transition
-      } else if (newHealth < 30 && currentHealth < 50) {
-        effectiveSpeed = moveSpeed * 0.65; // Mostly slow
-      }
+      // Also update health backwards-compat (health = condition)
+      const newHealth = Math.max(0, condition);
 
       useVehicleStore.getState().updateVehicleHealth(vehicleId, newHealth);
+      // Save wear data to DB
+      const { supabase } = await import('../api/supabase');
+      const { error } = await supabase
+        .from('vehicles')
+        .update(vehicleUpdates)
+        .eq('id', vehicleId);
+
+      if (!error) {
+        const vehicles = useVehicleStore.getState().myVehicles.map(v =>
+          v.id === vehicleId ? { ...v, ...vehicleUpdates } : v
+        );
+        useVehicleStore.setState({ myVehicles: vehicles });
+        const updatedActiveVehicle = { ...activeVehicle, ...vehicleUpdates, health: newHealth };
+        usePlayerStore.getState().setLocalActiveVehicle(updatedActiveVehicle);
+      }
     }
 
     await animateRoute(fullRoute, path, segmentLengths, effectiveSpeed, totalDistance, token);

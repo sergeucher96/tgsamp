@@ -38,7 +38,7 @@ export const VEHICLE_DATABASE = {
     fuelType: '92',
     fuelMax: 120,
     colors: ['yellow', 'white'],
-    model3d: '/models/cars/test.glb'
+    model3d: '/models/cars/bus.glb'
   },
   'taxi': {
     id: 'taxi',
@@ -254,3 +254,78 @@ export const VEHICLE_COLORS = [
   { id: 'blue',  name: 'Синий', hex: '#3B82F6' },
   { id: 'green', name: 'Зеленый', hex: '#10B981' }
 ];
+
+// ============================================================
+// СИСТЕМА ИЗНОСА — 9 систем автомобиля
+// ============================================================
+
+// Базовые ресурсы (в км). Каждая модель может переопределить.
+export const WEAR_SYSTEMS = {
+  oil:         { name: 'Моторное масло',   type: 'consumable',  baseResource: 5000,  action: 'Заменить',    cost: 300 },
+  tires:       { name: 'Шины',            type: 'consumable',  baseResource: 30000, action: 'Заменить',    cost: 4000 },
+  battery:     { name: 'Аккумулятор',     type: 'consumable',  baseResource: 40000, action: 'Заменить',    cost: 6000 },
+  brakes:      { name: 'Тормозная система', type: 'service',    baseResource: 20000, action: 'Обслужить',   cost: 2000 },
+  cooling:     { name: 'Охлаждающая система', type: 'service',  baseResource: 30000, action: 'Обслужить',   cost: 2500 },
+  electric:    { name: 'Электрика',       type: 'service',     baseResource: 50000, action: 'Обслужить',   cost: 4000 },
+  suspension:  { name: 'Подвеска',        type: 'service',     baseResource: 60000, action: 'Обслужить',   cost: 5000 },
+  transmission:{ name: 'Трансмиссия',     type: 'major',       baseResource: 100000, action: 'Ремонт',     cost: 25000 },
+  engine:      { name: 'Двигатель',       type: 'major',       baseResource: 200000, action: 'Ремонт / капремонт', cost: 50000 },
+};
+
+// Порядок отображения в диагностике
+export const WEAR_SYSTEM_ORDER = ['oil', 'tires', 'battery', 'brakes', 'cooling', 'electric', 'suspension', 'transmission', 'engine'];
+
+// WIP — порог уведомления (70% — жёлтый)
+export const WEAR_WARN_THRESHOLD = 0.7;
+
+// Веса систем для расчёта общего состояния (на урокеน้ำมัน не учитывается)
+export const CONDITION_WEIGHTS = {
+  engine: 0.35,
+  transmission: 0.20,
+  suspension: 0.15,
+  brakes: 0.10,
+  cooling: 0.10,
+  electric: 0.05,
+  tires: 0.05,
+  // oil: 0 (масло влияет косвенно через двигатель)
+};
+
+// Пороги: состояние → множитель характеристик
+export const CONDITION_PERFORMANCE = [
+  { min: 1, max: 100, speed: 1.00, accel: 1.00, brakes: 1.00 },   // 90–100%
+  { min: 0.75, max: 0.89, speed: 0.99, accel: 0.99, brakes: 0.99 }, // 75–89%
+  { min: 0.60, max: 0.74, speed: 0.96, accel: 0.96, brakes: 0.96 }, // 60–74%
+  { min: 0.40, max: 0.59, speed: 0.90, accel: 0.88, brakes: 0.85 }, // 40–59%
+  { min: 0.20, max: 0.39, speed: 0.78, accel: 0.75, brakes: 0.70 }, // 20–39%
+  { min: 0.01, max: 0.19, speed: 0.55, accel: 0.50, brakes: 0.40 }, // 1–19%
+  { min: 0,   max: 0,   speed: 0.30, accel: 0.20, brakes: 0.20 },   // 0% критическое
+];
+
+// Коэффициенты износа двигателя при просроченном масле
+export const OIL_OVERDUE_EFFECTS = [
+  { ratio: 1.0,  multiplier: 1.0 },   // <= 100% ресурса
+  { ratio: 1.7,  multiplier: 1.25 },   // 70–100% просрочки
+  { ratio: 3.0,  multiplier: 1.75 },   // 70–200% просрочки
+  { ratio: Infinity, multiplier: 2.5 }, // > 200% просрочки
+];
+
+// Стоимость диагностики
+export const DIAGNOSTIC_COST = 150;
+
+// Модельные переопределения ресурсов (ВЗ п.18)
+export const WEAR_MODEL_OVERRIDES = {
+  infernus:  { engine: 150000, oil: 5000 },
+  sentinel:  { engine: 180000, oil: 5000 },
+  sport:     { engine: 160000, oil: 4000 },
+  suv:       { engine: 190000, suspension: 50000 },
+};
+
+/**
+ * Получить ресурс системы для конкретной модели
+ */
+export function getSystemResource(modelId, systemKey) {
+  const sys = WEAR_SYSTEMS[systemKey];
+  if (!sys) return 0;
+  const overrides = WEAR_MODEL_OVERRIDES[modelId];
+  return overrides && overrides[systemKey] !== undefined ? overrides[systemKey] : sys.baseResource;
+}

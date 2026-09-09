@@ -53,6 +53,7 @@ import BusinessView from './BusinessView';
 import BusDepotView from './BusDepotView';
 import LspdView from './LspdView';
 import MafiaView from './MafiaView';
+import AutoServiceView from './AutoServiceView';
 import { OrganizationPanel } from './OrganizationView';
 // Иконки
 import { 
@@ -115,9 +116,13 @@ function TravelOverlay({ player, activeVehicle, isMoving, remainingPath, routeTa
         <div className="relative flex items-center justify-center">
           <div className="absolute w-16 h-16 bg-blue-500/20 blur-xl rounded-full -z-10" />
           {busRouteRunning || busAwaitingRepeat ? (
-            <div className="w-16 h-16 bg-yellow-500 rounded-full flex items-center justify-center text-3xl shadow-2xl">
-              🚌
-            </div>
+            <CarPreviewImage
+              modelId="bus"
+              color="yellow"
+              viewMode="map"
+              className="w-16 h-16 object-contain drop-shadow-2xl"
+              alt="Bus"
+            />
           ) : patrolRouteRunning || patrolAwaitingRepeat ? (
             <div className="w-20 h-20 relative flex items-center justify-center shadow-2xl">
               <div className="absolute inset-0 bg-blue-500/30 rounded-full animate-ping" />
@@ -216,6 +221,7 @@ export default function MapView() {
   const [showLspd, setShowLspd] = useState(false);
   const [showMafia, setShowMafia] = useState(false);
   const [showHospital, setShowHospital] = useState(false);
+  const [showAutoService, setShowAutoService] = useState(false);
   const [locationView, setLocationView] = useState(null); // Локация для открытия 2D картинки
   const [selectedHotel, setSelectedHotel] = useState(null); // Выбранный отель (hotel_3, hotel_4)
   const [selectedBusiness, setSelectedBusiness] = useState(null); // Выбранный бизнес
@@ -235,7 +241,7 @@ export default function MapView() {
   const busCurrentRoute = useBusStore(state => state.currentRoute);
   const busRouteRunning = useBusStore(state => state.routeRunning);
   const busRepeatRoute = useBusStore(state => state.repeatRoute);
-  const busStopRoute = useBusStore(state => state.stopRoute);
+  const busStopRoute = useBusStore(state => state.endSession);
   const [showBusPopup, setShowBusPopup] = useState(false);
 
   useEffect(() => {
@@ -438,6 +444,7 @@ export default function MapView() {
     setShowLspd(false);
     setShowMafia(false);
     setShowHospital(false);
+    setShowAutoService(false);
   };
   useEffect(() => {
     window.closeAllMapViewViews = closeAllViews;
@@ -630,6 +637,7 @@ export default function MapView() {
       {showLspd && <LspdView onClose={() => setShowLspd(false)} />}
       {showMafia && <MafiaView onClose={() => setShowMafia(false)} />}
       {showHospital && <OrganizationPanel orgId='hospital' onClose={() => setShowHospital(false)} />}
+      {showAutoService && <AutoServiceView onClose={() => setShowAutoService(false)} />}
       {locationView && (
         <LocationView
           location={locationView}
@@ -687,6 +695,7 @@ export default function MapView() {
                else if (loc.type === 'lspd') { setShowLspd(true); }
                else if (loc.type === 'mafia') { setShowMafia(true); }
                else if (loc.type === 'hospital') { setShowHospital(true); }
+               else if (loc.id === 'sto_1') { setLocationView(null); setShowAutoService(true); }
                else if (loc.type === 'farm') { setShowFarm(true); }
               else if (loc.type === 'cafeteria') { setShowCafeteria(true); setCafeteriaBusinessId(loc.id); }
               else if (loc.type === 'showroom' || loc.id === 'showroom_ls') { setShowShowroom(true); }
@@ -717,6 +726,7 @@ export default function MapView() {
              else if (loc.type === 'lspd') { setShowLspd(true); return; }
              else if (loc.type === 'mafia') { setShowMafia(true); return; }
              else if (loc.type === 'hospital') { setShowHospital(true); return; }
+             else if (loc.id === 'sto_1') { setShowAutoService(true); return; } // СТО
               else if (loc.type === 'farm') { setShowFarm(true); return; }
              else if (loc.type === 'oil_rig') { setShowOilRig(true); return; }
              else if (loc.type === 'factory') { setShowFactory(true); return; }
@@ -1174,7 +1184,7 @@ export default function MapView() {
             <div className="bg-black/30 rounded-2xl p-4 space-y-2">
               <div className="flex justify-between items-center">
                 <span className="text-xs text-slate-400">Заработано</span>
-                <span className="text-base font-black text-emerald-400 italic">+{busCurrentRoute.pay[0].toLocaleString()}$–{busCurrentRoute.pay[1].toLocaleString()}$</span>
+                <span className="text-base font-black text-emerald-400 italic">+{Array.isArray(busCurrentRoute.pay) ? `${busCurrentRoute.pay[0].toLocaleString()}$–${busCurrentRoute.pay[1].toLocaleString()}$` : (busCurrentRoute.pay || 0).toLocaleString()}$</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-xs text-slate-400">Опыт</span>
