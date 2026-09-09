@@ -108,6 +108,8 @@ export default function RoadEditor({ onClose }) {
   const [notification, setNotification] = useState(null);
   
   // Bus route builder state
+  const [existingBusRoutes, setExistingBusRoutes] = useState([]);
+  const [selectedExistingRoute, setSelectedExistingRoute] = useState(null);
   const [routeName, setRouteName] = useState('');
   const [routePay, setRoutePay] = useState(750);
   const [routeExp, setRouteExp] = useState(10);
@@ -130,6 +132,27 @@ export default function RoadEditor({ onClose }) {
   useEffect(() => {
     localStorage.setItem('roadEditorPatrolRoutes', JSON.stringify(savedPatrols));
   }, [savedPatrols]);
+  
+  // Load existing bus routes from Supabase
+  useEffect(() => {
+    async function loadRoutes() {
+      try {
+        const { data } = await supabase.from('bus_routes').select('*').order('created_at', { ascending: false });
+        if (data) {
+          setExistingBusRoutes(data.map(r => ({
+            id: r.id,
+            name: r.name,
+            stops: typeof r.stops === 'string' ? JSON.parse(r.stops) : r.stops,
+            busStops: r.bus_stops || {},
+            pay: r.pay,
+            exp: r.exp,
+            description: r.description || '',
+          })));
+        }
+      } catch (e) { console.warn('[RoadEditor] Failed to load routes:', e); }
+    }
+    loadRoutes();
+  }, []);
   
   // Route tab: 'bus' | 'patrol' — organizations can be added later
   const [routeTab, setRouteTab] = useState('bus');
@@ -721,9 +744,32 @@ export default function RoadEditor({ onClose }) {
                   });
                   if (error) throw error;
                   setRouteStops([]); setRouteBusStops({}); setRouteName(''); setRouteDescription(''); setRoutePay(750); setRouteExp(10);
+                  setSelectedExistingRoute(null);
                   notify(`Маршрут "${routeName}" сохранён! (Виден всем игрокам)`);
+                  // Reload routes
+                  const { data } = await supabase.from('bus_routes').select('*').order('created_at', { ascending: false });
+                  if (data) setExistingBusRoutes(data.map(r => ({ id: r.id, name: r.name, stops: typeof r.stops === 'string' ? JSON.parse(r.stops) : r.stops, busStops: r.bus_stops || {}, pay: r.pay, exp: r.exp, description: r.description || '' })));
                 } catch (e) { console.error(e); notify('Ошибка сохранения в БД', 'error'); }
               }} className="w-full px-3 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-[10px] font-black uppercase">☁ Сохранить маршрут (для всех игроков)</button>
+            )}
+            
+            {/* Existing routes list */}
+            {existingBusRoutes.length > 0 && (
+              <div className="space-y-1 max-h-32 overflow-y-auto mt-2">
+                <span className="text-[9px] text-slate-500">Существующие маршруты (клик = показать):</span>
+                {existingBusRoutes.map(r => (
+                  <div key={r.id} className={`flex items-center justify-between px-2 py-1 rounded-lg cursor-pointer transition-all ${selectedExistingRoute === r.id ? 'bg-yellow-500/20 border border-yellow-500/30' : 'bg-white/5 hover:bg-white/10'}`} onClick={() => { setSelectedExistingRoute(selectedExistingRoute === r.id ? null : r.id); }}>
+                    <span className="text-[9px] text-yellow-200">🚌 {r.name} ({r.stops?.length || 0} точек)</span>
+                    <div className="flex items-center gap-1">
+                      <span className="text-[9px] text-emerald-400">${(r.pay || 0)}</span>
+                      <button onClick={async (e) => { e.stopPropagation(); try { const { error } = await supabase.from('bus_routes').delete().eq('id', r.id); if (error) throw error; const { data } = await supabase.from('bus_routes').select('*').order('created_at', { ascending: false }); if (data) setExistingBusRoutes(data.map(rr => ({ id: rr.id, name: rr.name, stops: typeof rr.stops === 'string' ? JSON.parse(rr.stops) : rr.stops, busStops: rr.bus_stops || {}, pay: rr.pay, exp: rr.exp, description: rr.description || '' }))); setSelectedExistingRoute(null); notify(`Маршрут "${r.name}" удалён`); } catch(err) { notify('Ошибка удаления', 'error'); } }} className="text-[9px] text-red-400 hover:text-red-300 ml-1" title="Удалить">🗑</button>
+                    </div>
+                  </div>
+                ))}
+                {selectedExistingRoute === null && (
+                  <div className="text-[8px] text-slate-600 italic mt-1">Нажмите на маршрут, чтобы видеть его на карте</div>
+                )}
+              </div>
             )}
             </>
             )}
@@ -866,6 +912,36 @@ export default function RoadEditor({ onClose }) {
                   const prev = pts[idx];
                   return <line key={`pr${idx}`} x1={prev.x} y1={prev.y} x2={pt.x} y2={pt.y} stroke="#3b82f6" strokeWidth="6" opacity="0.6" strokeDasharray="12 6" />;
                 });
+              })()}
+              {/* Existing route preview */}
+              {mode === 'busroute' && routeTab === 'bus' && selectedExistingRoute && (() => {
+                const route = existingBusRoutes.find(r => r.id === selectedExistingRoute);
+                if (!route || !route.stops?.length) return null;
+                const pts = route.stops.map(id => waypoints[id]).filter(Boolean);
+                const busStops = route.busStops || {};
+                return (
+                  <g>
+                    {pts.slice(1).map((pt, idx) => {
+                      const prev = pts[idx];
+                      return <line key={`er${idx}`} x1={prev.x} y1={prev.y} x2={pt.x} y2={pt.y} stroke="#f59e0b" strokeWidth="8" opacity="0.5" />;
+                    })}
+                    {route.stops.map((stopId, idx) => {
+                      const pt = waypoints[stopId];
+                      if (!pt) return null;
+                      const isBusStop = busStops[stopId] !== undefined;
+                      return (
+                        <g key={`erm${idx}`}>
+                          <circle cx={pt.x} cy={pt.y} r={isBusStop ? "16" : "12"} fill={isBusStop ? "#22c55e" : "#f59e0b"} fillOpacity="0.4" stroke="white" strokeWidth="2" />
+                          <circle cx={pt.x} cy={pt.y} r={isBusStop ? "12" : "9"} fill={isBusStop ? "#16a34a" : "#d97706"} />
+                          <text x={pt.x} y={pt.y + 3} textAnchor="middle" fill="white" fontSize="10" fontWeight="bold">{idx + 1}</text>
+                          {isBusStop && (
+                            <text x={pt.x} y={pt.y - 20} textAnchor="middle" fill="#4ade80" fontSize="8" fontWeight="bold">{busStops[stopId] || '🚏'}</text>
+                          )}
+                        </g>
+                      );
+                    })}
+                  </g>
+                );
               })()}
               {/* Route stop markers */}
               {mode === 'busroute' && routeTab === 'bus' && routeStops.map((stopId, idx) => {
