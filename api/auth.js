@@ -1,11 +1,19 @@
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 
-// Инициализация Supabase с админским ключом (доступен только на сервере)
-const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://rzxkajmrzxvnzbqhluoe.supabase.co',
-  process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-);
+// Инициализация Supabase — выполняется лениво при первом запросе
+let supabaseAdmin = null;
+function getSupabaseAdmin() {
+  if (!supabaseAdmin) {
+    const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://rzxkajmrzxvnzbqhluoe.supabase.co';
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!key) {
+      console.error('[Auth API] CRITICAL: SUPABASE_SERVICE_ROLE_KEY is not set in Vercel environment!');
+    }
+    supabaseAdmin = createClient(url, key || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6eGtham1yenh2bnpicWhsdW9lIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NTQ0MzU1OSwiZXhwIjoyMTAxMDE5NTU5fQ.Ysh9kpbs2oeByPYm47arXMKPYg-jK4_4DZhQdV4y90k');
+  }
+  return supabaseAdmin;
+}
 
 export default async function handler(req, res) {
   // Debug: check env vars loaded
@@ -87,14 +95,14 @@ export default async function handler(req, res) {
     }
 
     // 8. Поиск или создание профиля в Supabase
-    let { data: profile, error: profError } = await supabaseAdmin
+    let { data: profile, error: profError } = await getSupabaseAdmin()
       .from('profiles')
       .select('*')
       .eq('telegram_id', tgId)
       .maybeSingle();
 
     if (!profile) {
-      const { data: newProfile, error: createError } = await supabaseAdmin
+      const { data: newProfile, error: createError } = await getSupabaseAdmin()
         .from('profiles')
         .insert([{
           telegram_id: tgId,
@@ -121,9 +129,9 @@ export default async function handler(req, res) {
 
     // 9. Загрузка сопутствующих данных
     const [skillsRes, licensesRes, vehicleRes] = await Promise.all([
-      supabaseAdmin.from('player_skills').select('*').eq('player_id', profile.id),
-      supabaseAdmin.from('player_licenses').select('*').eq('player_id', profile.id),
-      supabaseAdmin.from('vehicles').select('*').eq('owner_id', profile.id).eq('is_active', true).maybeSingle()
+      getSupabaseAdmin().from('player_skills').select('*').eq('player_id', profile.id),
+      getSupabaseAdmin().from('player_licenses').select('*').eq('player_id', profile.id),
+      getSupabaseAdmin().from('vehicles').select('*').eq('owner_id', profile.id).eq('is_active', true).maybeSingle()
     ]);
 
     return res.status(200).json({
@@ -141,14 +149,14 @@ export default async function handler(req, res) {
 }
 
 async function handleDevLogin(res) {
-  let { data: profile } = await supabaseAdmin
+  let { data: profile } = await getSupabaseAdmin()
     .from('profiles')
     .select('*')
     .eq('telegram_id', 'DEBUG_PLAYER_1')
     .maybeSingle();
 
   if (!profile) {
-    const { data: newProfile } = await supabaseAdmin
+    const { data: newProfile } = await getSupabaseAdmin()
       .from('profiles')
       .insert([{
         telegram_id: 'DEBUG_PLAYER_1',
