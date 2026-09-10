@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X, Star, Shield, Zap, Clock, HardDrive, Flame, Heart, Battery, Utensils, GlassWater, Wallet, PiggyBank } from 'lucide-react';
+import { X, Star, Shield, Zap, Clock, HardDrive, Flame, Heart, Battery, Utensils, Wallet, PiggyBank } from 'lucide-react';
 import { useEquipmentStore } from '../store/useEquipmentStore';
 import { useInventoryStore } from '../store/useInventoryStore';
 import { usePlayerStore } from '../store/usePlayerStore';
@@ -105,19 +105,6 @@ export default function CharacterView({ onClose }) {
             </div>
             <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
               <div className={`h-full rounded-full transition-all ${getStatBg(player?.hunger || 0, 100)}`} style={{ width: `${player?.hunger || 0}%` }} />
-            </div>
-          </div>
-
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-3">
-            <div className="flex items-center justify-between mb-1">
-              <div className="flex items-center gap-2">
-                <GlassWater size={14} className="text-blue-400" />
-                <span className="text-[10px] font-black uppercase text-slate-400">Жажда</span>
-              </div>
-              <span className={`text-sm font-black ${getStatColor(player?.thirst || 0, 100)}`}>{player?.thirst || 0}%</span>
-            </div>
-            <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
-              <div className={`h-full rounded-full transition-all ${getStatBg(player?.thirst || 0, 100)}`} style={{ width: `${player?.thirst || 0}%` }} />
             </div>
           </div>
         </div>

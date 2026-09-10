@@ -12,46 +12,47 @@ export const usePlayerStore = create((set, get) => ({
   metabolismInterval: null,
   buffsInterval: null,
   activeBuffs: [],
+  authError: null,
 
   login: async () => {
     set({ loading: true });
-    const tgData = window.Telegram?.WebApp?.initDataUnsafe?.user;
-    const tgId = tgData?.id?.toString() || "DEBUG_PLAYER_1";
+
+    // Получаем сырую подписанную строку от Telegram Web App
+    const tg = window.Telegram?.WebApp;
+    const rawInitData = tg?.initData || (import.meta.env.DEV ? 'DEV_DEBUG' : '');
 
     try {
-      let { data: profile } = await supabase.from('profiles').select('*').eq('telegram_id', tgId).maybeSingle();
+      const response = await fetch('/api/auth', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ initData: rawInitData }),
+      });
 
-      if (!profile) {
-        const { data: newProf } = await supabase.from('profiles').insert([{ 
-          telegram_id: tgId, 
-          money: 50000, 
-          inv_slots: 12, 
-          bank_balance: 0, 
-          deposit_balance: 0,
-          energy: 100,
-          hp: 100,
-          hunger: 100,
-          thirst: 100
-        }]).select().single();
-        profile = newProf;
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        console.error('Ошибка авторизации Telegram:', result.error);
+        set({
+          loading: false,
+          authError: result.error || 'Ошибка проверки подлинности Telegram'
+        });
+        return;
       }
 
-      const [skills, licenses, vehicle] = await Promise.all([
-        supabase.from('player_skills').select('*').eq('player_id', profile.id),
-        supabase.from('player_licenses').select('*').eq('player_id', profile.id),
-        supabase.from('vehicles').select('*').eq('owner_id', profile.id).eq('is_active', true).maybeSingle()
-      ]);
-
+      const { profile, skills, licenses, activeVehicle } = result;
       const activeBuffs = get().loadBuffs();
 
-      set({ 
-        player: { ...profile, rotation: 0 }, 
-        skills: skills.data || [], 
-        licenses: licenses.data || [],
-        activeVehicle: vehicle.data || null,
-        loading: false, 
+      set({
+        player: { ...profile, rotation: 0 },
+        skills: skills || [],
+        licenses: licenses || [],
+        activeVehicle: activeVehicle || null,
+        loading: false,
         needsRegistration: !profile.first_name,
-        activeBuffs
+        activeBuffs,
+        authError: null
       });
 
       // Clean up existing intervals if any
@@ -62,7 +63,7 @@ export const usePlayerStore = create((set, get) => ({
         clearInterval(get().buffsInterval);
       }
 
-      // ЗАПУСКАЕМ МЕТАБОЛИЗМ (Раз в 2 минуты -1 энергия)
+      // ЗАПУСКАЕМ МЕТАБОЛИЗМ (Раз в 2 минуты -1 голод)
       const metabolismInterval = setInterval(() => {
         get().processMetabolism();
       }, 120000);
@@ -74,10 +75,9 @@ export const usePlayerStore = create((set, get) => ({
 
       set({ metabolismInterval, buffsInterval });
 
-
     } catch (err) {
-      console.error(err);
-      set({ loading: false });
+      console.error('Сетевая ошибка авторизации:', err);
+      set({ loading: false, authError: 'Не удалось связаться с сервером игры' });
     }
   },
 
@@ -102,26 +102,16 @@ export const usePlayerStore = create((set, get) => ({
     });
   },
 
-  // ЛОГИКА ПАССИВНОГО ГОЛОДА И ЖАЖДЫ
+  // ЛОГИКА ПАССИВНОГО ГОЛОДА
   processMetabolism: async () => {
     const { player, updateProfile } = get();
     if (!player) return;
 
     const updates = {};
-    if (player.energy > 0) {
-      updates.energy = Math.max(0, player.energy - 1);
-    } else if (player.hp > 5) {
-      updates.hp = player.hp - 2;
-    }
 
+    // Голод уменьшается со временем
     if (player.hunger > 0) {
       updates.hunger = Math.max(0, player.hunger - 1);
-    } else if (player.hp > 5) {
-      updates.hp = player.hp - 1;
-    }
-
-    if (player.thirst > 0) {
-      updates.thirst = Math.max(0, player.thirst - 1);
     } else if (player.hp > 5) {
       updates.hp = player.hp - 1;
     }

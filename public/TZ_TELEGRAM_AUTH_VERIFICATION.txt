@@ -1,0 +1,343 @@
+================================================================================
+ТЕХНИЧЕСКОЕ ЗАДАНИЕ (ТЗ)
+Реализация безопасной авторизации Telegram Mini App через верификацию 
+хэша initData (HMAC-SHA256) в проекте TG SAMP (sergeucher96/tgsamp)
+================================================================================
+
+1. ОБЩИЕ СВЕДЕНИЯ
+--------------------------------------------------------------------------------
+Проект:           TG SAMP (Telegram Mini App — симулятор GTA San Andreas)
+Репозиторий:      https://github.com/sergeucher96/tgsamp
+Стек:             React 19, Vite, Zustand, Supabase, Node.js, Vercel
+Хостинг фронтенда: Vercel (tgsamp.vercel.app)
+База данных:      Supabase PostgreSQL
+
+Цель задачи:
+Защитить игровой проект от несанкционированного доступа, подделки аккаунтов,
+накрутки игровой валюты и доступа к чужим персонажам. Перевести авторизацию
+с непроверенного клиентского объекта `window.Telegram.WebApp.initDataUnsafe`
+на серверную криптографическую валидацию подписи Telegram `initData` по стандарту
+Telegram Bot API (HMAC-SHA256) с последующей безопасной выдачей данных профиля.
+
+
+2. ТЕКУЩЕЕ СОСТОЯНИЕ И ПРОБЛЕМА (AS IS)
+--------------------------------------------------------------------------------
+В файле `src/store/usePlayerStore.js` авторизация сейчас устроена так:
+
+  const tgData = window.Telegram?.WebApp?.initDataUnsafe?.user;
+  const tgId = tgData?.id?.toString() || "DEBUG_PLAYER_1";
+  let { data: profile } = await supabase.from('profiles')
+      .select('*').eq('telegram_id', tgId).maybeSingle();
+
+УЯЗВИМОСТЬ:
+Объект `initDataUnsafe` передается в незашифрованном виде внутри браузера.
+Любой пользователь через DevTools (или консоль браузера, или простой HTTP-запрос)
+может подставить абсолютно любой `telegram_id` и управлять чужими деньгами,
+машинами, домами и бандами, либо накручивать ресурсы.
+
+
+3. АРХИТЕКТУРА РЕШЕНИЯ (TO BE)
+--------------------------------------------------------------------------------
+Поскольку проект развернут на Vercel, самым простым, надежным и 100% бесплатным
+решением является создание Serverless API функции на Node.js: `/api/auth.js`.
+
+Схема работы:
+1. КЛИЕНТ (React):
+   При входе в игру берет сырую строку `window.Telegram.WebApp.initData`
+   и делает POST-запрос на `/api/auth`.
+2. СЕРВЕР VERCEL (`/api/auth.js`):
+   - Принимает `initData`.
+   - Проверяет HMAC-SHA256 подпись с использованием секретного `TELEGRAM_BOT_TOKEN`.
+   - Проверяет параметр `auth_date` (не старше 24 часов).
+   - Если проверка успешна — с помощью закрытого сервисного ключа 
+     `SUPABASE_SERVICE_ROLE_KEY` находит или создает игрока в таблице `profiles`.
+   - Возвращает клиенту подтвержденные данные игрока (профиль, скиллы, лицензии, авто).
+3. КЛИЕНТ:
+   - Получает подтвержденные данные и инициализирует игру.
+   - Если хэш не сошелся — выводит предупреждение о запуске вне официального бота.
+
+
+4. СПЕЦИФИКАЦИЯ ЭНДПОИНТА БЭКЕНДА: /api/auth.js
+--------------------------------------------------------------------------------
+Расположение в проекте: `api/auth.js` (Vercel обрабатывает папку `/api` автоматически).
+
+Код файла `api/auth.js`:
+--------------------------------------------------------------------------------
+import crypto from 'crypto';
+import { createClient } from '@supabase/supabase-js';
+
+// Инициализация Supabase с админским ключом (доступен только на сервере)
+const supabaseAdmin = createClient(
+  process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
+export default async function handler(req, res) {
+  // Разрешаем только POST запросы
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const { initData } = req.body || {};
+  const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+
+  // 1. Режим локальной разработки (localhost)
+  if (process.env.NODE_ENV === 'development' && initData === 'DEV_DEBUG') {
+    return handleDevLogin(res);
+  }
+
+  if (!initData || !BOT_TOKEN) {
+    return res.status(400).json({ 
+      error: 'Missing initData or server BOT_TOKEN configuration' 
+    });
+  }
+
+  try {
+    // 2. Разбор параметров initData
+    const params = new URLSearchParams(initData);
+    const hash = params.get('hash');
+    params.delete('hash');
+
+    if (!hash) {
+      return res.status(401).json({ error: 'Missing hash parameter' });
+    }
+
+    // 3. Проверка срока годности auth_date (24 часа)
+    const authDate = Number(params.get('auth_date'));
+    const now = Math.floor(Date.now() / 1000);
+    if (!authDate || (now - authDate > 86400)) {
+      return res.status(401).json({ error: 'Authentication data expired' });
+    }
+
+    // 4. Сборка строки для проверки (алфавитный порядок, ключ=значение через \n)
+    const dataCheckString = Array.from(params.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, val]) => `${key}=${val}`)
+      .join('\n');
+
+    // 5. Двойной HMAC-SHA256 по спецификации Telegram Bot API:
+    // secret_key = HMAC_SHA256("WebAppData", BOT_TOKEN)
+    const secretKey = crypto
+      .createHmac('sha256', 'WebAppData')
+      .update(BOT_TOKEN)
+      .digest();
+
+    // calculated_hash = HMAC_SHA256(secret_key, data_check_string)
+    const calculatedHash = crypto
+      .createHmac('sha256', secretKey)
+      .update(dataCheckString)
+      .digest('hex');
+
+    // 6. Безопасное по времени сравнение строк
+    const hashBuffer = Buffer.from(hash, 'hex');
+    const calcBuffer = Buffer.from(calculatedHash, 'hex');
+
+    if (hashBuffer.length !== calcBuffer.length || !crypto.timingSafeEqual(hashBuffer, calcBuffer)) {
+      return res.status(403).json({ error: 'Invalid hash signature' });
+    }
+
+    // 7. Извлекаем данные пользователя
+    const tgUser = JSON.parse(params.get('user') || '{}');
+    const tgId = tgUser.id?.toString();
+
+    if (!tgId) {
+      return res.status(400).json({ error: 'User ID not found in initData' });
+    }
+
+    // 8. Поиск или создание профиля в Supabase
+    let { data: profile, error: profError } = await supabaseAdmin
+      .from('profiles')
+      .select('*')
+      .eq('telegram_id', tgId)
+      .maybeSingle();
+
+    if (!profile) {
+      const { data: newProfile, error: createError } = await supabaseAdmin
+        .from('profiles')
+        .insert([{
+          telegram_id: tgId,
+          first_name: tgUser.first_name || 'Скиталец',
+          username: tgUser.username || null,
+          money: 50000,
+          inv_slots: 12,
+          bank_balance: 0,
+          deposit_balance: 0,
+          energy: 100,
+          hp: 100,
+          hunger: 100,
+          thirst: 100
+        }])
+        .select()
+        .single();
+
+      if (createError) {
+        console.error('Profile creation error:', createError);
+        return res.status(500).json({ error: 'Failed to create profile' });
+      }
+      profile = newProfile;
+    }
+
+    // 9. Загрузка сопутствующих данных
+    const [skillsRes, licensesRes, vehicleRes] = await Promise.all([
+      supabaseAdmin.from('player_skills').select('*').eq('player_id', profile.id),
+      supabaseAdmin.from('player_licenses').select('*').eq('player_id', profile.id),
+      supabaseAdmin.from('vehicles').select('*').eq('owner_id', profile.id).eq('is_active', true).maybeSingle()
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      profile,
+      skills: skillsRes.data || [],
+      licenses: licensesRes.data || [],
+      activeVehicle: vehicleRes.data || null
+    });
+
+  } catch (error) {
+    console.error('Auth handler error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+async function handleDevLogin(res) {
+  let { data: profile } = await supabaseAdmin
+    .from('profiles')
+    .select('*')
+    .eq('telegram_id', 'DEBUG_PLAYER_1')
+    .maybeSingle();
+
+  if (!profile) {
+    const { data: newProfile } = await supabaseAdmin
+      .from('profiles')
+      .insert([{
+        telegram_id: 'DEBUG_PLAYER_1',
+        first_name: 'DevTester',
+        money: 50000,
+        inv_slots: 12,
+        bank_balance: 0,
+        deposit_balance: 0,
+        energy: 100,
+        hp: 100,
+        hunger: 100,
+        thirst: 100
+      }])
+      .select()
+      .single();
+    profile = newProfile;
+  }
+
+  return res.status(200).json({
+    success: true,
+    profile,
+    skills: [],
+    licenses: [],
+    activeVehicle: null
+  });
+}
+--------------------------------------------------------------------------------
+
+
+5. ИЗМЕНЕНИЯ В КЛИЕНТСКОЙ ЧАСТИ: src/store/usePlayerStore.js
+--------------------------------------------------------------------------------
+Метод `login` в `usePlayerStore.js` заменяется на защищенный вызов `/api/auth`:
+
+```javascript
+login: async () => {
+  set({ loading: true });
+  
+  // Получаем сырую подписанную строку от Telegram Web App
+  const tg = window.Telegram?.WebApp;
+  const rawInitData = tg?.initData || (import.meta.env.DEV ? 'DEV_DEBUG' : '');
+
+  try {
+    const response = await fetch('/api/auth', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ initData: rawInitData }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      console.error('Ошибка авторизации Telegram:', result.error);
+      set({ 
+        loading: false, 
+        authError: result.error || 'Ошибка проверки подлинности Telegram' 
+      });
+      return;
+    }
+
+    const { profile, skills, licenses, activeVehicle } = result;
+    const activeBuffs = get().loadBuffs();
+
+    set({
+      player: { ...profile, rotation: 0 },
+      skills: skills || [],
+      licenses: licenses || [],
+      activeVehicle: activeVehicle || null,
+      loading: false,
+      needsRegistration: !profile.first_name,
+      activeBuffs,
+      authError: null
+    });
+
+    // Запуск таймеров метаболизма и баффов
+    if (get().metabolismInterval) clearInterval(get().metabolismInterval);
+    if (get().buffsInterval) clearInterval(get().buffsInterval);
+
+    const metabolismInterval = setInterval(() => {
+      get().processMetabolism();
+    }, 120000);
+
+    const buffsInterval = setInterval(() => {
+      get().tickBuffs();
+    }, 30000);
+
+    set({ metabolismInterval, buffsInterval });
+
+  } catch (err) {
+    console.error('Сетевая ошибка авторизации:', err);
+    set({ loading: false, authError: 'Не удалось связаться с сервером игры' });
+  }
+}
+```
+
+
+6. ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ (.env)
+--------------------------------------------------------------------------------
+В панели управления Vercel:
+`Vercel Dashboard` -> `Project (tgsamp)` -> `Settings` -> `Environment Variables`:
+
+1. `TELEGRAM_BOT_TOKEN`
+   Значение: токен вашего бота из @BotFather (например: `7123456789:AAFn...`)
+   ВНИМАНИЕ: Без приставки VITE_! Доступен строго на сервере.
+
+2. `SUPABASE_SERVICE_ROLE_KEY`
+   Значение: сервисный ключ из Supabase Dashboard -> Project Settings -> API -> `service_role secret`
+   ВНИМАНИЕ: Секретный ключ суперпользователя. Никогда не передавать на клиент!
+
+3. `SUPABASE_URL`
+   Значение: URL вашего проекта (например: `https://xyzcompany.supabase.co`)
+
+4. `VITE_SUPABASE_URL` и `VITE_SUPABASE_ANON_KEY`
+   Остаются для стандартных клиентских подписок (Realtime).
+
+
+7. КРИТЕРИИ ПРИЁМКИ И ТЕСТИРОВАНИЕ
+--------------------------------------------------------------------------------
+1. Позитивный сценарий:
+   - Игрок открывает Mini App через кнопку бота в Telegram.
+   - Клиент передает `initData`, сервер валидирует HMAC-SHA256, находит/создает
+     профиль и возвращает статус 200. Игра мгновенно стартует.
+2. Негативный сценарий (Попытка взлома):
+   - Отправка поддельного запроса:
+     `curl -X POST https://tgsamp.vercel.app/api/auth -H "Content-Type: application/json" -d '{"initData":"fake=1&hash=123"}'`
+   - Сервер должен вернуть HTTP `403 Forbidden` с сообщением `Invalid hash signature`.
+3. Защита от Replay-атак:
+   - Запрос с сохраненной старой строкой `initData` спустя 24 часа возвращает 
+     `401 Authentication data expired`.
+4. Локальная разработка:
+   - Команда `npm run dev` в обычном браузере успешно авторизует разработчика 
+     под тестовым профилем `DEBUG_PLAYER_1`.
+================================================================================

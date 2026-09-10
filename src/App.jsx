@@ -40,6 +40,7 @@ import VehicleInfoMenu from './components/VehicleInfoMenu';
 import MyPropertyMenu from './components/MyPropertyMenu';
 import MyVehiclesMenu from './components/MyVehiclesMenu';
 import CarViewer from './components/CarViewer';
+import SceneViewer from './components/SceneViewer';
 
 // 🌾 ИМПОРТ 3D ФЕРМЫ (СТРОКА 45)
 import FarmHarvestGame from './components/FarmHarvestGame';
@@ -70,6 +71,7 @@ function App() {
   const [showTerritories, setShowTerritories] = useState(false);
   const [showWars, setShowWars] = useState(false);
   const [showCarViewer, setShowCarViewer] = useState(false);
+  const [showSceneViewer, setShowSceneViewer] = useState(false);
 
   // 🌾 Состояние модального окна 3D Фермы
   const [showFarmGame, setShowFarmGame] = useState(false);
@@ -221,6 +223,7 @@ function App() {
       {showTerritories && <TerritoriesView onClose={() => setShowTerritories(false)} />}
       {showWars && <WarsView onClose={() => setShowWars(false)} />}
       {showCarViewer && <CarViewer onClose={() => setShowCarViewer(false)} />}
+      {showSceneViewer && <SceneViewer url="/models/myscene.glb" onClose={() => setShowSceneViewer(false)} />}
 
       {/* 🌾 Модальное окно 3D Фермы SA-MP (НА ВЕСЬ ЭКРАН БЕЗ ПОЛЕЙ И РАМОК) */}
       {showFarmGame && (
@@ -380,6 +383,15 @@ function App() {
                 className="w-14 h-14 rounded-2xl flex items-center justify-center text-xl transition-all duration-300 gta-button border border-[#7eff63]/40 text-[#e8ffc4] shadow-[0_0_20px_rgba(130,255,100,0.22)] active:scale-95 shrink-0"
               >
                 ⚔️
+              </button>
+
+              {/* 🏔️ КНОПКА 3D СЦЕНЫ */}
+              <button
+                onClick={() => setShowSceneViewer(true)}
+                className="w-14 h-14 rounded-2xl flex items-center justify-center text-xl transition-all duration-300 gta-button border border-purple-500/50 text-purple-300 shadow-[0_0_20px_rgba(168,85,247,0.3)] active:scale-105 hover:bg-purple-950/30 shrink-0"
+                title="3D Сцена"
+              >
+                🏔️
               </button>
               {IS_DEV && <NavButton active={showDevTools} onClick={() => setShowDevTools(true)} icon="🛠️" />}
               {IS_DEV && <NavButton active={showRoadEditor} onClick={() => setShowRoadEditor(true)} icon="🛣️" />}
