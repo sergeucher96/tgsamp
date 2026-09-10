@@ -3,8 +3,8 @@ import { createClient } from '@supabase/supabase-js';
 
 // Инициализация Supabase с админским ключом (доступен только на сервере)
 const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
+  process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://rzxkajmrzxvnzbqhluoe.supabase.co',
+  process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 );
 
 export default async function handler(req, res) {
@@ -12,6 +12,12 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
+
+  console.log('[Auth API] ENV check:', {
+    hasSUPABASE_URL: !!process.env.SUPABASE_URL,
+    hasSERVICE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+    hasBOT_TOKEN: !!process.env.TELEGRAM_BOT_TOKEN,
+  });
 
   const { initData } = req.body || {};
   const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
