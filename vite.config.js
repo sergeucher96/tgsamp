@@ -90,83 +90,142 @@ function autoSaveHotspotsPlugin() {
           req.on('end', async () => {
             try {
               const parsed = JSON.parse(body);
-              if (parsed.initData !== 'DEV_DEBUG') {
-                res.statusCode = 400;
-                res.setHeader('Content-Type', 'application/json');
-                res.end(JSON.stringify({ error: 'Telegram auth only works when deployed.' }));
-                return;
-              }
-
-              // Use client Supabase to find/create real debug profile
-              const env = loadEnv('development', process.cwd(), ['VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY']);
+              const env = loadEnv('development', process.cwd(), '');
               const supabaseUrl = env.VITE_SUPABASE_URL || 'https://rzxkajmrzxvnzbqhluoe.supabase.co';
-              const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY;
-              if (!supabaseAnonKey) {
-                res.statusCode = 500;
-                res.setHeader('Content-Type', 'application/json');
-                res.end(JSON.stringify({ error: 'VITE_SUPABASE_ANON_KEY is required in .env file' }));
-                return;
-              }
+              const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || '';
               const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-              // Find existing debug player
-              let { data: profile } = await supabase
-                .from('profiles')
-                .select('*')
-                .eq('telegram_id', 'DEBUG_PLAYER_1')
-                .maybeSingle();
+              let profile;
 
-              // Create if not exists
-              if (!profile) {
-                const { data: newProfile, error: createError } = await supabase
+              if (parsed.initData === 'DEV_DEBUG') {
+                // Dev mode in regular browser - use test profile
+                ({ data: profile } = await supabase
                   .from('profiles')
-                  .insert([{
-                    telegram_id: 'DEBUG_PLAYER_1',
-                    first_name: 'DevTester',
-                    last_name: '',
-                    username: null,
-                    money: 50000,
-                    inv_slots: 12,
-                    bank_balance: 0,
-                    deposit_balance: 0,
-                    energy: 100,
-                    hp: 100,
-                    hunger: 100,
-                    thirst: 100,
-                    rotation: 0,
-                    registered_at: new Date().toISOString()
-                  }])
-                  .select()
-                  .single();
-                if (!createError) {
-                  profile = newProfile;
+                  .select('*')
+                  .eq('telegram_id', 'DEBUG_PLAYER_1')
+                  .maybeSingle());
+
+                if (!profile) {
+                  const insertResult = await supabase
+                    .from('profiles')
+                    .insert([{
+                      telegram_id: 'DEBUG_PLAYER_1',
+                      first_name: 'DevTester',
+                      money: 50000,
+                      inv_slots: 12,
+                      bank_balance: 0,
+                      deposit_balance: 0,
+                      energy: 100,
+                      hp: 100,
+                      hunger: 100,
+                      thirst: 100,
+                      registered_at: new Date().toISOString()
+                    }])
+                    .select()
+                    .single();
+                  if (insertResult.data) profile = insertResult.data;
                 }
-              }
 
-              if (!profile) {
-                res.statusCode = 500;
+                if (!profile) {
+                  res.statusCode = 500;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: 'Failed to create debug profile' }));
+                  return;
+                }
+
+                const [skillsRes, licensesRes, vehicleRes] = await Promise.all([
+                  supabase.from('player_skills').select('*').eq('player_id', profile.id),
+                  supabase.from('player_licenses').select('*').eq('player_id', profile.id),
+                  supabase.from('vehicles').select('*').eq('owner_id', profile.id).eq('is_active', true).maybeSingle()
+                ]);
+
+                res.statusCode = 200;
                 res.setHeader('Content-Type', 'application/json');
-                res.end(JSON.stringify({ error: 'Failed to find or create debug profile' }));
-                return;
+                res.end(JSON.stringify({
+                  success: true,
+                  profile,
+                  skills: skillsRes.data || [],
+                  licenses: licensesRes.data || [],
+                  activeVehicle: vehicleRes.data || null
+                }));
+              } else if (parsed.initData) {
+                // Real Telegram initData - parse directly (dev mode, skip HMAC)
+                const params = new URLSearchParams(parsed.initData);
+                const tgUser = JSON.parse(params.get('user') || '{}');
+                const tgId = tgUser.id?.toString();
+                const authDate = Number(params.get('auth_date'));
+                const now = Math.floor(Date.now() / 1000);
+
+                if (authDate && (now - authDate > 86400)) {
+                  res.statusCode = 401;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: 'Authentication data expired' }));
+                  return;
+                }
+
+                if (!tgId) {
+                  res.statusCode = 400;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: 'User ID not found in initData' }));
+                  return;
+                }
+
+                ({ data: profile } = await supabase
+                  .from('profiles')
+                  .select('*')
+                  .eq('telegram_id', tgId)
+                  .maybeSingle());
+
+                if (!profile) {
+                  const insertResult = await supabase
+                    .from('profiles')
+                    .insert([{
+                      telegram_id: tgId,
+                      first_name: tgUser.first_name || 'Скиталец',
+                      last_name: tgUser.last_name || '',
+                      username: tgUser.username || null,
+                      money: 50000,
+                      inv_slots: 12,
+                      bank_balance: 0,
+                      deposit_balance: 0,
+                      energy: 100,
+                      hp: 100,
+                      hunger: 100,
+                      thirst: 100,
+                      registered_at: new Date().toISOString()
+                    }])
+                    .select()
+                    .single();
+                  if (insertResult.data) profile = insertResult.data;
+                }
+
+                if (!profile) {
+                  res.statusCode = 500;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: 'Failed to create profile' }));
+                  return;
+                }
+
+                const [skillsRes, licensesRes, vehicleRes] = await Promise.all([
+                  supabase.from('player_skills').select('*').eq('player_id', profile.id),
+                  supabase.from('player_licenses').select('*').eq('player_id', profile.id),
+                  supabase.from('vehicles').select('*').eq('owner_id', profile.id).eq('is_active', true).maybeSingle()
+                ]);
+
+                res.statusCode = 200;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({
+                  success: true,
+                  profile,
+                  skills: skillsRes.data || [],
+                  licenses: licensesRes.data || [],
+                  activeVehicle: vehicleRes.data || null
+                }));
+              } else {
+                res.statusCode = 400;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: 'Missing initData' }));
               }
-
-              // Load related data
-              const [skillsRes, licensesRes, vehicleRes] = await Promise.all([
-                supabase.from('player_skills').select('*').eq('player_id', profile.id),
-                supabase.from('player_licenses').select('*').eq('player_id', profile.id),
-                supabase.from('vehicles').select('*').eq('owner_id', profile.id).eq('is_active', true).maybeSingle()
-              ]);
-
-              res.statusCode = 200;
-              res.setHeader('Content-Type', 'application/json');
-              res.end(JSON.stringify({
-                success: true,
-                profile,
-                skills: skillsRes.data || [],
-                licenses: licensesRes.data || [],
-                activeVehicle: vehicleRes.data || null
-              }));
-
             } catch (err) {
               console.error('[Auth Error]', err);
               res.statusCode = 500;
