@@ -17,9 +17,21 @@ export const usePlayerStore = create((set, get) => ({
   login: async () => {
     set({ loading: true });
 
+    // Wait for Telegram WebApp script to load
+    let tg = window.Telegram?.WebApp;
+    let attempts = 0;
+    const maxAttempts = 30; // max 3 seconds
+    while (!tg && attempts < maxAttempts) {
+      await new Promise(r => setTimeout(r, 100));
+      tg = window.Telegram?.WebApp;
+      attempts++;
+    }
+
     // Получаем сырую подписанную строку от Telegram Web App
-    const tg = window.Telegram?.WebApp;
     const rawInitData = tg?.initData || (import.meta.env.DEV ? 'DEV_DEBUG' : '');
+    console.log('[Auth] Telegram detected:', !!tg);
+    console.log('[Auth] initData length:', rawInitData?.length || 0);
+    console.log('[Auth] DEV mode:', import.meta.env.DEV);
 
     try {
       const response = await fetch('/api/auth', {
@@ -31,6 +43,7 @@ export const usePlayerStore = create((set, get) => ({
       });
 
       const result = await response.json();
+      console.log('[Auth] Response status:', response.status);
 
       if (!response.ok || !result.success) {
         console.error('Ошибка авторизации Telegram:', result.error);
