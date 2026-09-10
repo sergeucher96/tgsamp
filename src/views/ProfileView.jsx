@@ -5,6 +5,8 @@ import { LICENSES_DATABASE } from '../data/licenses';
 import { getHouseStyle } from '../data/houseStyles';
 
 export default function ProfileView({ player, skills, licenses, onOpenCharacter }) {
+  if (!player) return null;
+
   const getTimeInState = () => {
     if (!player.registered_at) return "1-й день";
     const days = Math.floor((new Date() - new Date(player.registered_at)) / 86400000);

@@ -113,7 +113,8 @@ function App() {
   }, [completeExpiredWars, fetchWars]);
 
   useEffect(() => { 
-    login().then(() => {
+    login().then((success) => {
+      if (!success) return;
       fetchDbHouses();
       fetchVehicles();
       useBankStore.getState().startInterestAccrual();

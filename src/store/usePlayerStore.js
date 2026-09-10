@@ -51,7 +51,7 @@ export const usePlayerStore = create((set, get) => ({
           loading: false,
           authError: result.error || 'Ошибка проверки подлинности Telegram'
         });
-        return;
+        return false;
       }
 
       const { profile, skills, licenses, activeVehicle } = result;
@@ -88,9 +88,12 @@ export const usePlayerStore = create((set, get) => ({
 
       set({ metabolismInterval, buffsInterval });
 
+      return true;
+
     } catch (err) {
       console.error('Сетевая ошибка авторизации:', err);
       set({ loading: false, authError: 'Не удалось связаться с сервером игры' });
+      return false;
     }
   },
 

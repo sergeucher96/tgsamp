@@ -36,10 +36,15 @@ export default async function handler(req, res) {
     return handleDevLogin(res);
   }
 
-  if (!initData || !BOT_TOKEN) {
+  if (!BOT_TOKEN) {
     return res.status(400).json({ 
-      error: 'Missing initData or server BOT_TOKEN configuration' 
+      error: 'Missing server BOT_TOKEN configuration' 
     });
+  }
+
+  if (!initData) {
+    console.log('[Auth API] No initData provided, returning debug profile for browser testing');
+    return handleDebugLogin(res);
   }
 
   try {
