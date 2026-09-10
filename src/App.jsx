@@ -16,6 +16,7 @@ import { useTelegram } from './hooks/useTelegram';
 // Dev tools (only in development — won't be bundled in production build)
 const IS_DEV = import.meta.env.DEV;
 const HotspotTool = IS_DEV ? lazy(() => import('./components/HotspotTool')) : null;
+const HotspotTool3D = IS_DEV ? lazy(() => import('./components/HotspotTool3D')) : null;
 const RoadEditor = IS_DEV ? lazy(() => import('./views/RoadEditor')) : null;
 const BusinessProductsEditor = IS_DEV ? lazy(() => import('./views/BusinessProductsEditor')) : null;
 const CategoryEditor = IS_DEV ? lazy(() => import('./views/CategoryEditor')) : null;
@@ -61,6 +62,7 @@ function App() {
   const [showQuests, setShowQuests] = useState(false);
   const [showCharacter, setShowCharacter] = useState(false);
   const [showDevTools, setShowDevTools] = useState(false);
+  const [showHotspotTool3D, setShowHotspotTool3D] = useState(false);
   const [showRoadEditor, setShowRoadEditor] = useState(false);
   const [showBusinessProducts, setShowBusinessProducts] = useState(false);
   const [showCategoryEditor, setShowCategoryEditor] = useState(false);
@@ -209,7 +211,7 @@ function App() {
   if (needsRegistration) return <RegistrationView />;
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-[#020617] text-white select-none overflow-x-hidden font-sans">
+    <div className="absolute inset-0 flex flex-col bg-[#020617] text-white select-none overflow-x-hidden font-sans">
       
       {/* Bank Notifications */}
       <BankNotifications />
@@ -224,7 +226,7 @@ function App() {
       {showTerritories && <TerritoriesView onClose={() => setShowTerritories(false)} />}
       {showWars && <WarsView onClose={() => setShowWars(false)} />}
       {showCarViewer && <CarViewer onClose={() => setShowCarViewer(false)} />}
-      {showSceneViewer && <SceneViewer url="/models/myscene.glb" onClose={() => setShowSceneViewer(false)} />}
+      {showSceneViewer && <SceneViewer url="/models/myscene.glb" locationId="showroom_ls" onClose={() => setShowSceneViewer(false)} />}
 
       {/* 🌾 Модальное окно 3D Фермы SA-MP (НА ВЕСЬ ЭКРАН БЕЗ ПОЛЕЙ И РАМОК) */}
       {showFarmGame && (
@@ -250,6 +252,11 @@ function App() {
       {IS_DEV && HotspotTool && showDevTools && (
         <Suspense fallback={null}>
           <HotspotTool onClose={() => setShowDevTools(false)} />
+        </Suspense>
+      )}
+      {IS_DEV && HotspotTool3D && showHotspotTool3D && (
+        <Suspense fallback={null}>
+          <HotspotTool3D onClose={() => setShowHotspotTool3D(false)} />
         </Suspense>
       )}
       {IS_DEV && RoadEditor && showRoadEditor && (
@@ -395,6 +402,7 @@ function App() {
                 🏔️
               </button>
               {IS_DEV && <NavButton active={showDevTools} onClick={() => setShowDevTools(true)} icon="🛠️" />}
+              {IS_DEV && <NavButton active={showHotspotTool3D} onClick={() => setShowHotspotTool3D(true)} icon="🧊" title="3D Редактор хотспотов" />}
               {IS_DEV && <NavButton active={showRoadEditor} onClick={() => setShowRoadEditor(true)} icon="🛣️" />}
               {IS_DEV && <NavButton active={showBusinessProducts} onClick={() => setShowBusinessProducts(true)} icon="📦" />}
               {IS_DEV && <NavButton active={showCategoryEditor} onClick={() => setShowCategoryEditor(true)} icon="📚" />}
