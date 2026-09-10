@@ -8,16 +8,17 @@ const supabaseAdmin = createClient(
 );
 
 export default async function handler(req, res) {
-  // Разрешаем только POST запросы
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
+  // Debug: check env vars loaded
   console.log('[Auth API] ENV check:', {
     hasSUPABASE_URL: !!process.env.SUPABASE_URL,
     hasSERVICE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
     hasBOT_TOKEN: !!process.env.TELEGRAM_BOT_TOKEN,
   });
+
+  // Разрешаем только POST запросы
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
 
   const { initData } = req.body || {};
   const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
