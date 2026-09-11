@@ -98,6 +98,67 @@ const STORAGE_KEY = 'tgsamp_3d_hotspots_v1';
 const DEFAULT_MODEL_URL = '/models/myscene.glb';
 const CUSTOM_SCENE_MODEL_URL = 'custom_scene_model';
 const PRESET_MODEL_URLS = new Set(SCENE_MODEL_PRESETS.map((preset) => preset.url));
+
+// IndexedDB helpers for storing binary model buffers (localStorage can't handle ArrayBuffer)
+const DB_NAME = 'tgsamp_3d_models';
+const DB_STORE = 'buffers';
+const CUSTOM_OBJECT_PREFIX = 'obj_';
+const SCENE_MODEL_KEY = 'scene_model';
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, 1);
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore(DB_STORE);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function saveBufferToDB(key, buffer) {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(DB_STORE, 'readwrite');
+      tx.objectStore(DB_STORE).put(buffer, key);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.error('[3D Buffer DB] Save error:', e);
+    return false;
+  }
+}
+
+async function loadBufferFromDB(key) {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(DB_STORE, 'readonly');
+      const req = tx.objectStore(DB_STORE).get(key);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    });
+  } catch (e) {
+    console.error('[3D Buffer DB] Load error:', e);
+    return null;
+  }
+}
+
+async function deleteBufferFromDB(key) {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(DB_STORE, 'readwrite');
+      tx.objectStore(DB_STORE).delete(key);
+      tx.oncomplete = () => resolve(true);
+    });
+  } catch {
+    return false;
+  }
+}
+
 const normalizeModelUrl = (url) => {
   if (typeof url !== 'string') return null;
 
@@ -222,6 +283,9 @@ export default function HotspotTool3D({ onClose }) {
   // DOM badge elements ref map
   const hotspotDomRefs = useRef(new Map());
   const objectDomRefs = useRef(new Map());
+  
+  // In-memory cache for custom object buffers (since we can't read them from localStorage)
+  const objectBuffersCache = useRef(new Map());
 
   const showToast = (msg) => {
     setToastMessage(msg);
@@ -265,7 +329,7 @@ export default function HotspotTool3D({ onClose }) {
   // 1. ЗАГРУЗКА И СОХРАНЕНИЕ ДАННЫХ ЛОКАЦИИ (LocalStorage / JSON)
   // =========================================================
 
-  const loadLocationData = useCallback((locKey) => {
+  const loadLocationData = useCallback(async (locKey) => {
     // 1. Пытаемся загрузить 3D данные
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -274,11 +338,48 @@ export default function HotspotTool3D({ onClose }) {
         const locData = allData[locKey];
         if (locData) {
           if (locData.hotspots) setHotspots(locData.hotspots);
-          if (locData.objects) setObjects(locData.objects);
+          
+          // Загружаем объекты и восстанавливаем modelBuffer из IndexedDB
+          const loadedObjects = locData.objects || [];
+          for (const obj of loadedObjects) {
+            if (obj.modelType === 'custom_glb') {
+              // Try cache first, then IndexedDB
+              const cached = objectBuffersCache.current.get(obj.id);
+              if (cached) {
+                obj.modelBuffer = cached;
+              } else {
+                obj.modelBuffer = await loadBufferFromDB(`${CUSTOM_OBJECT_PREFIX}${obj.id}`);
+                if (obj.modelBuffer) {
+                  objectBuffersCache.current.set(obj.id, obj.modelBuffer);
+                  console.log(`[3D Hotspot] Восстановлен buffer для объекта ${obj.name}`);
+                }
+              }
+            }
+          }
+          setObjects(loadedObjects);
+          
           if (locData.camera) setCameraConfig(locData.camera);
           const savedModelUrl = normalizeModelUrl(locData.modelUrl);
           setActiveModelUrl(savedModelUrl || DEFAULT_MODEL_URL);
           console.log('[3D Hotspot] Загружены 3D данные для', locKey);
+          
+          // Проверяем custom scene model
+          if (locData.customModelName) {
+            const sceneBuffer = await loadBufferFromDB(SCENE_MODEL_KEY + '_' + locKey);
+            if (sceneBuffer) {
+              console.log('[3D Hotspot] Восстановлен buffer модели сцены:', locData.customModelName);
+              setCustomSceneModel({ name: locData.customModelName, buffer: sceneBuffer });
+              setActiveModelUrl(CUSTOM_SCENE_MODEL_URL);
+            }
+          } else {
+            // Also try loading from global SCENE_MODEL_KEY
+            const sceneBuffer = await loadBufferFromDB(SCENE_MODEL_KEY);
+            if (sceneBuffer) {
+              console.log('[3D Hotspot] Восстановлен глобальный buffer модели сцены:', locData.customModelName);
+              setCustomSceneModel({ name: locData.customModelName || 'custom_scene', buffer: sceneBuffer });
+              setActiveModelUrl(CUSTOM_SCENE_MODEL_URL);
+            }
+          }
           return true;
         }
       }
@@ -394,14 +495,26 @@ export default function HotspotTool3D({ onClose }) {
 
   // При смене локации загружаем её данные
   useEffect(() => {
-    const loaded = loadLocationData(effectiveLocId);
-    if (!loaded) {
-      // Сброс до начального состояния, если данных ещё нет
-      setHotspots([]);
-      setObjects([]);
-      setSelectedHotspotId(null);
-      setSelectedObjectId(null);
-    }
+    (async () => {
+      const loaded = await loadLocationData(effectiveLocId);
+      if (!loaded) {
+        // Сброс до начального состояния, если данных ещё нет
+        setHotspots([]);
+        setObjects([]);
+        setSelectedHotspotId(null);
+        setSelectedObjectId(null);
+        
+        // Try to load custom scene model from IndexedDB
+        const sceneBuffer = await loadBufferFromDB(SCENE_MODEL_KEY);
+        if (sceneBuffer) {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          const allData = raw ? JSON.parse(raw) : {};
+          const savedName = allData[effectiveLocId]?.customModelName || 'custom_scene';
+          setCustomSceneModel({ name: savedName, buffer: sceneBuffer });
+          setActiveModelUrl(CUSTOM_SCENE_MODEL_URL);
+        }
+      }
+    })();
   }, [effectiveLocId, loadLocationData]);
 
   // =========================================================
@@ -1016,24 +1129,44 @@ export default function HotspotTool3D({ onClose }) {
         });
       };
 
-      if (obj.modelType === 'custom_glb' && obj.modelBuffer) {
-        try {
-          loader.parse(
-            obj.modelBuffer,
-            '',
-            (gltf) => {
-              const root = gltf.scene;
-              setupChild(root);
-              objWrapper.add(root);
-              if (isSelected && mode === 'editor') {
-                const helper = new THREE.BoxHelper(root, 0x10b981);
-                objWrapper.add(helper);
+      if (obj.modelType === 'custom_glb') {
+        // Try to get buffer from cache, then modelBuffer property
+        const buffer = obj.modelBuffer || objectBuffersCache.current.get(obj.id);
+        if (buffer) {
+          try {
+            loader.parse(
+              buffer,
+              '',
+              (gltf) => {
+                const root = gltf.scene;
+                setupChild(root);
+                objWrapper.add(root);
+                if (isSelected && mode === 'editor') {
+                  const helper = new THREE.BoxHelper(root, 0x10b981);
+                  objWrapper.add(helper);
+                }
+              },
+              (e) => {
+                console.error('[3D Scene Object] Failed to parse GLB:', e);
+                // Show placeholder on error
+                const placeholder = buildProceduralProp('wooden_crate');
+                setupChild(placeholder);
+                objWrapper.add(placeholder);
               }
-            },
-            (e) => console.error(e)
-          );
-        } catch (err) {
-          console.error(err);
+            );
+          } catch (err) {
+            console.error('[3D Scene Object] Parse error:', err);
+            // Show placeholder on catch
+            const placeholder = buildProceduralProp('wooden_crate');
+            setupChild(placeholder);
+            objWrapper.add(placeholder);
+          }
+        } else {
+          // No buffer available - show placeholder and warn
+          console.warn(`[3D Scene Object] No buffer for custom object "${obj.name}" (${obj.id}) - showing placeholder`);
+          const placeholder = buildProceduralProp('wooden_crate');
+          setupChild(placeholder);
+          objWrapper.add(placeholder);
         }
       } else {
         const propMesh = buildProceduralProp(obj.modelType);
@@ -1445,7 +1578,7 @@ export default function HotspotTool3D({ onClose }) {
     }
 
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       const buffer = ev.target?.result;
       if (!(buffer instanceof ArrayBuffer)) {
         showToast('⚠️ Не удалось прочитать 3D модель');
@@ -1455,6 +1588,8 @@ export default function HotspotTool3D({ onClose }) {
 
       setCustomSceneModel({ name: file.name, buffer });
       setActiveModelUrl(CUSTOM_SCENE_MODEL_URL);
+      // Save buffer to IndexedDB so it persists after page refresh
+      await saveBufferToDB(SCENE_MODEL_KEY, buffer);
       showToast(`✅ Модель сцены "${file.name}" загружена!`);
       e.target.value = '';
     };
@@ -2243,18 +2378,21 @@ export default function HotspotTool3D({ onClose }) {
                           const file = e.target.files?.[0];
                           if (!file) return;
                           const reader = new FileReader();
-                          reader.onload = (ev) => {
+                          reader.onload = async (ev) => {
                             const buffer = ev.target.result;
                             const newObj = {
                               id: `custom_glb_${Date.now()}`,
                               name: file.name.replace('.glb', ''),
                               modelType: 'custom_glb',
-                              modelBuffer: buffer,
                               position: [0, 0, 0],
                               rotation: [0, 0, 0],
                               scale: [1, 1, 1],
                               isHotspot: false,
                             };
+                            // Save buffer to IndexedDB
+                            await saveBufferToDB(`${CUSTOM_OBJECT_PREFIX}${newObj.id}`, buffer);
+                            // Cache in memory
+                            objectBuffersCache.current.set(newObj.id, buffer);
                             setObjects((prev) => [...prev, newObj]);
                             setSelectedObjectId(newObj.id);
                             showToast(`✅ Загружен кастомный 3D объект: ${file.name}`);
@@ -2273,8 +2411,13 @@ export default function HotspotTool3D({ onClose }) {
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-emerald-400">Свойства объекта</span>
                       <button
-                        onClick={() => {
-                          setObjects((prev) => prev.filter((o) => o.id !== selectedObject.id));
+                        onClick={async () => {
+                          const objId = selectedObject.id;
+                          if (selectedObject.modelType === 'custom_glb') {
+                            await deleteBufferFromDB(`${CUSTOM_OBJECT_PREFIX}${objId}`);
+                            objectBuffersCache.current.delete(objId);
+                          }
+                          setObjects((prev) => prev.filter((o) => o.id !== objId));
                           setSelectedObjectId(null);
                         }}
                         className="text-red-400 hover:text-red-300 p-1"
