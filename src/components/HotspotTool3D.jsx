@@ -266,22 +266,62 @@ export default function HotspotTool3D({ onClose }) {
   // =========================================================
 
   const loadLocationData = useCallback((locKey) => {
+    // 1. Пытаемся загрузить 3D данные
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return false;
-      const allData = JSON.parse(raw);
-      const locData = allData[locKey];
-      if (locData) {
-        if (locData.hotspots) setHotspots(locData.hotspots);
-        if (locData.objects) setObjects(locData.objects);
-        if (locData.camera) setCameraConfig(locData.camera);
-        const savedModelUrl = normalizeModelUrl(locData.modelUrl);
-        setActiveModelUrl(savedModelUrl || DEFAULT_MODEL_URL);
-        return true;
+      if (raw) {
+        const allData = JSON.parse(raw);
+        const locData = allData[locKey];
+        if (locData) {
+          if (locData.hotspots) setHotspots(locData.hotspots);
+          if (locData.objects) setObjects(locData.objects);
+          if (locData.camera) setCameraConfig(locData.camera);
+          const savedModelUrl = normalizeModelUrl(locData.modelUrl);
+          setActiveModelUrl(savedModelUrl || DEFAULT_MODEL_URL);
+          console.log('[3D Hotspot] Загружены 3D данные для', locKey);
+          return true;
+        }
       }
     } catch (e) {
       console.error('Error loading 3D hotspots:', e);
     }
+
+    // 2. Пытаемся загрузить данные из 2D формата (hotspot_tool_${locKey})
+    // Это обеспечивает совместимость: если пользователь редактировал 2D,
+    // а потом перешёл в 3D, мы подхватим хотспоты
+    try {
+      const saved2d = localStorage.getItem(`hotspot_tool_${locKey}`);
+      if (saved2d) {
+        const parsed = JSON.parse(saved2d);
+        if (Array.isArray(parsed?.hotspots) && parsed.hotspots.length > 0) {
+          console.log('[3D Hotspot] Найдены 2D хотспоты для', locKey, '- конвертация в 3D...');
+          // Конвертируем 2D хотспоты в 3D формат
+          const converted = parsed.hotspots.map((hs) => ({
+            id: hs.id,
+            title: hs.label || 'Зона',
+            action: hs.action || 'enter',
+            icon: 'door',
+            color: 'emerald',
+            position: [
+              Number(((hs.x / 100) * 30 - 15).toFixed(2)),
+              Number((hs.y ?? 1).toFixed(2)),
+              Number(((hs.y / 100) * 30 - 15).toFixed(2)),
+            ],
+            size: [1.2, 1.4, 1.2],
+          }));
+          setHotspots(converted);
+          if (parsed.default) {
+            const modelUrl = normalizeModelUrl(parsed.default);
+            if (modelUrl) setActiveModelUrl(modelUrl);
+          }
+          console.log('[3D Hotspot] Конвертировано хотспотов:', converted.length);
+          return true;
+        }
+      }
+    } catch (e) {
+      console.error('Error loading 2D hotspots for 3D fallback:', e);
+    }
+
     return false;
   }, []);
 
@@ -363,6 +403,39 @@ export default function HotspotTool3D({ onClose }) {
       setSelectedObjectId(null);
     }
   }, [effectiveLocId, loadLocationData]);
+
+  // =========================================================
+  // АВТОСОХРАНЕНИЕ в localStorage при изменениях (debounce)
+  // =========================================================
+  const autoSaveTimerRef = useRef(null);
+  useEffect(() => {
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+    autoSaveTimerRef.current = setTimeout(() => {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        const allData = raw ? JSON.parse(raw) : {};
+        const savedModelUrl = normalizeModelUrl(activeModelUrl) || DEFAULT_MODEL_URL;
+        allData[effectiveLocId] = {
+          modelUrl: savedModelUrl,
+          customModelName: activeModelUrl === CUSTOM_SCENE_MODEL_URL ? customSceneModel?.name : undefined,
+          camera: cameraConfig,
+          hotspots,
+          objects,
+          updatedAt: new Date().toISOString(),
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(allData));
+      } catch (e) {
+        console.error('[3D Hotspot] Autosave error:', e);
+      }
+    }, 2000); // 2秒 debounce
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, [effectiveLocId, activeModelUrl, customSceneModel, cameraConfig, hotspots, objects]);
 
   // =========================================================
   // 2. ИНИЦИАЛИЗАЦИЯ THREE.JS СЦЕНЫ
@@ -734,10 +807,33 @@ export default function HotspotTool3D({ onClose }) {
     }
 
     const loader = new GLTFLoader();
-    const addModel = (model) => {
+    
+    // Progress callback для отладки больших моделей
+    const onLoadProgress = (xhr) => {
+      if (xhr.total > 0) {
+        const percent = Math.round((xhr.loaded / xhr.total) * 100);
+        console.log(`[3D Scene Model] Загрузка модели ${modelUrl}: ${percent}% (${(xhr.loaded / 1024 / 1024).toFixed(1)}MB / ${(xhr.total / 1024 / 1024).toFixed(1)}MB)`);
+      }
+    };
+
+    const addModel = (result) => {
       if (cancelled || !sceneRef.current) return;
 
-      model.name = isCustomModel ? customSceneModel.name : modelUrl;
+      // GLTFLoader.load может вернуть Scene или GLTF объект
+      let model;
+      if (result.scene) {
+        // GLTF result
+        model = result.scene;
+      } else if (result.isGroup || result.isObject3D) {
+        // Scene напрямую
+        model = result;
+      } else {
+        handleError(new Error('Невозможно определить тип загруженного объекта'));
+        return;
+      }
+
+      console.log('[3D Scene Model] Модель успешно загружена:', modelUrl);
+      model.name = isCustomModel ? (customSceneModel?.name || 'custom') : modelUrl;
       model.traverse((child) => {
         if (child.isMesh) {
           child.castShadow = true;
@@ -764,11 +860,14 @@ export default function HotspotTool3D({ onClose }) {
 
     const handleError = (err) => {
       if (cancelled) return;
-      console.warn('Could not load 3D model, falling back to grid:', activeModelUrl, err);
-      showToast(isCustomModel ? '⚠️ Ошибка парсинга 3D модели сцены' : '⚠️ Не удалось загрузить модель сцены');
+      console.error('[3D Scene Model] Ошибка загрузки модели:', modelUrl);
+      console.error('[3D Scene Model] Детали:', err);
+      console.error('[3D Scene Model] activeModelUrl:', activeModelUrl, 'normalized:', modelUrl);
+      showToast(isCustomModel ? '�️ Ошибка парсинга 3D модели сцены' : '⚠️ Не удалось загрузить модель сцены. Проверьте консоль.');
     };
 
     if (isCustomModel) {
+      console.log('[3D Scene Model] Парсинг кастомной модели:', customSceneModel.name);
       loader.parse(
         customSceneModel.buffer,
         '',
@@ -782,7 +881,17 @@ export default function HotspotTool3D({ onClose }) {
         handleError
       );
     } else {
-      loader.load(modelUrl, addModel, undefined, handleError);
+      console.log('[3D Scene Model] Загрузка модели по URL:', modelUrl);
+      loader.load(
+        modelUrl,
+        addModel,
+        (xhr) => {
+          if (xhr.total) {
+            console.log(`[3D Scene Model] Прогресс загрузки: ${(xhr.loaded / xhr.total * 100).toFixed(0)}%`);
+          }
+        },
+        handleError
+      );
     }
 
     return () => {
