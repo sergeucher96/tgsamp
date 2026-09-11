@@ -6,6 +6,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import {
+  ArrowLeft,
   X,
   Save,
   Download,
@@ -94,12 +95,60 @@ const SCENE_MODEL_PRESETS = [
 ];
 
 const STORAGE_KEY = 'tgsamp_3d_hotspots_v1';
+const DEFAULT_MODEL_URL = '/models/myscene.glb';
+const CUSTOM_SCENE_MODEL_URL = 'custom_scene_model';
+const PRESET_MODEL_URLS = new Set(SCENE_MODEL_PRESETS.map((preset) => preset.url));
+const normalizeModelUrl = (url) => {
+  if (typeof url !== 'string') return null;
+
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+
+  const lowerUrl = trimmed.toLowerCase();
+  if (
+    lowerUrl === CUSTOM_SCENE_MODEL_URL ||
+    lowerUrl.startsWith('blob:') ||
+    lowerUrl.startsWith('file:')
+  ) {
+    return null;
+  }
+
+  const presetByIdOrUrl = SCENE_MODEL_PRESETS.find(
+    (preset) => preset.id === trimmed || preset.url === trimmed
+  );
+  if (presetByIdOrUrl) return presetByIdOrUrl.url;
+
+  const cleanPath = trimmed.split(/[?#]/)[0].replace(/\\/g, '/');
+  const fileName = cleanPath.substring(cleanPath.lastIndexOf('/') + 1).toLowerCase();
+  const presetByFileName = SCENE_MODEL_PRESETS.find((preset) => {
+    const presetFileName = preset.url.split(/[?#]/)[0].split('/').pop().toLowerCase();
+    return presetFileName === fileName;
+  });
+  if (presetByFileName) return presetByFileName.url;
+
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^\/models\/.+\.(glb|gltf)$/i.test(cleanPath)) return trimmed;
+
+  return null;
+};
+const isRestorableModelUrl = (url) => normalizeModelUrl(url) !== null;
+
+// Safe localStorage set (как в 2D редакторе)
+const safeLocalStorageSet = (key, value) => {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (e) {
+    return false;
+  }
+};
 
 export default function HotspotTool3D({ onClose }) {
   // Выбор локации и подлокации
   const [selectedLocId, setSelectedLocId] = useState('showroom_ls');
   const [editingSubLocation, setEditingSubLocation] = useState(null); // { parentId, subName }
   const [activeModelUrl, setActiveModelUrl] = useState('/models/myscene.glb');
+  const [customSceneModel, setCustomSceneModel] = useState(null);
 
   // Режим редактора: 'editor' | 'player'
   const [mode, setMode] = useState('editor');
@@ -121,8 +170,18 @@ export default function HotspotTool3D({ onClose }) {
     position: [15, 10, 15],
     target: [0, 2, 0],
     fov: 48,
-    parallax: { enabled: true, maxAngleYaw: 10, maxAnglePitch: 5 },
+    parallax: {
+      enabled: true,
+      yawDegrees: 10,
+      pitchDegrees: 5,
+      positionShift: 0.05,
+      smoothness: 0.08,
+      maxAngleYaw: 10,
+      maxAnglePitch: 5,
+    },
   });
+  const [showGrid, setShowGrid] = useState(true);
+  const [liveAngleOffset, setLiveAngleOffset] = useState({ yaw: 0, pitch: 0 });
 
   // Transform Controls
   const [transformMode, setTransformMode] = useState('translate'); // 'translate' | 'rotate' | 'scale'
@@ -155,6 +214,10 @@ export default function HotspotTool3D({ onClose }) {
   const raycasterRef = useRef(new THREE.Raycaster());
   const pointerDownPosRef = useRef({ x: 0, y: 0 });
   const pointerRef = useRef({ x: 0, y: 0 });
+  const modeRef = useRef(mode);
+  const cameraConfigRef = useRef(cameraConfig);
+  const isGizmoDraggingRef = useRef(false);
+  const gridRef = useRef(null);
 
   // DOM badge elements ref map
   const hotspotDomRefs = useRef(new Map());
@@ -192,7 +255,11 @@ export default function HotspotTool3D({ onClose }) {
 
   const selectedHotspot = useMemo(() => {
     return hotspots.find((h) => h.id === selectedHotspotId) || null;
-  }, [hotspots, selectedHotspotId]);
+  }, [hotspots, selectedHotspotId, mode]);
+
+  modeRef.current = mode;
+  cameraConfigRef.current = cameraConfig;
+  isGizmoDraggingRef.current = isGizmoDragging;
 
   // =========================================================
   // 1. ЗАГРУЗКА И СОХРАНЕНИЕ ДАННЫХ ЛОКАЦИИ (LocalStorage / JSON)
@@ -208,7 +275,8 @@ export default function HotspotTool3D({ onClose }) {
         if (locData.hotspots) setHotspots(locData.hotspots);
         if (locData.objects) setObjects(locData.objects);
         if (locData.camera) setCameraConfig(locData.camera);
-        if (locData.modelUrl) setActiveModelUrl(locData.modelUrl);
+        const savedModelUrl = normalizeModelUrl(locData.modelUrl);
+        setActiveModelUrl(savedModelUrl || DEFAULT_MODEL_URL);
         return true;
       }
     } catch (e) {
@@ -217,13 +285,16 @@ export default function HotspotTool3D({ onClose }) {
     return false;
   }, []);
 
-  const saveLocationData = useCallback(() => {
+  const saveLocationData = useCallback(async () => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       const allData = raw ? JSON.parse(raw) : {};
 
+      const savedModelUrl = normalizeModelUrl(activeModelUrl) || DEFAULT_MODEL_URL;
+
       allData[effectiveLocId] = {
-        modelUrl: activeModelUrl,
+        modelUrl: savedModelUrl,
+        customModelName: activeModelUrl === CUSTOM_SCENE_MODEL_URL ? customSceneModel?.name : undefined,
         camera: cameraConfig,
         hotspots,
         objects,
@@ -231,6 +302,47 @@ export default function HotspotTool3D({ onClose }) {
       };
 
       localStorage.setItem(STORAGE_KEY, JSON.stringify(allData));
+
+      // Сохраняем в тот же ключ формата, что и 2D редактор, чтобы данные
+      // были доступны через savedHotspots.json workflow и locationStyles.js
+      const payload = {
+        default: savedModelUrl,
+        bgMusic: '',
+        musicVolume: 0.5,
+        hotspots: hotspots.map((hs) => ({
+          id: hs.id,
+          type: 'rect',
+          label: hs.label,
+          action: hs.action,
+          ...(hs.subLocation ? { subLocation: hs.subLocation } : {}),
+          // Для 3D хотспотов координаты — абсолютные позиции в сцене
+          x: Number((hs.position?.[0] ?? 0).toFixed(3)),
+          y: Number((hs.position?.[1] ?? 0).toFixed(3)),
+          w: 1,
+          h: 1,
+        })),
+        updatedAt: new Date().toISOString(),
+      };
+
+      // Сохраняем в localStorage под ключомARENT локации (как 2D редактор)
+      const parentKey = editingSubLocation ? editingSubLocation.parentId : selectedLocId;
+      safeLocalStorageSet(`hotspot_tool_${parentKey}`, JSON.stringify(payload));
+
+      // Пытаемся сохранить на диск через API (работает локально в dev)
+      try {
+        const res = await fetch('/api/save-hotspots', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: parentKey, payload }),
+        });
+        if (res.ok) {
+          showToast('💾 3D данные сохранены на диск в savedHotspots.json!');
+          return true;
+        }
+      } catch (e) {
+        // API недоступен (например, на проде) — сохраняем только в localStorage
+      }
+
       showToast('✅ 3D данные сцены сохранены в LocalStorage!');
       return true;
     } catch (e) {
@@ -238,7 +350,7 @@ export default function HotspotTool3D({ onClose }) {
       showToast('⚠️ Ошибка сохранения данных!');
       return false;
     }
-  }, [effectiveLocId, activeModelUrl, cameraConfig, hotspots, objects]);
+  }, [effectiveLocId, selectedLocId, editingSubLocation, activeModelUrl, customSceneModel, cameraConfig, hotspots, objects]);
 
   // При смене локации загружаем её данные
   useEffect(() => {
@@ -311,7 +423,9 @@ export default function HotspotTool3D({ onClose }) {
     // Сетка полигона
     const grid = new THREE.GridHelper(30, 30, 0x10b981, 0x1e293b);
     grid.position.y = -0.01;
+    grid.visible = mode === 'editor';
     scene.add(grid);
+    gridRef.current = grid;
 
     // OrbitControls
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -357,6 +471,7 @@ export default function HotspotTool3D({ onClose }) {
 
     transformControls.addEventListener('dragging-changed', (e) => {
       const isDragging = !!e.value;
+      isGizmoDraggingRef.current = isDragging;
       setIsGizmoDragging(isDragging);
       if (controlsRef.current) {
         controlsRef.current.enabled = !isDragging;
@@ -417,6 +532,18 @@ export default function HotspotTool3D({ onClose }) {
       setLiveTransformInfo(null);
     });
 
+    // Векторы для расчета параллакса и ориентации камеры
+    const dummyCam = new THREE.PerspectiveCamera();
+    const baseCamPos = new THREE.Vector3();
+    const baseTargetPos = new THREE.Vector3();
+    const baseQuat = new THREE.Quaternion();
+    const targetQuat = new THREE.Quaternion();
+    const deltaQuat = new THREE.Quaternion();
+    const euler = new THREE.Euler();
+    const rightVec = new THREE.Vector3();
+    const upVec = new THREE.Vector3();
+    const desiredPosVec = new THREE.Vector3();
+
     // Анимационный цикл
     let animId;
     const tempVec = new THREE.Vector3();
@@ -426,8 +553,71 @@ export default function HotspotTool3D({ onClose }) {
 
       if (!cameraRef.current || !rendererRef.current || !sceneRef.current) return;
 
-      if (controlsRef.current) {
+      const currentMode = modeRef.current;
+      const currentCameraConfig = cameraConfigRef.current;
+
+      if (currentMode === 'player') {
+        if (controlsRef.current) {
+          controlsRef.current.enabled = false;
+        }
+        const pConfig = currentCameraConfig.parallax || {
+          enabled: true,
+          yawDegrees: 10,
+          pitchDegrees: 5,
+          positionShift: 0.05,
+          smoothness: 0.08,
+        };
+        const basePos = currentCameraConfig.position || [15, 10, 15];
+        const baseTarget = currentCameraConfig.target || [0, 2, 0];
+
+        baseCamPos.set(basePos[0], basePos[1], basePos[2]);
+        baseTargetPos.set(baseTarget[0], baseTarget[1], baseTarget[2]);
+
+        dummyCam.position.copy(baseCamPos);
+        dummyCam.up.set(0, 1, 0);
+        dummyCam.lookAt(baseTargetPos);
+        baseQuat.copy(dummyCam.quaternion);
+
+        if (pConfig.enabled !== false) {
+          const yawDeg = pConfig.yawDegrees ?? pConfig.maxAngleYaw ?? 10;
+          const pitchDeg = pConfig.pitchDegrees ?? pConfig.maxAnglePitch ?? 5;
+          const yawLimitRad = (yawDeg * Math.PI) / 180;
+          const pitchLimitRad = (pitchDeg * Math.PI) / 180;
+
+          const currentYaw = -pointerRef.current.x * yawLimitRad;
+          const currentPitch = pointerRef.current.y * pitchLimitRad;
+          const currentRoll = -pointerRef.current.x * 0.015;
+
+          euler.set(currentPitch, currentYaw, currentRoll, 'YXZ');
+          deltaQuat.setFromEuler(euler);
+          targetQuat.copy(baseQuat).multiply(deltaQuat);
+
+          const posShift = pConfig.positionShift ?? 0.05;
+          rightVec.set(1, 0, 0).applyQuaternion(baseQuat);
+          upVec.set(0, 1, 0).applyQuaternion(baseQuat);
+
+          desiredPosVec.copy(baseCamPos)
+            .addScaledVector(rightVec, pointerRef.current.x * posShift)
+            .addScaledVector(upVec, pointerRef.current.y * posShift * 0.5);
+
+          const smooth = Math.max(0.01, Math.min(1, pConfig.smoothness ?? 0.08));
+          cameraRef.current.position.lerp(desiredPosVec, smooth);
+          cameraRef.current.quaternion.slerp(targetQuat, smooth);
+        } else {
+          cameraRef.current.position.copy(baseCamPos);
+          cameraRef.current.quaternion.copy(baseQuat);
+        }
+      } else if (!isGizmoDraggingRef.current && controlsRef.current) {
+        controlsRef.current.enabled = true;
         controlsRef.current.update();
+      }
+      if (hotspotsGroupRef.current) {
+        hotspotsGroupRef.current.children.forEach((wrapper) => {
+          const diamond = wrapper.getObjectByName('diamond_crystal');
+          if (diamond) {
+            diamond.rotation.y += 0.02;
+          }
+        });
       }
 
       // Обновление экранных координат 2D бейджей хотспотов
@@ -503,36 +693,102 @@ export default function HotspotTool3D({ onClose }) {
   // =========================================================
 
   useEffect(() => {
-    if (!sceneRef.current) return;
+    if (!sceneRef.current) return undefined;
+
+    let cancelled = false;
 
     if (currentModelGroupRef.current) {
-      sceneRef.current.remove(currentModelGroupRef.current);
+      const previousModel = currentModelGroupRef.current;
+      sceneRef.current.remove(previousModel);
+      previousModel.traverse((child) => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+          const materials = Array.isArray(child.material) ? child.material : [child.material];
+          materials.forEach((material) => {
+            Object.keys(material)
+              .map((key) => material[key])
+              .filter((value) => value?.isTexture)
+              .forEach((texture) => texture.dispose());
+            material.dispose();
+          });
+        }
+      });
       currentModelGroupRef.current = null;
     }
 
-    if (activeModelUrl === 'procedural' || !activeModelUrl) return;
+    const isCustomModel = activeModelUrl === CUSTOM_SCENE_MODEL_URL;
+    const modelUrl = isCustomModel
+      ? CUSTOM_SCENE_MODEL_URL
+      : normalizeModelUrl(activeModelUrl) || DEFAULT_MODEL_URL;
+
+    if (modelUrl === 'procedural' || !modelUrl) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (isCustomModel && !customSceneModel?.buffer) {
+      return () => {
+        cancelled = true;
+      };
+    }
 
     const loader = new GLTFLoader();
-    loader.load(
-      activeModelUrl,
-      (gltf) => {
-        const model = gltf.scene;
-        model.traverse((child) => {
-          if (child.isMesh) {
-            child.castShadow = true;
-            child.receiveShadow = true;
-          }
-        });
-        sceneRef.current.add(model);
-        currentModelGroupRef.current = model;
-        showToast('✅ 3D Модель сцены загружена!');
-      },
-      undefined,
-      (err) => {
-        console.warn('Could not load 3D model, falling back to grid:', activeModelUrl, err);
+    const addModel = (model) => {
+      if (cancelled || !sceneRef.current) return;
+
+      model.name = isCustomModel ? customSceneModel.name : modelUrl;
+      model.traverse((child) => {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+
+      if (isCustomModel) {
+        const bbox = new THREE.Box3().setFromObject(model);
+        if (!bbox.isEmpty() && Number.isFinite(bbox.min.x) && Number.isFinite(bbox.min.y) && Number.isFinite(bbox.min.z)) {
+          const center = bbox.getCenter(new THREE.Vector3());
+          model.position.x -= center.x;
+          model.position.y -= bbox.min.y;
+          model.position.z -= center.z;
+        }
       }
-    );
-  }, [activeModelUrl]);
+
+      sceneRef.current.add(model);
+      currentModelGroupRef.current = model;
+      showToast(
+        isCustomModel ? `✅ Модель сцены "${customSceneModel.name}" загружена!` : '✅ 3D Модель сцены загружена!'
+      );
+    };
+
+    const handleError = (err) => {
+      if (cancelled) return;
+      console.warn('Could not load 3D model, falling back to grid:', activeModelUrl, err);
+      showToast(isCustomModel ? '⚠️ Ошибка парсинга 3D модели сцены' : '⚠️ Не удалось загрузить модель сцены');
+    };
+
+    if (isCustomModel) {
+      loader.parse(
+        customSceneModel.buffer,
+        '',
+        (gltf) => {
+          if (gltf?.scene) {
+            addModel(gltf.scene);
+          } else {
+            handleError(new Error('GLTF scene is empty'));
+          }
+        },
+        handleError
+      );
+    } else {
+      loader.load(modelUrl, addModel, undefined, handleError);
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeModelUrl, customSceneModel]);
 
   // =========================================================
   // 4. СИНХРОНИЗАЦИЯ ХОТСПОТОВ В СЦЕНЕ
@@ -564,6 +820,8 @@ export default function HotspotTool3D({ onClose }) {
         })
       );
       hsWrapper.add(boxEdges);
+      boxEdges.visible = mode === 'editor';
+      boxEdges.userData = { hotspotId: hs.id };
 
       const boxFill = new THREE.Mesh(
         boxGeo,
@@ -575,6 +833,7 @@ export default function HotspotTool3D({ onClose }) {
         })
       );
       boxFill.userData = { hotspotId: hs.id };
+      boxFill.visible = mode === 'editor';
       hsWrapper.add(boxFill);
 
       // 2. Напольный ореол / кольцо
@@ -588,6 +847,7 @@ export default function HotspotTool3D({ onClose }) {
       const ringMesh = new THREE.Mesh(ringGeo, ringMat);
       ringMesh.rotation.x = -Math.PI / 2;
       ringMesh.position.y = -boxSize[1] / 2 + 0.02;
+      ringMesh.userData = { hotspotId: hs.id };
       hsWrapper.add(ringMesh);
 
       // 3. Голографический кристалл сверху
@@ -601,11 +861,13 @@ export default function HotspotTool3D({ onClose }) {
       });
       const diamond = new THREE.Mesh(octGeo, octMat);
       diamond.position.y = boxSize[1] / 2 + 0.3;
+      diamond.name = 'diamond_crystal';
+      diamond.userData = { hotspotId: hs.id };
       hsWrapper.add(diamond);
 
       group.add(hsWrapper);
     });
-  }, [hotspots, selectedHotspotId]);
+  }, [hotspots, selectedHotspotId, mode]);
 
   // =========================================================
   // 5. СИНХРОНИЗАЦИЯ 3D ОБЪЕКТОВ В СЦЕНЕ
@@ -754,6 +1016,92 @@ export default function HotspotTool3D({ onClose }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [mode]);
 
+
+  // Синхронизация режима редактора / игрока (камера, контролы, сетка)
+  useEffect(() => {
+    if (!cameraRef.current || !controlsRef.current) return;
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+
+    if (gridRef.current) {
+      gridRef.current.visible = showGrid && mode === 'editor';
+    }
+    if (ghostMarkerRef.current && mode === 'player') {
+      ghostMarkerRef.current.visible = false;
+    }
+    if (transformControlsRef.current && mode === 'player') {
+      transformControlsRef.current.detach();
+    }
+
+    if (mode === 'player') {
+      const pos = cameraConfig.position || [15, 10, 15];
+      const target = cameraConfig.target || [0, 2, 0];
+      camera.position.set(pos[0], pos[1], pos[2]);
+      controls.target.set(target[0], target[1], target[2]);
+      if (cameraConfig.fov) {
+        camera.fov = cameraConfig.fov;
+        camera.updateProjectionMatrix();
+      }
+      controls.update();
+
+      controls.enablePan = false;
+      controls.enableRotate = false;
+      controls.enableZoom = false;
+      controls.enabled = false;
+      controls.maxPolarAngle = Math.PI / 2 - 0.05;
+      controls.minDistance = 2;
+      controls.maxDistance = 45;
+    } else {
+      controls.enablePan = true;
+      controls.enableRotate = true;
+      controls.enableZoom = true;
+      controls.enabled = !isGizmoDraggingRef.current;
+      controls.maxPolarAngle = Math.PI - 0.05;
+      controls.minDistance = 0.5;
+      controls.maxDistance = 300;
+    }
+  }, [mode, cameraConfig, showGrid]);
+
+
+  // Слушатель движения мыши и тача для параллакса / наклона в режиме игрока
+  useEffect(() => {
+    let lastUpdate = 0;
+    const handlePointerMove = (e) => {
+      if (mode !== 'player') return;
+      let clientX = e.clientX;
+      let clientY = e.clientY;
+      if (e.touches && e.touches.length > 0) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+      }
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const normX = ((clientX - rect.left) / rect.width) * 2 - 1;
+      const normY = -(((clientY - rect.top) / rect.height) * 2 - 1);
+      const clampedX = Math.max(-1, Math.min(1, normX));
+      const clampedY = Math.max(-1, Math.min(1, normY));
+      pointerRef.current = { x: clampedX, y: clampedY };
+
+      const yawLimit = cameraConfig.parallax?.yawDegrees ?? 10;
+      const pitchLimit = cameraConfig.parallax?.pitchDegrees ?? 5;
+      const now = Date.now();
+      if (now - lastUpdate > 30) {
+        lastUpdate = now;
+        setLiveAngleOffset({
+          yaw: Number((-clampedX * yawLimit).toFixed(1)),
+          pitch: Number((clampedY * pitchLimit).toFixed(1)),
+        });
+      }
+    };
+
+    window.addEventListener('mousemove', handlePointerMove);
+    window.addEventListener('touchmove', handlePointerMove, { passive: true });
+    return () => {
+      window.removeEventListener('mousemove', handlePointerMove);
+      window.removeEventListener('touchmove', handlePointerMove);
+    };
+  }, [mode, cameraConfig.parallax]);
+
   // =========================================================
   // 7. КЛИКИ ПО 3D ХОЛСТУ (ВЫДЕЛЕНИЕ, РАССТАНОВКА, ВЗАИМОДЕЙСТВИЕ)
   // =========================================================
@@ -789,7 +1137,7 @@ export default function HotspotTool3D({ onClose }) {
 
     // Проверка на смещение мыши (чтобы клик не срабатывал при вращении камеры)
     const dist = Math.hypot(e.clientX - pointerDownPosRef.current.x, e.clientY - pointerDownPosRef.current.y);
-    if (dist > 6) return;
+    if (dist > 12) return;
 
     const rect = canvasRef.current.getBoundingClientRect();
     const mouse = new THREE.Vector2(
@@ -922,7 +1270,8 @@ export default function HotspotTool3D({ onClose }) {
   const handleExportJSON = () => {
     const exportPayload = {
       locationId: effectiveLocId,
-      modelUrl: activeModelUrl,
+      modelUrl: normalizeModelUrl(activeModelUrl) || DEFAULT_MODEL_URL,
+      customModelName: activeModelUrl === CUSTOM_SCENE_MODEL_URL ? customSceneModel?.name : undefined,
       camera: cameraConfig,
       hotspots,
       objects: objects.map((o) => ({
@@ -963,13 +1312,48 @@ export default function HotspotTool3D({ onClose }) {
         if (parsed.hotspots) setHotspots(parsed.hotspots);
         if (parsed.objects) setObjects(parsed.objects);
         if (parsed.camera) setCameraConfig(parsed.camera);
-        if (parsed.modelUrl) setActiveModelUrl(parsed.modelUrl);
+        const savedModelUrl = normalizeModelUrl(parsed.modelUrl);
+        if (savedModelUrl) {
+          setActiveModelUrl(savedModelUrl);
+        }
         showToast('📤 Данные успешно импортированы!');
       } catch (err) {
         showToast('⚠️ Ошибка чтения файла JSON!');
       }
     };
     reader.readAsText(file);
+  };
+
+  const handleSceneModelUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const fileName = file.name.toLowerCase();
+    if (!fileName.endsWith('.glb') && !fileName.endsWith('.gltf')) {
+      showToast('⚠️ Выберите файл сцены в формате .glb или .gltf');
+      e.target.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const buffer = ev.target?.result;
+      if (!(buffer instanceof ArrayBuffer)) {
+        showToast('⚠️ Не удалось прочитать 3D модель');
+        e.target.value = '';
+        return;
+      }
+
+      setCustomSceneModel({ name: file.name, buffer });
+      setActiveModelUrl(CUSTOM_SCENE_MODEL_URL);
+      showToast(`✅ Модель сцены "${file.name}" загружена!`);
+      e.target.value = '';
+    };
+    reader.onerror = () => {
+      showToast('⚠️ Не удалось прочитать файл модели');
+      e.target.value = '';
+    };
+    reader.readAsArrayBuffer(file);
   };
 
   // Фиксация текущего ракурса камеры
@@ -1054,6 +1438,8 @@ export default function HotspotTool3D({ onClose }) {
                 setMode('player');
                 setSelectedHotspotId(null);
                 setSelectedObjectId(null);
+                setIsPlacementMode(false);
+                setIsObjectPlacementMode(false);
               }}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
                 mode === 'player' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-white'
@@ -1256,6 +1642,113 @@ export default function HotspotTool3D({ onClose }) {
               </div>
             )}
 
+            {/* Плавающий интерфейс для Режима Игрока */}
+            {mode === 'player' && (
+              <>
+                <div className="absolute top-4 left-4 right-4 z-30 flex items-center justify-between pointer-events-none">
+                  <div className="flex items-center gap-2 pointer-events-auto">
+                    <button
+                      onClick={() => setMode('editor')}
+                      className="px-3 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-white font-bold text-xs flex items-center gap-1.5 backdrop-blur-md shadow-xl transition active:scale-95"
+                    >
+                      <ArrowLeft size={14} /> Редактор
+                    </button>
+                    <div className="px-3.5 py-2 rounded-2xl bg-slate-900/85 border border-slate-800 backdrop-blur-md text-xs font-bold text-slate-200 flex items-center gap-2 shadow-xl">
+                      <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                      <span>Вид игрока</span>
+                      {editingSubLocation ? (
+                        <span className="text-cyan-300 font-mono">[{editingSubLocation.subName}]</span>
+                      ) : (
+                        <span className="text-slate-400 font-mono">
+                          [{LOCATIONS.find((l) => l.id === selectedLocId)?.name || selectedLocId}]
+                        </span>
+                      )}
+                    </div>
+                    {editingSubLocation && (
+                      <button
+                        onClick={() => {
+                          setEditingSubLocation(null);
+                          showToast('🚪 Вы вышли на улицу');
+                        }}
+                        className="px-2.5 py-1.5 rounded-xl bg-cyan-950/80 hover:bg-cyan-900/80 border border-cyan-500/40 text-cyan-300 text-[11px] font-bold backdrop-blur-md transition active:scale-95"
+                      >
+                        ← Выйти из подлокации
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2 pointer-events-auto">
+                    <button
+                      onClick={() => {
+                        if (cameraRef.current && controlsRef.current) {
+                          const pos = cameraConfig.position || [15, 10, 15];
+                          const target = cameraConfig.target || [0, 2, 0];
+                          cameraRef.current.position.set(pos[0], pos[1], pos[2]);
+                          controlsRef.current.target.set(target[0], target[1], target[2]);
+                          controlsRef.current.update();
+                          showToast('🎥 Ракурс сброшен к исходному');
+                        }
+                      }}
+                      title="Сбросить ракурс камеры"
+                      className="px-3 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-300 hover:text-white text-xs font-bold flex items-center gap-1.5 backdrop-blur-md shadow-xl transition active:scale-95"
+                    >
+                      <Compass size={14} /> Исходный ракурс
+                    </button>
+                    <button
+                      onClick={() => setShowTwaFrame((prev) => !prev)}
+                      title="Переключить рамку Telegram WebApp"
+                      className={`p-2 rounded-xl border text-xs flex items-center gap-1 transition active:scale-95 ${
+                        showTwaFrame
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                          : 'bg-slate-900/90 border-slate-700 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <Smartphone size={16} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
+                  <div className="px-4 py-2 bg-slate-950/85 backdrop-blur-md rounded-2xl border border-slate-800/80 text-center shadow-xl">
+                    <p className="text-[11px] font-bold text-slate-300">
+                      🖱️ Наклон камеры следует за указателем • 🎯 Кликните по маркеру или бейджу для действия
+                    </p>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Радар гироскопа наклона (Tilt / Parallax) */}
+            {mode === 'player' && (
+              <div className="absolute bottom-4 left-4 z-30 bg-slate-950/90 border border-emerald-500/40 backdrop-blur-md rounded-2xl p-2.5 shadow-2xl flex items-center gap-3 text-xs select-none pointer-events-none">
+                <div className="relative w-10 h-10 rounded-full border border-emerald-500/40 bg-slate-900/90 flex items-center justify-center flex-shrink-0">
+                  <div className="absolute w-full h-[1px] bg-emerald-500/25" />
+                  <div className="absolute h-full w-[1px] bg-emerald-500/25" />
+                  <div className="absolute w-5 h-5 rounded-full border border-emerald-500/20" />
+                  <div
+                    className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)] transition-transform duration-75"
+                    style={{
+                      transform: `translate(${-(liveAngleOffset.yaw / (cameraConfig.parallax?.yawDegrees || 10)) * 12}px, ${-(liveAngleOffset.pitch / (cameraConfig.parallax?.pitchDegrees || 5)) * 12}px)`,
+                    }}
+                  />
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="font-bold text-white text-[11px]">Наклон камеры (Tilt)</span>
+                    <span className="bg-emerald-500/20 text-emerald-300 text-[10px] px-1.5 py-0.5 rounded font-mono font-bold">
+                      ±{cameraConfig.parallax?.yawDegrees ?? 10}° / ±{cameraConfig.parallax?.pitchDegrees ?? 5}°
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2.5 text-[10px] font-mono text-emerald-400/90 mt-0.5">
+                    <span>Yaw: <b className="text-white">{liveAngleOffset.yaw > 0 ? `+${liveAngleOffset.yaw}` : liveAngleOffset.yaw}°</b></span>
+                    <span>Pitch: <b className="text-white">{liveAngleOffset.pitch > 0 ? `+${liveAngleOffset.pitch}` : liveAngleOffset.pitch}°</b></span>
+                    <span className="text-slate-400">LERP: {cameraConfig.parallax?.smoothness ?? 0.08}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* 3D Canvas */}
             <canvas
               ref={canvasRef}
@@ -1329,7 +1822,8 @@ export default function HotspotTool3D({ onClose }) {
         </main>
 
         {/* ================= RIGHT SIDEBAR ================= */}
-        <aside className="w-80 bg-slate-900 border-l border-slate-800 flex flex-col shrink-0 z-20 overflow-hidden">
+        {mode === 'editor' && (
+          <aside className="w-80 bg-slate-900 border-l border-slate-800 flex flex-col shrink-0 z-20 overflow-hidden">
           {/* Вкладки сайдбара */}
           <div className="flex border-b border-slate-800 text-xs font-bold shrink-0">
             <button
@@ -1837,8 +2331,42 @@ export default function HotspotTool3D({ onClose }) {
                         {p.name}
                       </option>
                     ))}
+                    {customSceneModel && (
+                      <option key={CUSTOM_SCENE_MODEL_URL} value={CUSTOM_SCENE_MODEL_URL}>
+                        {customSceneModel.name}
+                      </option>
+                    )}
                   </select>
                 </div>
+
+                <label
+                  title="Загрузить внешнюю модель сцены"
+                  className="w-full py-2 px-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 rounded-lg text-[11px] text-slate-300 hover:text-white flex items-center justify-center gap-1.5 cursor-pointer transition"
+                >
+                  <FolderPlus size={14} className="text-emerald-400" />
+                  <span>Загрузить свою модель сцены (.glb / .gltf)</span>
+                  <input
+                    type="file"
+                    accept=".glb,.gltf"
+                    onChange={handleSceneModelUpload}
+                    className="hidden"
+                  />
+                </label>
+
+                {activeModelUrl === CUSTOM_SCENE_MODEL_URL && customSceneModel && (
+                  <div className="flex items-center justify-between p-2 bg-emerald-950/40 border border-emerald-500/30 rounded-lg text-[10px] text-emerald-300">
+                    <span className="truncate">Активна модель: {customSceneModel.name}</span>
+                    <button
+                      onClick={() => {
+                        setCustomSceneModel(null);
+                        setActiveModelUrl('/models/myscene.glb');
+                      }}
+                      className="text-emerald-200 hover:text-white flex items-center gap-1 shrink-0"
+                    >
+                      <X size={12} /> Убрать
+                    </button>
+                  </div>
+                )}
 
                 {/* Фиксация ракурса камеры */}
                 <div className="p-3 bg-slate-800/60 border border-slate-700 rounded-xl space-y-2.5">
@@ -1858,10 +2386,182 @@ export default function HotspotTool3D({ onClose }) {
                     <div>Target: [{cameraConfig.target.join(', ')}]</div>
                   </div>
                 </div>
+
+                {/* Ограничение поворота (Вид игрока) - со всеми настройками со скриншота */}
+                <div className="p-3.5 bg-slate-950/60 border border-slate-800 rounded-xl space-y-3.5">
+                  <div className="flex items-center gap-2 text-slate-200 font-bold text-xs">
+                    <Sliders size={15} className="text-emerald-400" />
+                    <span>Ограничение поворота (Вид игрока)</span>
+                  </div>
+
+                  <label className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={cameraConfig.parallax?.enabled ?? true}
+                      onChange={(e) =>
+                        setCameraConfig((prev) => ({
+                          ...prev,
+                          parallax: {
+                            ...(prev.parallax || {}),
+                            enabled: e.target.checked,
+                          },
+                        }))
+                      }
+                      className="accent-emerald-500"
+                    />
+                    <span>Включить микро-параллакс</span>
+                  </label>
+
+                  <div className="space-y-3">
+                    {/* Поворот влево/вправо (Yaw) */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[11px] text-slate-400">
+                        <span>Поворот влево/вправо (Yaw):</span>
+                        <span className="font-mono text-emerald-400 font-bold">
+                          ±{cameraConfig.parallax?.yawDegrees ?? 10}°
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="1"
+                        max="30"
+                        step="1"
+                        value={cameraConfig.parallax?.yawDegrees ?? 10}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          setCameraConfig((prev) => ({
+                            ...prev,
+                            parallax: {
+                              ...(prev.parallax || {}),
+                              yawDegrees: val,
+                              maxAngleYaw: val,
+                            },
+                          }));
+                        }}
+                        className="w-full accent-emerald-500 cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Поворот вверх/вниз (Pitch) */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[11px] text-slate-400">
+                        <span>Поворот вверх/вниз (Pitch):</span>
+                        <span className="font-mono text-emerald-400 font-bold">
+                          ±{cameraConfig.parallax?.pitchDegrees ?? 5}°
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="1"
+                        max="20"
+                        step="1"
+                        value={cameraConfig.parallax?.pitchDegrees ?? 5}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          setCameraConfig((prev) => ({
+                            ...prev,
+                            parallax: {
+                              ...(prev.parallax || {}),
+                              pitchDegrees: val,
+                              maxAnglePitch: val,
+                            },
+                          }));
+                        }}
+                        className="w-full accent-emerald-500 cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Микро-смещение позиции */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[11px] text-slate-400">
+                        <span>Микро-смещение позиции:</span>
+                        <span className="font-mono text-emerald-400 font-bold">
+                          {((cameraConfig.parallax?.positionShift ?? 0.05)).toFixed(2)}м
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.00"
+                        max="0.15"
+                        step="0.01"
+                        value={cameraConfig.parallax?.positionShift ?? 0.05}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          setCameraConfig((prev) => ({
+                            ...prev,
+                            parallax: {
+                              ...(prev.parallax || {}),
+                              positionShift: val,
+                            },
+                          }));
+                        }}
+                        className="w-full accent-emerald-500 cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Плавность сглаживания (LERP) */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[11px] text-slate-400">
+                        <span>Плавность сглаживания (LERP):</span>
+                        <span className="font-mono text-emerald-400 font-bold">
+                          {cameraConfig.parallax?.smoothness ?? 0.08}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.01"
+                        max="0.20"
+                        step="0.01"
+                        value={cameraConfig.parallax?.smoothness ?? 0.08}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          setCameraConfig((prev) => ({
+                            ...prev,
+                            parallax: {
+                              ...(prev.parallax || {}),
+                              smoothness: val,
+                            },
+                          }));
+                        }}
+                        className="w-full accent-emerald-500 cursor-pointer"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Кнопки Сетка пола и Рамка TG */}
+                  <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setShowGrid((prev) => !prev)}
+                      className={`flex-1 py-2 px-3 rounded-xl border flex items-center justify-center gap-1.5 font-bold transition active:scale-95 ${
+                        showGrid
+                          ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 shadow-sm shadow-amber-500/10'
+                          : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <Grid size={14} className={showGrid ? 'text-amber-400' : 'text-slate-400'} />
+                      <span>Сетка пола</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowTwaFrame((prev) => !prev)}
+                      className={`flex-1 py-2 px-3 rounded-xl border flex items-center justify-center gap-1.5 font-bold transition active:scale-95 ${
+                        showTwaFrame
+                          ? 'bg-blue-500/15 border-blue-500/40 text-blue-300 shadow-sm shadow-blue-500/10'
+                          : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <Smartphone size={14} className={showTwaFrame ? 'text-blue-400' : 'text-slate-400'} />
+                      <span>Рамка TG</span>
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </div>
         </aside>
+        )}
       </div>
 
       {/* Модалка демонстрации взаимодействия в Режиме Игрока */}
