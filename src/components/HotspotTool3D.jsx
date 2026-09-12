@@ -242,6 +242,7 @@ export default function HotspotTool3D({ onClose }) {
     },
   });
   const [showGrid, setShowGrid] = useState(true);
+  const [showCameraView, setShowCameraView] = useState(false);
   const [liveAngleOffset, setLiveAngleOffset] = useState({ yaw: 0, pitch: 0 });
 
   // Transform Controls
@@ -279,6 +280,8 @@ export default function HotspotTool3D({ onClose }) {
   const cameraConfigRef = useRef(cameraConfig);
   const isGizmoDraggingRef = useRef(false);
   const gridRef = useRef(null);
+  const cameraHelperRef = useRef(null);
+  const dummyCameraRef = useRef(null);
 
   // DOM badge elements ref map
   const hotspotDomRefs = useRef(new Map());
@@ -572,6 +575,26 @@ export default function HotspotTool3D({ onClose }) {
     camera.position.set(cameraConfig.position[0], cameraConfig.position[1], cameraConfig.position[2]);
     cameraRef.current = camera;
 
+    // Камера joueur (для visualizer области видимости)
+    const dummyCam = new THREE.PerspectiveCamera(
+      cameraConfig.fov || 48,
+      9 / 16, // rapporto schermo giocatore (si pone come TAwphone)
+      1, 200
+    );
+    dummyCam.position.set(
+      cameraConfig.position[0],
+      cameraConfig.position[1],
+      cameraConfig.position[2]
+    );
+    dummyCam.up.set(0, 1, 0);
+    dummyCam.lookAt(
+      cameraConfig.target[0],
+      cameraConfig.target[1],
+      cameraConfig.target[2]
+    );
+    dummyCameraRef.current = dummyCam;
+    scene.add(dummyCam);
+
     // Рендерер
     const renderer = new THREE.WebGLRenderer({
       canvas,
@@ -857,6 +880,16 @@ export default function HotspotTool3D({ onClose }) {
       transformControls.dispose();
       controls.dispose();
       renderer.dispose();
+
+      // Clean up camera helper
+      if (cameraHelperRef.current) {
+        scene.remove(cameraHelperRef.current);
+        cameraHelperRef.current = null;
+      }
+      if (dummyCameraRef.current) {
+        scene.remove(dummyCameraRef.current);
+        dummyCameraRef.current = null;
+      }
 
       if (sceneRef.current) {
         sceneRef.current.traverse((obj) => {
@@ -1303,6 +1336,48 @@ export default function HotspotTool3D({ onClose }) {
       controls.maxDistance = 300;
     }
   }, [mode, cameraConfig, showGrid]);
+
+
+  // =========================================================
+  // ВИЗУАЛИЗАЦИЯ ВИДА КАМЕРЫ ИГРОКА (CameraHelper)
+  // =========================================================
+
+  useEffect(() => {
+    if (!sceneRef.current || !dummyCameraRef.current) return;
+
+    // Создаём или удаляем CameraHelper
+    if (showCameraView && !cameraHelperRef.current) {
+      const helper = new THREE.CameraHelper(dummyCameraRef.current);
+      sceneRef.current.add(helper);
+      cameraHelperRef.current = helper;
+    }
+
+    if (showCameraView && cameraHelperRef.current) {
+      const pos = cameraConfig.position || [15, 10, 15];
+      const target = cameraConfig.target || [0, 2, 0];
+
+      // Обновляем dummy камеру
+      dummyCameraRef.current.position.set(pos[0], pos[1], pos[2]);
+      dummyCameraRef.current.up.set(0, 1, 0);
+      dummyCameraRef.current.lookAt(target[0], target[1], target[2]);
+      dummyCameraRef.current.fov = cameraConfig.fov || 48;
+      dummyCameraRef.current.updateProjectionMatrix();
+
+      // Обновляем helper
+      cameraHelperRef.current.update();
+      cameraHelperRef.current.visible = true;
+    } else if (!showCameraView && cameraHelperRef.current) {
+      sceneRef.current.remove(cameraHelperRef.current);
+      cameraHelperRef.current = null;
+    }
+
+    return () => {
+      if (cameraHelperRef.current) {
+        sceneRef.current.remove(cameraHelperRef.current);
+        cameraHelperRef.current = null;
+      }
+    };
+  }, [showCameraView, cameraConfig]);
 
 
   // Слушатель движения мыши и тача для параллакса / наклона в режиме игрока
@@ -2780,32 +2855,47 @@ export default function HotspotTool3D({ onClose }) {
                     </div>
                   </div>
 
-                  {/* Кнопки Сетка пола и Рамка TG */}
-                  <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2.5">
-                    <button
-                      type="button"
-                      onClick={() => setShowGrid((prev) => !prev)}
-                      className={`flex-1 py-2 px-3 rounded-xl border flex items-center justify-center gap-1.5 font-bold transition active:scale-95 ${
-                        showGrid
-                          ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 shadow-sm shadow-amber-500/10'
-                          : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      <Grid size={14} className={showGrid ? 'text-amber-400' : 'text-slate-400'} />
-                      <span>Сетка пола</span>
-                    </button>
+                  {/* Кнопки Сетка пола, Вид камеры и Рамка TG */}
+                  <div className="pt-3 border-t border-slate-800/80 space-y-2.5">
+                    <div className="flex items-center justify-between gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setShowGrid((prev) => !prev)}
+                        className={`flex-1 py-2 px-3 rounded-xl border flex items-center justify-center gap-1.5 font-bold transition active:scale-95 ${
+                          showGrid
+                            ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 shadow-sm shadow-amber-500/10'
+                            : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        <Grid size={14} className={showGrid ? 'text-amber-400' : 'text-slate-400'} />
+                        <span>Сетка пола</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setShowTwaFrame((prev) => !prev)}
+                        className={`flex-1 py-2 px-3 rounded-xl border flex items-center justify-center gap-1.5 font-bold transition active:scale-95 ${
+                          showTwaFrame
+                            ? 'bg-blue-500/15 border-blue-500/40 text-blue-300 shadow-sm shadow-blue-500/10'
+                            : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        <Smartphone size={14} className={showTwaFrame ? 'text-blue-400' : 'text-slate-400'} />
+                        <span>Рамка TG</span>
+                      </button>
+                    </div>
 
                     <button
                       type="button"
-                      onClick={() => setShowTwaFrame((prev) => !prev)}
-                      className={`flex-1 py-2 px-3 rounded-xl border flex items-center justify-center gap-1.5 font-bold transition active:scale-95 ${
-                        showTwaFrame
-                          ? 'bg-blue-500/15 border-blue-500/40 text-blue-300 shadow-sm shadow-blue-500/10'
+                      onClick={() => setShowCameraView((prev) => !prev)}
+                      className={`w-full py-2 px-3 rounded-xl border flex items-center justify-center gap-1.5 font-bold transition active:scale-95 ${
+                        showCameraView
+                          ? 'bg-violet-500/15 border-violet-500/40 text-violet-300 shadow-sm shadow-violet-500/10'
                           : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-white'
                       }`}
                     >
-                      <Smartphone size={14} className={showTwaFrame ? 'text-blue-400' : 'text-slate-400'} />
-                      <span>Рамка TG</span>
+                      <Eye size={14} className={showCameraView ? 'text-violet-400' : 'text-slate-400'} />
+                      <span>Показать вид камеры (фрустум)</span>
                     </button>
                   </div>
                 </div>
