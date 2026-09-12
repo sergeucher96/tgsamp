@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { CameraHelper } from 'three';
+import { CameraHelper } from 'three/examples/jsm/helpers/CameraHelper.js';
 import {
   ArrowLeft,
   X,
