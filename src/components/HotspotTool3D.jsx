@@ -743,7 +743,7 @@ export default function HotspotTool3D({ onClose }) {
     });
 
     // Векторы для расчета параллакса и ориентации камеры
-    const dummyCam = new THREE.PerspectiveCamera();
+    const parallaxCam = new THREE.PerspectiveCamera();
     const baseCamPos = new THREE.Vector3();
     const baseTargetPos = new THREE.Vector3();
     const baseQuat = new THREE.Quaternion();
@@ -783,10 +783,10 @@ export default function HotspotTool3D({ onClose }) {
         baseCamPos.set(basePos[0], basePos[1], basePos[2]);
         baseTargetPos.set(baseTarget[0], baseTarget[1], baseTarget[2]);
 
-        dummyCam.position.copy(baseCamPos);
-        dummyCam.up.set(0, 1, 0);
-        dummyCam.lookAt(baseTargetPos);
-        baseQuat.copy(dummyCam.quaternion);
+        parallaxCam.position.copy(baseCamPos);
+        parallaxCam.up.set(0, 1, 0);
+        parallaxCam.lookAt(baseTargetPos);
+        baseQuat.copy(parallaxCam.quaternion);
 
         if (pConfig.enabled !== false) {
           const yawDeg = pConfig.yawDegrees ?? pConfig.maxAngleYaw ?? 10;
