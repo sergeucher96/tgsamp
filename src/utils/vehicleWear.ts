@@ -33,6 +33,7 @@ export interface VehicleWearData {
 export type VehicleWearUpdates = {
   mileage?: number;
   condition?: number;
+  health?: number;
   repair_count?: number;
 } & Partial<Record<`wear_${WearSystemKey}`, number>>;
 
