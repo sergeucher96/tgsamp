@@ -1,7 +1,103 @@
-// src/data/vehicleConfig.js
+// src/data/vehicleConfig.ts
 
-export const VEHICLE_DATABASE = {
-  'clover': {
+export type VehicleModelId =
+  | 'clover'
+  | 'scooter'
+  | 'bus'
+  | 'taxi'
+  | 'truck'
+  | 'garbage_truck'
+  | 'sentinel'
+  | 'hatchback'
+  | 'hatchback2'
+  | 'offroad'
+  | 'pickup'
+  | 'wagon'
+  | 'suv'
+  | 'sport'
+  | 'infernus';
+
+export interface VehicleConfig {
+  id: VehicleModelId;
+  name: string;
+  desc: string;
+  price: number;
+  speed: number;
+  acceleration: number;
+  handling: number;
+  fuelType: string;
+  fuelMax: number;
+  colors: string[];
+  model3d: string;
+}
+
+export type VehicleColor = {
+  id: string;
+  name: string;
+  hex: string;
+};
+
+export interface TuningStage {
+  stage: number;
+  name: string;
+  price: number;
+  desc: string;
+  bonus?: number;
+  accelBonus?: number;
+  gripBonus?: number;
+}
+
+export interface TuningPartConfig {
+  name: string;
+  icon: string;
+  stages?: TuningStage[];
+  price?: number;
+  desc?: string;
+}
+
+export interface HealthPenalty {
+  threshold: number;
+  speedPenalty: number;
+}
+
+export type WearSystemKey =
+  | 'oil'
+  | 'tires'
+  | 'battery'
+  | 'brakes'
+  | 'cooling'
+  | 'electric'
+  | 'suspension'
+  | 'transmission'
+  | 'engine';
+
+export interface WearSystem {
+  name: string;
+  type: 'consumable' | 'service' | 'major';
+  baseResource: number;
+  action: string;
+  cost: number;
+}
+
+export interface ConditionPerformance {
+  min: number;
+  max: number;
+  speed: number;
+  accel: number;
+  brakes: number;
+}
+
+export interface OilOverdueEffect {
+  ratio: number;
+  multiplier: number;
+}
+
+export type WearModelOverride = Partial<
+  Record<WearSystemKey, number>
+>;
+
+export const VEHICLE_DATABASE: Record<VehicleModelId, VehicleConfig> = {
+  clover: {
     id: 'clover',
     name: 'Clover',
     desc: 'Классический маслкар эконом-класса. Надежный выбор для старта.',
@@ -14,7 +110,8 @@ export const VEHICLE_DATABASE = {
     colors: ['white', 'black', 'red', 'blue', 'green'],
     model3d: '/models/cars/test.glb'
   },
-  'scooter': {
+
+  scooter: {
     id: 'scooter',
     name: 'Скутер доставки',
     desc: 'Легкий городской скутер для доставки пиццы.',
@@ -27,7 +124,8 @@ export const VEHICLE_DATABASE = {
     colors: ['yellow', 'black'],
     model3d: '/models/cars/test.glb'
   },
-  'bus': {
+
+  bus: {
     id: 'bus',
     name: 'Городской автобус',
     desc: 'Служебный автобус городского автопарка. Выдается на время смены.',
@@ -40,7 +138,8 @@ export const VEHICLE_DATABASE = {
     colors: ['yellow', 'white'],
     model3d: '/models/cars/bus.glb'
   },
-  'taxi': {
+
+  taxi: {
     id: 'taxi',
     name: 'Такси',
     desc: 'Служебная машина таксопарка со счетчиком. Выдается на время смены.',
@@ -53,7 +152,8 @@ export const VEHICLE_DATABASE = {
     colors: ['yellow', 'black'],
     model3d: '/models/cars/test.glb'
   },
-  'truck': {
+
+  truck: {
     id: 'truck',
     name: 'Тягач с прицепом',
     desc: 'Магистральный тягач грузового терминала. Медленный, но берет тяжелый груз.',
@@ -66,7 +166,8 @@ export const VEHICLE_DATABASE = {
     colors: ['white', 'black', 'red'],
     model3d: '/models/cars/test.glb'
   },
-  'garbage_truck': {
+
+  garbage_truck: {
     id: 'garbage_truck',
     name: 'Мусоровоз',
     desc: 'Служебный мусоровоз для уборки города. Выдается на время смены.',
@@ -79,7 +180,8 @@ export const VEHICLE_DATABASE = {
     colors: ['green', 'white'],
     model3d: '/models/cars/test.glb'
   },
-  'sentinel': {
+
+  sentinel: {
     id: 'sentinel',
     name: 'Sentinel',
     desc: 'Представительский седан. Сочетание немецкой мощи и комфорта.',
@@ -92,7 +194,8 @@ export const VEHICLE_DATABASE = {
     colors: ['white', 'black', 'red', 'blue', 'green'],
     model3d: '/models/cars/test.glb'
   },
-  'hatchback': {
+
+  hatchback: {
     id: 'hatchback',
     name: 'Hatchback',
     desc: 'Компактный хэтчбек для города. Маневренный и экономичный.',
@@ -105,7 +208,8 @@ export const VEHICLE_DATABASE = {
     colors: ['white', 'black', 'red', 'blue', 'green'],
     model3d: '/models/cars/hatchback.glb'
   },
-  'hatchback2': {
+
+  hatchback2: {
     id: 'hatchback2',
     name: 'Hatchback Sport',
     desc: 'Спортивная версия хэтчбека с улучшенными характеристиками.',
@@ -118,7 +222,8 @@ export const VEHICLE_DATABASE = {
     colors: ['white', 'black', 'red', 'blue'],
     model3d: '/models/cars/hatchback2.glb'
   },
-  'offroad': {
+
+  offroad: {
     id: 'offroad',
     name: 'Offroad',
     desc: 'Внедорожник для любых условий. Пройдет там где другие сдадутся.',
@@ -131,7 +236,8 @@ export const VEHICLE_DATABASE = {
     colors: ['white', 'black', 'green', 'blue'],
     model3d: '/models/cars/Offroad.glb'
   },
-  'pickup': {
+
+  pickup: {
     id: 'pickup',
     name: 'Pickup',
     desc: 'Пикап для работы и отдыха. Вместительный и мощный.',
@@ -144,7 +250,8 @@ export const VEHICLE_DATABASE = {
     colors: ['white', 'black', 'red', 'blue'],
     model3d: '/models/cars/Pickup.glb'
   },
-  'wagon': {
+
+  wagon: {
     id: 'wagon',
     name: 'Wagon',
     desc: 'Универсал для семьи. Комфорт и вместительность на каждый день.',
@@ -157,7 +264,8 @@ export const VEHICLE_DATABASE = {
     colors: ['white', 'black', 'red', 'blue', 'green'],
     model3d: '/models/cars/Wagon.glb'
   },
-  'suv': {
+
+  suv: {
     id: 'suv',
     name: 'SUV',
     desc: 'Полноразмещенный внедорожник премиум-класса.',
@@ -170,7 +278,8 @@ export const VEHICLE_DATABASE = {
     colors: ['white', 'black', 'red', 'blue'],
     model3d: '/models/cars/suv.glb'
   },
-  'sport': {
+
+  sport: {
     id: 'sport',
     name: 'Sport',
     desc: 'Спортивный купе. Скорость и адреналин на каждом повороте.',
@@ -183,7 +292,8 @@ export const VEHICLE_DATABASE = {
     colors: ['white', 'black', 'red'],
     model3d: '/models/cars/sport.glb'
   },
-  'infernus': {
+
+  infernus: {
     id: 'infernus',
     name: 'Infernus',
     desc: 'Самый быстрый автомобиль в штате. Только для настоящих королей дорог.',
@@ -199,7 +309,7 @@ export const VEHICLE_DATABASE = {
 };
 
 // Тюнинг конфиг
-export const TUNING_CONFIG = {
+export const TUNING_CONFIG: Record<string, TuningPartConfig> = {
   engine: {
     name: 'Двигатель',
     icon: '⚙️',
@@ -209,15 +319,38 @@ export const TUNING_CONFIG = {
       { stage: 3, name: 'Stage 3', bonus: 0.30, price: 35000, desc: '+30% скорость' }
     ]
   },
+
   suspension: {
     name: 'Подвеска',
     icon: '🔧',
     stages: [
-      { stage: 1, name: 'Stage 1', accelBonus: 0.10, gripBonus: 0.10, price: 4000, desc: '+10% ускорение, +10% сцепление' },
-      { stage: 2, name: 'Stage 2', accelBonus: 0.20, gripBonus: 0.20, price: 12000, desc: '+20% ускорение, +20% сцепление' },
-      { stage: 3, name: 'Stage 3', accelBonus: 0.30, gripBonus: 0.30, price: 28000, desc: '+30% ускорение, +30% сцепление' }
+      {
+        stage: 1,
+        name: 'Stage 1',
+        accelBonus: 0.10,
+        gripBonus: 0.10,
+        price: 4000,
+        desc: '+10% ускорение, +10% сцепление'
+      },
+      {
+        stage: 2,
+        name: 'Stage 2',
+        accelBonus: 0.20,
+        gripBonus: 0.20,
+        price: 12000,
+        desc: '+20% ускорение, +20% сцепление'
+      },
+      {
+        stage: 3,
+        name: 'Stage 3',
+        accelBonus: 0.30,
+        gripBonus: 0.30,
+        price: 28000,
+        desc: '+30% ускорение, +30% сцепление'
+      }
     ]
   },
+
   brakes: {
     name: 'Тормоза',
     icon: '🛑',
@@ -227,6 +360,7 @@ export const TUNING_CONFIG = {
       { stage: 3, name: 'Stage 3', bonus: 0.15, price: 18000, desc: '+15% управление' }
     ]
   },
+
   nitro: {
     name: 'Нитро',
     icon: '🚀',
@@ -236,22 +370,23 @@ export const TUNING_CONFIG = {
 };
 
 // Штрафы за состояние авто
-export const HEALTH_PENALTIES = [
-  { threshold: 30, speedPenalty: 0.50 },  // <30% health → -50% speed
-  { threshold: 50, speedPenalty: 0.20 },  // <50% health → -20% speed
+export const HEALTH_PENALTIES: HealthPenalty[] = [
+  { threshold: 30, speedPenalty: 0.50 },
+  { threshold: 50, speedPenalty: 0.20 }
 ];
 
 // Стоимость ремонта за 1% здоровья
 export const REPAIR_COST_PER_PERCENT = 50;
 
-// Скорость износа авто (потеря % здоровья за 1000 единиц расстояния)
+// Скорость износа авто
 export const HEALTH_WEAR_RATE = 0.5;
 
-export const VEHICLE_COLORS = [
+// Цвета автомобилей
+export const VEHICLE_COLORS: VehicleColor[] = [
   { id: 'white', name: 'Белый', hex: '#FFFFFF' },
   { id: 'black', name: 'Черный', hex: '#1A1A1A' },
-  { id: 'red',   name: 'Красный', hex: '#EF4444' },
-  { id: 'blue',  name: 'Синий', hex: '#3B82F6' },
+  { id: 'red', name: 'Красный', hex: '#EF4444' },
+  { id: 'blue', name: 'Синий', hex: '#3B82F6' },
   { id: 'green', name: 'Зеленый', hex: '#10B981' }
 ];
 
@@ -259,73 +394,173 @@ export const VEHICLE_COLORS = [
 // СИСТЕМА ИЗНОСА — 9 систем автомобиля
 // ============================================================
 
-// Базовые ресурсы (в км). Каждая модель может переопределить.
-export const WEAR_SYSTEMS = {
-  oil:         { name: 'Моторное масло',   type: 'consumable',  baseResource: 5000,  action: 'Заменить',    cost: 300 },
-  tires:       { name: 'Шины',            type: 'consumable',  baseResource: 30000, action: 'Заменить',    cost: 4000 },
-  battery:     { name: 'Аккумулятор',     type: 'consumable',  baseResource: 40000, action: 'Заменить',    cost: 6000 },
-  brakes:      { name: 'Тормозная система', type: 'service',    baseResource: 20000, action: 'Обслужить',   cost: 2000 },
-  cooling:     { name: 'Охлаждающая система', type: 'service',  baseResource: 30000, action: 'Обслужить',   cost: 2500 },
-  electric:    { name: 'Электрика',       type: 'service',     baseResource: 50000, action: 'Обслужить',   cost: 4000 },
-  suspension:  { name: 'Подвеска',        type: 'service',     baseResource: 60000, action: 'Обслужить',   cost: 5000 },
-  transmission:{ name: 'Трансмиссия',     type: 'major',       baseResource: 100000, action: 'Ремонт',     cost: 25000 },
-  engine:      { name: 'Двигатель',       type: 'major',       baseResource: 200000, action: 'Ремонт / капремонт', cost: 50000 },
+export const WEAR_SYSTEMS: Record<WearSystemKey, WearSystem> = {
+  oil: {
+    name: 'Моторное масло',
+    type: 'consumable',
+    baseResource: 5000,
+    action: 'Заменить',
+    cost: 300
+  },
+
+  tires: {
+    name: 'Шины',
+    type: 'consumable',
+    baseResource: 30000,
+    action: 'Заменить',
+    cost: 4000
+  },
+
+  battery: {
+    name: 'Аккумулятор',
+    type: 'consumable',
+    baseResource: 40000,
+    action: 'Заменить',
+    cost: 6000
+  },
+
+  brakes: {
+    name: 'Тормозная система',
+    type: 'service',
+    baseResource: 20000,
+    action: 'Обслужить',
+    cost: 2000
+  },
+
+  cooling: {
+    name: 'Охлаждающая система',
+    type: 'service',
+    baseResource: 30000,
+    action: 'Обслужить',
+    cost: 2500
+  },
+
+  electric: {
+    name: 'Электрика',
+    type: 'service',
+    baseResource: 50000,
+    action: 'Обслужить',
+    cost: 4000
+  },
+
+  suspension: {
+    name: 'Подвеска',
+    type: 'service',
+    baseResource: 60000,
+    action: 'Обслужить',
+    cost: 5000
+  },
+
+  transmission: {
+    name: 'Трансмиссия',
+    type: 'major',
+    baseResource: 100000,
+    action: 'Ремонт',
+    cost: 25000
+  },
+
+  engine: {
+    name: 'Двигатель',
+    type: 'major',
+    baseResource: 200000,
+    action: 'Ремонт / капремонт',
+    cost: 50000
+  }
 };
 
 // Порядок отображения в диагностике
-export const WEAR_SYSTEM_ORDER = ['oil', 'tires', 'battery', 'brakes', 'cooling', 'electric', 'suspension', 'transmission', 'engine'];
+export const WEAR_SYSTEM_ORDER: WearSystemKey[] = [
+  'oil',
+  'tires',
+  'battery',
+  'brakes',
+  'cooling',
+  'electric',
+  'suspension',
+  'transmission',
+  'engine'
+];
 
-// WIP — порог уведомления (70% — жёлтый)
+// Порог уведомления
 export const WEAR_WARN_THRESHOLD = 0.7;
 
-// Веса систем для расчёта общего состояния (на урокеน้ำมัน не учитывается)
-export const CONDITION_WEIGHTS = {
+// Веса систем для расчета общего состояния
+export const CONDITION_WEIGHTS: Partial<Record<WearSystemKey, number>> = {
   engine: 0.35,
   transmission: 0.20,
   suspension: 0.15,
   brakes: 0.10,
   cooling: 0.10,
   electric: 0.05,
-  tires: 0.05,
-  // oil: 0 (масло влияет косвенно через двигатель)
+  tires: 0.05
 };
 
 // Пороги: состояние → множитель характеристик
-export const CONDITION_PERFORMANCE = [
-  { min: 1, max: 100, speed: 1.00, accel: 1.00, brakes: 1.00 },   // 90–100%
-  { min: 0.75, max: 0.89, speed: 0.99, accel: 0.99, brakes: 0.99 }, // 75–89%
-  { min: 0.60, max: 0.74, speed: 0.96, accel: 0.96, brakes: 0.96 }, // 60–74%
-  { min: 0.40, max: 0.59, speed: 0.90, accel: 0.88, brakes: 0.85 }, // 40–59%
-  { min: 0.20, max: 0.39, speed: 0.78, accel: 0.75, brakes: 0.70 }, // 20–39%
-  { min: 0.01, max: 0.19, speed: 0.55, accel: 0.50, brakes: 0.40 }, // 1–19%
-  { min: 0,   max: 0,   speed: 0.30, accel: 0.20, brakes: 0.20 },   // 0% критическое
+export const CONDITION_PERFORMANCE: ConditionPerformance[] = [
+  { min: 1, max: 100, speed: 1.00, accel: 1.00, brakes: 1.00 },
+  { min: 0.75, max: 0.89, speed: 0.99, accel: 0.99, brakes: 0.99 },
+  { min: 0.60, max: 0.74, speed: 0.96, accel: 0.96, brakes: 0.96 },
+  { min: 0.40, max: 0.59, speed: 0.90, accel: 0.88, brakes: 0.85 },
+  { min: 0.20, max: 0.39, speed: 0.78, accel: 0.75, brakes: 0.70 },
+  { min: 0.01, max: 0.19, speed: 0.55, accel: 0.50, brakes: 0.40 },
+  { min: 0, max: 0, speed: 0.30, accel: 0.20, brakes: 0.20 }
 ];
 
 // Коэффициенты износа двигателя при просроченном масле
-export const OIL_OVERDUE_EFFECTS = [
-  { ratio: 1.0,  multiplier: 1.0 },   // <= 100% ресурса
-  { ratio: 1.7,  multiplier: 1.25 },   // 70–100% просрочки
-  { ratio: 3.0,  multiplier: 1.75 },   // 70–200% просрочки
-  { ratio: Infinity, multiplier: 2.5 }, // > 200% просрочки
+export const OIL_OVERDUE_EFFECTS: OilOverdueEffect[] = [
+  { ratio: 1.0, multiplier: 1.0 },
+  { ratio: 1.7, multiplier: 1.25 },
+  { ratio: 3.0, multiplier: 1.75 },
+  { ratio: Infinity, multiplier: 2.5 }
 ];
 
 // Стоимость диагностики
 export const DIAGNOSTIC_COST = 150;
 
-// Модельные переопределения ресурсов (ВЗ п.18)
-export const WEAR_MODEL_OVERRIDES = {
-  infernus:  { engine: 150000, oil: 5000 },
-  sentinel:  { engine: 180000, oil: 5000 },
-  sport:     { engine: 160000, oil: 4000 },
-  suv:       { engine: 190000, suspension: 50000 },
+// Модельные переопределения ресурсов
+export const WEAR_MODEL_OVERRIDES: Partial<
+  Record<VehicleModelId, WearModelOverride>
+> = {
+  infernus: {
+    engine: 150000,
+    oil: 5000
+  },
+
+  sentinel: {
+    engine: 180000,
+    oil: 5000
+  },
+
+  sport: {
+    engine: 160000,
+    oil: 4000
+  },
+
+  suv: {
+    engine: 190000,
+    suspension: 50000
+  }
 };
 
 /**
  * Получить ресурс системы для конкретной модели
  */
-export function getSystemResource(modelId, systemKey) {
+export function getSystemResource(
+  modelId: VehicleModelId,
+  systemKey: WearSystemKey
+): number {
   const sys = WEAR_SYSTEMS[systemKey];
+
   if (!sys) return 0;
+
   const overrides = WEAR_MODEL_OVERRIDES[modelId];
-  return overrides && overrides[systemKey] !== undefined ? overrides[systemKey] : sys.baseResource;
+
+  if (
+    overrides &&
+    overrides[systemKey] !== undefined
+  ) {
+    return overrides[systemKey];
+  }
+
+  return sys.baseResource;
 }
