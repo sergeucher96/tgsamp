@@ -224,11 +224,9 @@ export const useVehicleStore =
     isLoading: false,
     carInGarage: null,
 
-    parkInGarage: (houseId) => {
-      const { player } =
-        usePlayerStore.getState();
-
-      const vehicle = player?.activeVehicle;
+parkInGarage: (houseId) => {
+  const { activeVehicle: vehicle } =
+    usePlayerStore.getState();
 
       if (!vehicle) return;
 
