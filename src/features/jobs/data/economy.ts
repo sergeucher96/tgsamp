@@ -1,6 +1,10 @@
-// src/data/economy.js
+// src/features/jobs/data/economy.ts
 
-export const RESOURCE_PRICES = {
+export interface ResourcePrices {
+  [resourceId: string]: number;
+}
+
+export const RESOURCE_PRICES: ResourcePrices = {
   'iron_ore': 150,    // Цена за 1 шт
   'coal': 80,
   'copper_ore': 450,
