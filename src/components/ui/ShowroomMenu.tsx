@@ -1,7 +1,20 @@
 import React from 'react';
-import { Car, X, Navigation, Info, DoorOpen } from 'lucide-react';
+import { Car, X, Navigation, DoorOpen } from 'lucide-react';
 
-export default function ShowroomMenu({ showroom, onGPS, onClose, isPlayerHere, onOpen }) {
+interface Showroom {
+  name: string;
+  desc: string;
+}
+
+interface ShowroomMenuProps {
+  showroom: Showroom;
+  onGPS: (showroom: Showroom) => void;
+  onClose: () => void;
+  isPlayerHere: boolean;
+  onOpen: () => void;
+}
+
+export default function ShowroomMenu({ showroom, onGPS, onClose, isPlayerHere, onOpen }: ShowroomMenuProps) {
   return (
     <div className="fixed inset-0 z-[200] bg-black animate-in fade-in duration-300">
       <div className="w-full bg-[#0a0f1e] p-8 pb-16">
