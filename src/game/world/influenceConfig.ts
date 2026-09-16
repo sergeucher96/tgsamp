@@ -1,4 +1,35 @@
-export const INFLUENCE_REASONS = {
+export type InfluenceReason =
+  | 'TAXI'
+  | 'JOB'
+  | 'CARGO'
+  | 'GANG_MISSION'
+  | 'GANG_EVENT'
+  | 'PVP'
+  | 'TERRITORY_EVENT'
+  | 'DEFENSE'
+  | 'SPECIAL_EVENT'
+  | 'TEST_ADD_INFLUENCE'
+  | 'OTHER';
+
+export interface InfluenceTier {
+  minActions: number;
+  maxActions: number;
+  multiplier: number;
+}
+
+export interface InfluenceConfig {
+  tiers: InfluenceTier[];
+  resetPeriodMs: number;
+  defaultAmount: number;
+}
+
+export interface InfluenceTierInfo {
+  label: string;
+  multiplier: number;
+  remaining: number | '∞';
+}
+
+export const INFLUENCE_REASONS: Record<InfluenceReason, InfluenceReason> = {
   TAXI: 'TAXI',
   JOB: 'JOB',
   CARGO: 'CARGO',
@@ -12,7 +43,7 @@ export const INFLUENCE_REASONS = {
   OTHER: 'OTHER',
 };
 
-export const INFLUENCE_CONFIG = {
+export const INFLUENCE_CONFIG: InfluenceConfig = {
   tiers: [
     { minActions: 0, maxActions: 20, multiplier: 1.0 },
     { minActions: 21, maxActions: 50, multiplier: 0.7 },
@@ -23,12 +54,12 @@ export const INFLUENCE_CONFIG = {
   defaultAmount: 1,
 };
 
-export function getInfluenceMultiplier(actionCount) {
+export function getInfluenceMultiplier(actionCount: number): number {
   const tier = INFLUENCE_CONFIG.tiers.find(t => actionCount >= t.minActions && actionCount <= t.maxActions);
   return tier ? tier.multiplier : 0;
 }
 
-export function getInfluenceTierInfo(actionCount) {
+export function getInfluenceTierInfo(actionCount: number): InfluenceTierInfo {
   const tier = INFLUENCE_CONFIG.tiers.find(t => actionCount >= t.minActions && actionCount <= t.maxActions);
   if (!tier) return { label: 'Максимум', multiplier: 0, remaining: 0 };
   const remaining = tier.maxActions === Infinity ? Infinity : tier.maxActions - actionCount;
