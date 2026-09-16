@@ -1,8 +1,8 @@
 import { Canvas, useLoader } from '@react-three/fiber';
 import { OrbitControls, ContactShadows } from '@react-three/drei';
-import { Suspense, useEffect, useRef, GLTF } from 'react';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
-import { Group, Mesh, Material, Color } from 'three';
+import { Suspense, useEffect, useRef } from 'react';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { Group, Material, Mesh } from 'three';
 
 interface CarModelProps {
   url: string;
@@ -17,9 +17,9 @@ function CarModel({ url, color, rotation = 0 }: CarModelProps) {
   useEffect(() => {
     if (color && gltf?.scene) {
       gltf.scene.traverse((child) => {
-        if (child.isMesh && child.material) {
+        if (child instanceof Mesh && child.material) {
           const materials = Array.isArray(child.material) ? child.material : [child.material];
-          materials.forEach((mat: Material) => {
+          materials.forEach((mat) => {
             const matName = (mat.name || '').toLowerCase();
             const meshName = (child.name || '').toLowerCase();
 
@@ -28,7 +28,10 @@ function CarModel({ url, color, rotation = 0 }: CarModelProps) {
                            meshName.includes('body') || matName.includes('kuzov');
 
             if (isBody) {
-              mat.color.set(color);
+              const target = mat as Material & { color?: { set: (value: string) => void } };
+              if (target.color) {
+                target.color.set(color);
+              }
             }
           });
         }
@@ -55,7 +58,7 @@ function Lights() {
       <ambientLight intensity={0.6} />
       <directionalLight position={[5, 5, 5]} intensity={1} />
       <directionalLight position={[-5, 3, -5]} intensity={0.4} />
-      <hemisphereLight skyColor="#87ceeb" groundColor="#020617" intensity={0.4} />
+      <hemisphereLight args={['#87ceeb', '#020617', 0.4]} />
     </>
   );
 }

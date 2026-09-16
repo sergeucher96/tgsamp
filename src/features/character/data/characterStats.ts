@@ -1,4 +1,22 @@
-export const CHARACTER_STATS = [
+export type CharacterStatKey =
+  | 'charisma'
+  | 'armor'
+  | 'stamina'
+  | 'speed'
+  | 'strength'
+  | 'luck'
+  | 'energy_regen'
+  | 'inv_slots';
+
+export interface CharacterStat {
+  key: CharacterStatKey;
+  name: string;
+  icon: string;
+  color: string;
+  bg: string;
+}
+
+export const CHARACTER_STATS: CharacterStat[] = [
   { key: 'charisma', name: 'Харизма', icon: '⭐', color: 'text-purple-400', bg: 'bg-purple-500' },
   { key: 'armor', name: 'Броня', icon: '🛡️', color: 'text-blue-400', bg: 'bg-blue-500' },
   { key: 'stamina', name: 'Выносливость', icon: '🏃', color: 'text-green-400', bg: 'bg-green-500' },
@@ -9,9 +27,14 @@ export const CHARACTER_STATS = [
   { key: 'inv_slots', name: 'Слоты инвентаря', icon: '💾', color: 'text-cyan-400', bg: 'bg-cyan-500' },
 ];
 
-export const CHARACTER_STATS_MAP = CHARACTER_STATS.reduce((acc, stat) => {
-  acc[stat.key] = stat;
-  return acc;
-}, {});
+export const CHARACTER_STATS_MAP: Record<CharacterStatKey, CharacterStat> = CHARACTER_STATS.reduce(
+  (acc, stat) => {
+    acc[stat.key] = stat;
+    return acc;
+  },
+  {} as Record<CharacterStatKey, CharacterStat>
+);
 
-export const BUFF_STAT_KEYS = CHARACTER_STATS.map(s => s.key).filter(k => k !== 'inv_slots');
+export const BUFF_STAT_KEYS: CharacterStatKey[] = CHARACTER_STATS
+  .map(stat => stat.key)
+  .filter(key => key !== 'inv_slots');

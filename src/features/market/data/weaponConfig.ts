@@ -1,17 +1,47 @@
-// src/data/weaponConfig.js
+export type WeaponMechanic = 'precision' | 'close_range' | 'automatic';
+export type TargetSize = 'small' | 'medium' | 'large';
+export type FireRate = 'single' | 'burst' | 'rapid';
 
-// Конфигурация оружия для тира
-export const WEAPON_CONFIG = {
+export interface WeaponConfig {
+  id: string;
+  name: string;
+  icon: string;
+  desc: string;
+  price: number;
+  mechanic: WeaponMechanic;
+  targetSize: TargetSize;
+  fireRate: FireRate;
+  spread: number;
+  ammoPerShot: number;
+  maxLevel: number;
+  xpPerHit: number;
+  skillId: string;
+}
+
+export interface GunRangeSettings {
+  entryFee: number;
+  timeLimit: number;
+  ammoLimit: number;
+  weaponLicenseCost: number;
+}
+
+export interface QuizQuestion {
+  q: string;
+  options: string[];
+  correct: number;
+}
+
+export const WEAPON_CONFIG: Record<string, WeaponConfig> = {
   deagle: {
     id: 'deagle',
     name: 'Desert Eagle',
     icon: '🔫',
     desc: 'Точная стрельба. Маленькие мишени, одиночные выстрелы.',
     price: 5000,
-    mechanic: 'precision', // одиночные точные выстрелы
-    targetSize: 'small', // маленькие мишени
-    fireRate: 'single', // один выстрел за клик
-    spread: 0, // нет разброса
+    mechanic: 'precision',
+    targetSize: 'small',
+    fireRate: 'single',
+    spread: 0,
     ammoPerShot: 1,
     maxLevel: 10,
     xpPerHit: 15,
@@ -23,10 +53,10 @@ export const WEAPON_CONFIG = {
     icon: '🔫',
     desc: 'Ближний бой. Большие мишени, но близко и быстро.',
     price: 3000,
-    mechanic: 'close_range', // близкая дистанция
-    targetSize: 'large', // большие мишени
-    fireRate: 'burst', // 3 дроби за выстрел
-    spread: 3, // разброс 3 дроби
+    mechanic: 'close_range',
+    targetSize: 'large',
+    fireRate: 'burst',
+    spread: 3,
     ammoPerShot: 1,
     maxLevel: 10,
     xpPerHit: 10,
@@ -38,10 +68,10 @@ export const WEAPON_CONFIG = {
     icon: '🔫',
     desc: 'Автоматическая стрельба. Серии выстрелов, средние мишени.',
     price: 8000,
-    mechanic: 'automatic', // серия выстрелов
-    targetSize: 'medium', // средние мишени
-    fireRate: 'rapid', // быстрые выстрелы
-    spread: 1, // минимальный разброс
+    mechanic: 'automatic',
+    targetSize: 'medium',
+    fireRate: 'rapid',
+    spread: 1,
     ammoPerShot: 1,
     maxLevel: 10,
     xpPerHit: 12,
@@ -49,16 +79,14 @@ export const WEAPON_CONFIG = {
   },
 };
 
-// Стоимость входа в тир и лимиты
-export const GUN_RANGE_SETTINGS = {
-  entryFee: 200, // $ за вход
-  timeLimit: 120, // секунды (2 минуты)
-  ammoLimit: 30, // патронов за сессию
-  weaponLicenseCost: 10000, // $ за лицензию на оружие
+export const GUN_RANGE_SETTINGS: GunRangeSettings = {
+  entryFee: 200,
+  timeLimit: 120,
+  ammoLimit: 30,
+  weaponLicenseCost: 10000,
 };
 
-// Вопросы ПДД для автошколы (~30 вопросов)
-export const DRIVING_TEST_QUESTIONS = [
+export const DRIVING_TEST_QUESTIONS: QuizQuestion[] = [
   { q: 'Скорость в городе не более?', options: ['40', '60', '80', '100'], correct: 1 },
   { q: 'Пешеход имеет приоритет на зебре?', options: ['Да', 'Нет', 'Только с табличкой', 'Зависит от времени'], correct: 0 },
   { q: 'Зелёный мигающий означает?', options: ['Стоп', 'Скоро красный', 'Разрешён разворот', 'Можно парковаться'], correct: 1 },
@@ -91,8 +119,7 @@ export const DRIVING_TEST_QUESTIONS = [
   { q: 'Правильное зеркало — какое?', options: ['Любое', 'Регулированное', 'Убранное', 'Разбитое'], correct: 1 },
 ];
 
-// Тест на ответственность для покупки лицензии на оружие
-export const WEAPON_LICENSE_QUESTIONS = [
+export const WEAPON_LICENSE_QUESTIONS: QuizQuestion[] = [
   { q: 'Оружие можно направлять на человека?', options: ['Да, если угроза', 'Нет, никогда', 'Только преступника', 'По ситуации'], correct: 1 },
   { q: 'Где хранить оружие?', options: ['В машине', 'Под подушкой', 'В сейфе', 'У друга'], correct: 2 },
   { q: 'Стрельба в городе разрешена?', options: ['Да', 'Только ночью', 'Только в тире', 'По желанию'], correct: 2 },

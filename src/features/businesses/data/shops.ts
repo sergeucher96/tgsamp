@@ -1,6 +1,14 @@
-// src/data/shops.js
+export interface ShopItem {
+  id: string;
+  price: number;
+}
 
-export const SHOPS_DATABASE = {
+export interface Shop {
+  name: string;
+  items: ShopItem[];
+}
+
+export const SHOPS_DATABASE: Record<string, Shop> = {
   'shop_24_7': {
     name: 'Магазин 24/7',
     items: [

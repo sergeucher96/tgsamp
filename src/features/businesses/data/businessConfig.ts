@@ -1,4 +1,25 @@
-export const BUSINESS_TYPES = {
+export interface BusinessTypeConfig {
+  name: string;
+  purchasePrice: number;
+  dailyIncome: number;
+  icon: string;
+}
+
+export interface BusinessProduct {
+  id: string;
+  name: string;
+  icon: string;
+  price: number;
+  resources: Record<string, number>;
+}
+
+export interface ResourceTypeInfo {
+  name: string;
+  icon: string;
+  color: string;
+}
+
+export const BUSINESS_TYPES: Record<string, BusinessTypeConfig> = {
   shop: { name: 'Магазин', purchasePrice: 150000, dailyIncome: 3000, icon: '�' },
   clothes: { name: 'Магазин одежды', purchasePrice: 180000, dailyIncome: 3500, icon: '�' },
   bar: { name: 'Бар', purchasePrice: 200000, dailyIncome: 4000, icon: '🍺' },
@@ -11,16 +32,13 @@ export const BUSINESS_TYPES = {
   cafeteria: { name: 'Столовая', purchasePrice: 100000, dailyIncome: 2000, icon: '🍲' },
 };
 
-export const BUSINESS_CATEGORIES = {
+export const BUSINESS_CATEGORIES: Record<string, string[]> = {
   residential: ['house'],
   business: ['shop', 'clothes', 'bar', 'nightclub', 'hotel', 'gas', 'parking', 'gym', 'warehouse', 'cafeteria'],
   municipal: ['bank', 'atm', 'job', 'driving_school', 'gun_range', 'tuning', 'public', 'farm', 'oil_rig'],
 };
 
-// Developer-only product catalog for owned businesses
-// Product resource costs are consumed from business warehouse when player buys
-export const BUSINESS_PRODUCTS = {
-  // 24/7 Shop products
+export const BUSINESS_PRODUCTS: Record<string, BusinessProduct[]> = {
   shop_24_7: [
     { id: 'phone', name: 'Телефон', icon: '📱', price: 1500, resources: { oil: 5, microchip: 2 } },
     { id: 'sim_card', name: 'SIM-карта', icon: '💳', price: 100, resources: { microchip: 1 } },
@@ -30,7 +48,6 @@ export const BUSINESS_PRODUCTS = {
     { id: 'tomato', name: 'Помидор', icon: '🍅', price: 100, resources: { crop: 1 } },
     { id: 'salt', name: 'Соль', icon: '🧂', price: 50, resources: {} },
   ],
-  // Clothes shop products
   clothes_1: [
     { id: 'cap_basic', name: 'Бейсболка', icon: '🧢', price: 800, resources: { crop: 3 } },
     { id: 'tshirt_basic', name: 'Футболка', icon: '👕', price: 500, resources: { crop: 2 } },
@@ -45,9 +62,9 @@ export const BUSINESS_PRODUCTS = {
     { id: 'gloves_basic', name: 'Перчатки', icon: '🧤', price: 600, resources: { crop: 2 } },
     { id: 'boots_heavy', name: 'Тяжёлые ботинки', icon: '🥾', price: 2500, resources: { crop: 4, oil: 2 } },
   ],
-}
+};
 
-export const RESOURCE_TYPES = {
+export const RESOURCE_TYPES: Record<string, ResourceTypeInfo> = {
   crop: { name: 'Урожай', icon: '🌾', color: '#84cc16' },
   oil: { name: 'Нефть', icon: '🛢️', color: '#3b82f6' },
   metal: { name: 'Металл', icon: '🔩', color: '#f59e0b' },

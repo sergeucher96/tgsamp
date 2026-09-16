@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { VEHICLE_DATABASE, VEHICLE_COLORS, VehicleConfig } from '../../features/vehicles/data/vehicleConfig';
+import { useEffect, useState, type SyntheticEvent } from 'react';
+import { VEHICLE_DATABASE, VEHICLE_COLORS } from '../../features/vehicles/data/vehicleConfig';
 import { carThumbnailService } from '../../game/rendering/carThumbnailGenerator';
 import { Loader2 } from 'lucide-react';
 
@@ -23,7 +23,7 @@ export default function CarPreviewImage({
   const [imgSrc, setImgSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const vehicleCfg: VehicleConfig | undefined = VEHICLE_DATABASE[modelId];
+  const vehicleCfg = VEHICLE_DATABASE[modelId];
   const model3d: string = vehicleCfg?.model3d || '/models/cars/test.glb';
 
   // Преобразуем имя цвета ('red', 'blue') в HEX ('#EF4444')
@@ -66,7 +66,7 @@ export default function CarPreviewImage({
       src={imgSrc || '/car.png'}
       alt={alt}
       className={className}
-      onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
+      onError={(e: SyntheticEvent<HTMLImageElement>) => {
         e.currentTarget.src = '/car.png';
       }}
     />
