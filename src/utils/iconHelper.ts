@@ -1,4 +1,4 @@
-export const isImageIcon = (val) => {
+export const isImageIcon = (val: unknown): val is string => {
   if (!val || typeof val !== 'string') return false;
   const v = val.trim();
   if (!v) return false;
