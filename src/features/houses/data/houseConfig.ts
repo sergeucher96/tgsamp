@@ -1,6 +1,18 @@
-// src/data/houseConfig.js
+export type HouseClass = 'economy' | 'comfort' | 'business' | 'premium';
 
-export const HOUSE_CLASSES = {
+export interface HouseClassConfig {
+  name: string;
+  price: number;
+  wardrobe_slots: number;
+  garage_slots: number;
+  bedrooms: number;
+  bathrooms: number;
+  description: string;
+  color: string;
+  markerSize: string;
+}
+
+export const HOUSE_CLASSES: Record<HouseClass, HouseClassConfig> = {
   economy: {
     name: 'Эконом-класс',
     price: 50000,
