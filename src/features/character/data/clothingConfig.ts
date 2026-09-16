@@ -1,6 +1,12 @@
-// src/data/clothingConfig.js
+// src/features/character/data/clothingConfig.ts
 
-export const EQUIPMENT_SLOTS = {
+export interface EquipmentSlot {
+  id: string;
+  name: string;
+  icon: string;
+}
+
+export const EQUIPMENT_SLOTS: Record<string, EquipmentSlot> = {
   head: { id: 'head', name: 'Голова', icon: '🧢' },
   neck: { id: 'neck', name: 'Шея (цепи)', icon: '📿' },
   torso: { id: 'torso', name: 'Туловище', icon: '👕' },
@@ -9,7 +15,18 @@ export const EQUIPMENT_SLOTS = {
   feet: { id: 'feet', name: 'Обувь', icon: '👟' },
 };
 
-export const CLOTHING_DATABASE = {
+export interface ClothingItem {
+  id: string;
+  name: string;
+  desc: string;
+  icon: string;
+  slot: string;
+  price: number;
+  stats: Record<string, number>;
+  type: 'clothing';
+}
+
+export const CLOTHING_DATABASE: Record<string, ClothingItem> = {
   // --- ГОЛОВА ---
   'cap_basic': {
     id: 'cap_basic',
@@ -144,4 +161,4 @@ export const CLOTHING_DATABASE = {
 };
 
 // Все предметы одежды
-export const ALL_CLOTHING = Object.values(CLOTHING_DATABASE);
+export const ALL_CLOTHING: ClothingItem[] = Object.values(CLOTHING_DATABASE);

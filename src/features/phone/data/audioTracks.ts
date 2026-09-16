@@ -1,5 +1,12 @@
-// src/data/audioTracks.js
-export const LOCATION_AUDIO_TRACKS = [
+// src/features/phone/data/audioTracks.ts
+
+export interface AudioTrack {
+  id: string;
+  name: string;
+  url: string;
+}
+
+export const LOCATION_AUDIO_TRACKS: AudioTrack[] = [
   { id: 'none', name: '🔇 Без музыки (тишина)', url: '' },
   { id: 'city_ambient', name: '🌆 Городской шум / Улица', url: '/audio/city_ambient.mp3' },
   { id: 'club_velvet', name: '💃 Клуб Velvet / Басы', url: '/audio/club_velvet.mp3' },

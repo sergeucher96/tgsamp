@@ -1,6 +1,14 @@
-// src/data/kitchenConfig.js
-// Recipes for the kitchen cooking system
-export const RECIPES = [
+// src/features/businesses/data/kitchenConfig.ts
+
+export interface Recipe {
+  id: string;
+  name: string;
+  icon: string;
+  ingredients: string[];
+  resultItem: string;
+}
+
+export const RECIPES: Recipe[] = [
   {
     id: 'meat_fish',
     name: 'Мясной суп с рыбой',
@@ -32,7 +40,7 @@ export const RECIPES = [
   {
     id: 'pizza',
     name: 'Пицца',
-    icon: '�',
+    icon: '🍕',
     ingredients: ['flour', 'tomato', 'cheese', 'meat'],
     resultItem: 'pizza',
   },

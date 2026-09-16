@@ -1,5 +1,13 @@
-// Справочник всех навыков в игре
-export const SKILLS_DATABASE = [
+// src/features/character/data/skills.ts
+
+export interface Skill {
+  id: string;
+  name: string;
+  category: 'job' | 'weapon' | 'combat';
+  icon: string;
+}
+
+export const SKILLS_DATABASE: Skill[] = [
   // РАБОТЫ
   { id: 'taxi', name: 'Водитель Такси', category: 'job', icon: '🚖' },
   { id: 'trucker', name: 'Дальнобойщик', category: 'job', icon: '🚛' },
