@@ -1,4 +1,11 @@
-export const LICENSES_DATABASE = [
+export interface License {
+  id: string;
+  name: string;
+  icon: string;
+  desc: string;
+}
+
+export const LICENSES_DATABASE: License[] = [
   { id: 'moto', name: 'Мотоциклы (A)', icon: '🏍️', desc: 'Мотоциклы' },
   { id: 'car', name: 'Вождение (B)', icon: '🚗', desc: 'Легковой транспорт' },
   { id: 'truck', name: 'Грузовые (C)', icon: '🚛', desc: 'Тяжелая техника' },
