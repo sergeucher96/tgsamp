@@ -1,0 +1,229 @@
+import React, { useState, useRef, useEffect, lazy, Suspense } from 'react';
+import { VEHICLE_DATABASE, VEHICLE_COLORS } from '../vehicles/data/vehicleConfig';
+import { useVehicleStore } from '../../stores/useVehicleStore';
+import { ChevronLeft, ChevronRight, X, Zap, Fuel, Gauge, ShoppingCart, ArrowDownToLine, Loader2 } from 'lucide-react';
+import { Canvas } from '@react-three/fiber';
+import { OrbitControls, ContactShadows } from '@react-three/drei';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
+import { useLoader } from '@react-three/fiber';
+
+/* --- 3D Car Preview Components --- */
+function CarModel({ url, color }) {
+  const group = useRef();
+  const gltf = useLoader(GLTFLoader, url);
+
+  useEffect(() => {
+    if (color && gltf.scene) {
+      gltf.scene.traverse((child) => {
+        if (child.isMesh && child.material) {
+          if (Array.isArray(child.material)) {
+            child.material.forEach(mat => mat.color.set(color));
+          } else {
+            child.material.color.set(color);
+          }
+        }
+      });
+    }
+  }, [color, gltf]);
+
+  return (
+    <group ref={group} dispose={null}>
+      <primitive object={gltf.scene} scale={1.2} />
+    </group>
+  );
+}
+
+function Lights() {
+  return (
+    <>
+      <ambientLight intensity={0.5} />
+      <directionalLight position={[5, 5, 5]} intensity={0.8} />
+      <directionalLight position={[-5, 3, -5]} intensity={0.3} />
+      <hemisphereLight skyColor="#87ceeb" groundColor="#080c14" intensity={0.3} />
+    </>
+  );
+}
+
+function CarMiniScene({ model, color, autoRotate = true }) {
+  return (
+    <Canvas
+      className="w-full h-full"
+      camera={{ position: [0, 1.5, 4], fov: 40, near: 0.1, far: 100 }}
+      style={{ background: 'transparent' }}
+    >
+      <Lights />
+      <ContactShadows position={[0, -0.01, 0]} opacity={0.5} scale={8} blur={2} far={2} resolution={128} color="#000000" />
+      <Suspense fallback={
+        <mesh>
+          <boxGeometry args={[2, 0.8, 1]} />
+          <meshStandardMaterial color="#1a2030" />
+        </mesh>
+      }>
+        <group rotation={[0, 0, 0]}>
+          <group>
+            <CarModel url={model} color={color} />
+          </group>
+        </group>
+      </Suspense>
+      <OrbitControls
+        enablePan={false}
+        enableZoom={false}
+        minPolarAngle={Math.PI / 3.5}
+        maxPolarAngle={Math.PI / 2.2}
+        enableDamping={true}
+        dampingFactor={0.08}
+        autoRotate={autoRotate}
+        autoRotateSpeed={1.5}
+      />
+    </Canvas>
+  );
+}
+
+export default function CarShowroom({ onClose, playerHouses, playerPos, showroomPos }) {
+  const models = Object.keys(VEHICLE_DATABASE).filter(m => VEHICLE_DATABASE[m].price > 0);
+  const [modelIndex, setModelIndex] = useState(0);
+  const [selectedColor, setSelectedColor] = useState('white');
+  const [selectedHouseId, setSelectedHouseId] = useState(playerHouses[0]?.id_name || null);
+
+  const config = VEHICLE_DATABASE[models[modelIndex]];
+  const { buyVehicle, isLoading } = useVehicleStore();
+  const isAtShowroom = Math.hypot(playerPos.x - showroomPos.x, playerPos.y - showroomPos.y) < 50;
+
+  const colorHex = VEHICLE_COLORS.find(v => v.id === selectedColor)?.hex || '#ffffff';
+
+  const handleBuy = async () => {
+    if (!isAtShowroom) return alert("Вы далеко!");
+    const house = playerHouses.find(h => h.id_name === selectedHouseId);
+    if (await buyVehicle(models[modelIndex], selectedColor, house)) onClose();
+  };
+
+  const maxSpeed = 950;
+
+  // Reset color when model changes
+  useEffect(() => {
+    if (config.colors.length > 0) setSelectedColor(config.colors[0]);
+  }, [modelIndex]);
+
+  return (
+    <div className="fixed inset-0 z-[400] bg-[#080c14] flex flex-col text-white overflow-y-auto no-scrollbar">
+      
+      {/* Header */}
+      <div className="flex justify-between items-center px-5 pt-5 pb-3">
+        <button onClick={onClose} className="p-2.5 bg-white/5 rounded-xl active:scale-90 transition-all">
+          <X size={20} />
+        </button>
+        <h2 className="text-lg font-black uppercase italic tracking-tight">Автосалон</h2>
+        <div className="w-10" />
+      </div>
+
+      {/* Model navigation */}
+      <div className="flex items-center justify-between px-5 mb-3">
+        <button onClick={() => setModelIndex((modelIndex - 1 + models.length) % models.length)} 
+          className="p-3 bg-white/5 rounded-xl active:scale-90 transition-all">
+          <ChevronLeft size={22} className="text-slate-300" />
+        </button>
+        <div className="text-center">
+          <h3 className="text-2xl font-black uppercase italic">{config.name}</h3>
+          <p className="text-[10px] text-slate-400 mt-0.5">{config.desc}</p>
+        </div>
+        <button onClick={() => setModelIndex((modelIndex + 1) % models.length)} 
+          className="p-3 bg-white/5 rounded-xl active:scale-90 transition-all">
+          <ChevronRight size={22} className="text-slate-300" />
+        </button>
+      </div>
+
+      {/* 3D Car Preview */}
+      <div className="px-5 mb-4">
+        <div className="bg-gradient-to-b from-white/[0.03] to-transparent rounded-3xl border border-white/5 overflow-hidden relative" style={{ height: '240px' }}>
+          <CarMiniScene model={config.model3d || '/models/cars/test.glb'} color={colorHex} />
+        </div>
+      </div>
+
+      {/* Color picker */}
+      <div className="px-5 mb-4">
+        <div className="text-[10px] font-black text-slate-400 uppercase mb-2">Цвет</div>
+        <div className="flex gap-2 flex-wrap">
+          {config.colors.map((c) => (
+            <button
+              key={c}
+              onClick={() => setSelectedColor(c)}
+              className={`w-9 h-9 rounded-full border-2 transition-all active:scale-90 ${selectedColor === c ? 'border-white scale-110' : 'border-white/20'}`}
+              style={{ backgroundColor: VEHICLE_COLORS.find(v => v.id === c)?.hex || c }}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Characteristics */}
+      <div className="px-5 mb-4">
+        <div className="text-[10px] font-black text-slate-400 uppercase mb-2">Характеристики</div>
+        <div className="bg-white/[0.03] border border-white/5 rounded-2xl p-3 space-y-2.5">
+          {/* Speed */}
+          <div className="flex items-center gap-3">
+            <Gauge size={16} className="text-blue-400 shrink-0" />
+            <span className="text-[11px] text-slate-300 w-16">Скорость</span>
+            <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
+              <div className="h-full bg-blue-500 rounded-full" style={{ width: `${(config.speed / maxSpeed) * 100}%` }} />
+            </div>
+            <span className="text-[11px] font-bold text-slate-300 w-14 text-right">{config.speed} км/ч</span>
+          </div>
+          {/* Fuel */}
+          <div className="flex items-center gap-3">
+            <Fuel size={16} className="text-amber-400 shrink-0" />
+            <span className="text-[11px] text-slate-300 w-16">Топливо</span>
+            <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
+              <div className="h-full bg-amber-500 rounded-full" style={{ width: `${(config.fuelMax / 300) * 100}%` }} />
+            </div>
+            <span className="text-[11px] font-bold text-slate-300 w-14 text-right">{config.fuelMax} л</span>
+          </div>
+          {/* Fuel type */}
+          <div className="flex items-center gap-3">
+            <Zap size={16} className="text-emerald-400 shrink-0" />
+            <span className="text-[11px] text-slate-300 w-16">Бензин</span>
+            <div className="flex-1" />
+            <span className="text-[11px] font-bold text-slate-300 w-14 text-right">АИ-{config.fuelType}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Garage selector */}
+      <div className="px-5 mb-4">
+        <div className="bg-white/[0.03] border border-white/5 rounded-2xl p-3">
+          <div className="text-[10px] font-black text-slate-400 uppercase mb-2">Доставка в гараж</div>
+          <select 
+            value={selectedHouseId || ''} 
+            onChange={(e) => setSelectedHouseId(e.target.value)} 
+            className="w-full bg-slate-900 border border-white/10 p-3 rounded-xl outline-none font-bold text-sm text-white"
+          >
+            {playerHouses.map(h => <option key={h.id_name} value={h.id_name}>{h.name}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div className="flex-1" />
+
+      {/* Buy button */}
+      <div className="px-5 pb-6 pt-3">
+        <button 
+          disabled={!isAtShowroom || isLoading} 
+          onClick={handleBuy} 
+          className={`w-full py-4 rounded-2xl font-black uppercase text-lg transition-all active:scale-[0.98] ${
+            isAtShowroom 
+              ? 'bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-900/40' 
+              : 'bg-slate-800 opacity-50 cursor-not-allowed'
+          }`}
+        >
+          {isLoading ? 'Оформление...' : (
+            <div className="flex items-center justify-center gap-2">
+              <ArrowDownToLine size={20} />
+              {config.price.toLocaleString()} ₽
+            </div>
+          )}
+        </button>
+        {!isAtShowroom && (
+          <div className="text-center text-[10px] text-slate-500 mt-2">Приедьте в автосалон для покупки</div>
+        )}
+      </div>
+    </div>
+  );
+}

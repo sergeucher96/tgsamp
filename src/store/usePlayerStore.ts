@@ -1,7 +1,7 @@
 import { create } from 'zustand';
-import { supabase } from '../api/supabase';
+import { supabase } from '../services/supabase/client';
 import { useInventoryStore } from './useInventoryStore';
-import type { VehicleWearData } from '../utils/vehicleWear';
+import type { VehicleWearData } from '../features/vehicles/utils/vehicleWear';
 
 export interface Player {
   id: string;

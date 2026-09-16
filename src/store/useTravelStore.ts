@@ -1,18 +1,18 @@
 import { create } from 'zustand';
 import { usePlayerStore } from './usePlayerStore';
 import { useVehicleStore } from './useVehicleStore';
-import { WAYPOINTS } from '../data/roads';
-import { getMergedLocations, refreshFinalLocations } from '../data/locations';
-import { findShortestPath } from '../utils/pathfinder';
+import { WAYPOINTS } from '../game/locations/roads';
+import { getMergedLocations, refreshFinalLocations } from '../game/locations/locations';
+import { findShortestPath } from '../game/world/pathfinder';
 import {
   VEHICLE_DATABASE,
   type VehicleModelId,
-} from '../data/vehicleConfig';
+} from '../features/vehicles/data/vehicleConfig';
 import {
   applyWear,
   getPerformanceMultiplier,
   type VehicleWearData,
-} from '../utils/vehicleWear';
+} from '../features/vehicles/utils/vehicleWear';
 
 interface Point {
   x: number;

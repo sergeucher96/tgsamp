@@ -1,9 +1,9 @@
 import { create } from 'zustand';
-import { supabase } from '../api/supabase';
+import { supabase } from '../services/supabase/client';
 import { usePlayerStore } from './usePlayerStore';
 import { useInventoryStore } from './useInventoryStore';
 import { useQuestStore } from './useQuestStore';
-import { HOUSE_CLASSES } from '../data/houseConfig';
+import { HOUSE_CLASSES } from '../features/houses/data/houseConfig';
 import {
   VEHICLE_DATABASE,
   TUNING_CONFIG,
@@ -12,14 +12,14 @@ import {
   DIAGNOSTIC_COST,
   type VehicleModelId,
   type WearSystemKey,
-} from '../data/vehicleConfig';
+} from '../features/vehicles/data/vehicleConfig';
 import {
   getDiagnosis,
   getServiceUpdates,
   calculateOverallCondition,
   getPerformanceMultiplier,
   type VehicleWearData,
-} from '../utils/vehicleWear';
+} from '../features/vehicles/utils/vehicleWear';
 
 interface Vehicle extends VehicleWearData {
   id: string;
