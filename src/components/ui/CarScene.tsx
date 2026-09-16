@@ -1,23 +1,30 @@
 import { Canvas, useLoader } from '@react-three/fiber';
 import { OrbitControls, ContactShadows } from '@react-three/drei';
-import { Suspense, useEffect, useRef } from 'react';
+import { Suspense, useEffect, useRef, GLTF } from 'react';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
+import { Group, Mesh, Material, Color } from 'three';
 
-function CarModel({ url, color, rotation }) {
-  const group = useRef();
+interface CarModelProps {
+  url: string;
+  color?: string;
+  rotation?: number;
+}
+
+function CarModel({ url, color, rotation = 0 }: CarModelProps) {
+  const group = useRef<Group>(null);
   const gltf = useLoader(GLTFLoader, url);
 
   useEffect(() => {
-    if (color && gltf.scene) {
+    if (color && gltf?.scene) {
       gltf.scene.traverse((child) => {
         if (child.isMesh && child.material) {
           const materials = Array.isArray(child.material) ? child.material : [child.material];
-          materials.forEach((mat) => {
+          materials.forEach((mat: Material) => {
             const matName = (mat.name || '').toLowerCase();
             const meshName = (child.name || '').toLowerCase();
 
             // Красим только детали с именем Body / Paint / Kuzov
-            const isBody = matName.includes('body') || matName.includes('paint') || 
+            const isBody = matName.includes('body') || matName.includes('paint') ||
                            meshName.includes('body') || matName.includes('kuzov');
 
             if (isBody) {
@@ -53,7 +60,13 @@ function Lights() {
   );
 }
 
-export default function CarScene({ model, rotation, carData }) {
+interface CarSceneProps {
+  model: string;
+  rotation?: number;
+  carData?: { color?: string };
+}
+
+export default function CarScene({ model, rotation = 0, carData }: CarSceneProps) {
   return (
     <Canvas
       className="w-full h-full"
