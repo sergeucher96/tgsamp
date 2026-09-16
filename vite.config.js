@@ -9,7 +9,7 @@ function autoSaveHotspotsPlugin() {
   let savedHotspotsPath = '';
 
   const loadHotspotsFile = () => {
-    savedHotspotsPath = path.resolve(process.cwd(), 'src/data/savedHotspots.json');
+    savedHotspotsPath = path.resolve(process.cwd(), 'src/game/locations/savedHotspots.json');
     if (fs.existsSync(savedHotspotsPath)) {
       try {
         currentData = JSON.parse(fs.readFileSync(savedHotspotsPath, 'utf-8'));
@@ -22,7 +22,7 @@ function autoSaveHotspotsPlugin() {
   const writeHotspotsFile = () => {
     if (!savedHotspotsPath) return;
     fs.writeFileSync(savedHotspotsPath, JSON.stringify(currentData, null, 2), 'utf-8');
-    console.log(`\x1b[32m[AutoSave] ✅ Файл src/data/savedHotspots.json успешно обновлен на диске!\x1b[0m`);
+    console.log(`\x1b[32m[AutoSave] ✅ Файл src/game/locations/savedHotspots.json успешно обновлен на диске!\x1b[0m`);
   };
 
   return {
