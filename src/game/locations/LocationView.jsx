@@ -18,8 +18,6 @@ const PHYSICS_CONFIG = {
 };
 
 export default function LocationView({ location, onClose, onAction }) {
-  if (!location) return null;
-
   const [houseImage, setHouseImage] = useState(null);
   const [hotspots, setHotspots] = useState([]);
   const [hoveredHotspot, setHoveredHotspot] = useState(null);
@@ -344,6 +342,8 @@ export default function LocationView({ location, onClose, onAction }) {
 
   const displayImage = subLocationImage || houseImage || '/locations/shop_1.webp';
   const displayHotspots = inSubLocation ? subLocationHotspots : hotspots;
+
+  if (!location) return null;
 
   return (
     <div className="fixed inset-0 z-[350] bg-[#020617] flex flex-col text-white font-sans select-none overflow-hidden">

@@ -11,7 +11,7 @@ import { RESOURCE_PRICES } from '../jobs/data/economy';
 
 export default function InventoryView() {
   const { player } = usePlayerStore();
-  const { items, fetchPlayerInventory, useItem, removeItem } = useInventoryStore();
+  const { items, fetchPlayerInventory, consumeItem, removeItem } = useInventoryStore();
   const { items: dbItems } = useItemCategoryStore();
   const [selectedItem, setSelectedItem] = useState(null);
   const [filter, setFilter] = useState('all');
@@ -90,7 +90,7 @@ export default function InventoryView() {
           item={selectedItem}
           location="world"
           onClose={() => setSelectedItem(null)}
-          onUse={async (it) => { await useItem(it); setSelectedItem(null); }}
+          onUse={async (it) => { await consumeItem(it); setSelectedItem(null); }}
           onDrop={(it) => { if(window.confirm("Выбросить предмет?")) removeItem(it.id, it.amount); setSelectedItem(null); }}
         />
       )}

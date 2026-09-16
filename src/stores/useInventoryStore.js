@@ -122,7 +122,7 @@ export const useInventoryStore = create((set, get) => ({
   },
 
   // --- ЛОГИКА ИСПОЛЬЗОВАНИЯ ПРЕДМЕТОВ ---
-  useItem: async (item) => {
+  consumeItem: async (item) => {
     const { player, updateProfile, applyBuff } = usePlayerStore.getState();
     const itemData = getItemData(item.item_id);
     if (!itemData || item.storage_type !== 'player') return;
