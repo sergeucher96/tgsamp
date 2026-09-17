@@ -8,7 +8,77 @@
  * MapView.jsx использует handleLocationAction() для маршрутизации.
  */
 
-export const LOCATION_ACTIONS = {
+export type LocationCategory =
+  | 'house'
+  | 'bank'
+  | 'gas'
+  | 'hotel'
+  | 'shop'
+  | 'pizzeria'
+  | 'tuning'
+  | 'showroom'
+  | 'driving'
+  | 'guns'
+  | 'nightclub'
+  | 'bar'
+  | 'parking'
+  | 'gym'
+  | 'hospital'
+  | 'mine'
+  | 'port'
+  | 'warehouse'
+  | 'farm'
+  | 'oil_rig'
+  | 'factory'
+  | 'default';
+
+export interface LocationAction {
+  value: string;
+  label: string;
+}
+
+export type LocationActionsMap = Record<LocationCategory, LocationAction[]>;
+
+export type LocationId = string | number;
+
+export interface LocationActionTarget {
+  id: LocationId;
+  type: string;
+  [key: string]: unknown;
+}
+
+export interface LocationCallbacks {
+  onUnloadGarbage?: () => unknown;
+  setShowATM?: (value: boolean) => unknown;
+  setSelectedBusiness?: (id: LocationId) => unknown;
+  setSelectedHotel?: (id: LocationId) => unknown;
+  setShowBank?: (value: boolean) => unknown;
+  setCurrentShop?: (id: LocationId) => unknown;
+  setShowPizzeria?: (value: boolean) => unknown;
+  setShowMine?: (value: boolean) => unknown;
+  setShowFishingPort?: (value: boolean) => unknown;
+  setShowFarm?: (value: boolean) => unknown;
+  setShowOilRig?: (value: boolean) => unknown;
+  setShowFactory?: (value: boolean) => unknown;
+  setShowWorkshop?: (value: boolean) => unknown;
+  setShowTrucker?: (value: boolean) => unknown;
+  setShowExport?: (value: boolean) => unknown;
+  setShowStripClub?: (value: boolean) => unknown;
+  setShowTuningShop?: (value: boolean) => unknown;
+  setShowDrivingSchool?: (value: boolean) => unknown;
+  setShowGunRange?: (value: boolean) => unknown;
+  setShowBoxClub?: (value: boolean) => unknown;
+  alert?: (message: string) => unknown;
+  setShowBusDepot?: (value: boolean) => unknown;
+  setShowLspd?: (value: boolean) => unknown;
+  setShowMafia?: (value: boolean) => unknown;
+  setShowHospital?: (value: boolean) => unknown;
+  setShowCafeteria?: (value: boolean) => unknown;
+  setCafeteriaBusinessId?: (id: LocationId) => unknown;
+  setShowShowroom?: (value: boolean) => unknown;
+}
+
+export const LOCATION_ACTIONS: LocationActionsMap = {
 
   // --- Дом (economy, comfort, business, premium) ---
   house: [
@@ -166,7 +236,7 @@ export const LOCATION_ACTIONS = {
 //  КАТЕГОРИЯ ПО ID ЛОКАЦИИ
 // ═══════════════════════════════════════════════════
 
-export function getLocationCategory(locId) {
+export function getLocationCategory(locId: string | undefined): LocationCategory {
   if (!locId) return 'default';
   if (['economy', 'comfort', 'business', 'premium'].includes(locId)) return 'house';
   if (locId.startsWith('bank')) return 'bank';
@@ -196,7 +266,7 @@ export function getLocationCategory(locId) {
 //  СПИСОК ДЕЙСТВИЙ ДЛЯ КАТЕГОРИИ
 // ═══════════════════════════════════════════════════
 
-export function getActionsForCategory(locId) {
+export function getActionsForCategory(locId: string | undefined): LocationAction[] {
   const category = getLocationCategory(locId);
   return LOCATION_ACTIONS[category] || LOCATION_ACTIONS.default;
 }
@@ -205,7 +275,11 @@ export function getActionsForCategory(locId) {
 //  РУТЕР ОБРАБОТКИ (для MapView)
 // ═══════════════════════════════════════════════════
 
-export function handleLocationAction(action, location, callbacks) {
+export function handleLocationAction(
+  action: string,
+  location: LocationActionTarget,
+  callbacks: LocationCallbacks
+): unknown {
   const loc = location;
 
   if (action === 'unload_garbage') return callbacks.onUnloadGarbage?.();
@@ -220,7 +294,7 @@ export function handleLocationAction(action, location, callbacks) {
   return routeByType(loc, callbacks);
 }
 
-function routeByType(loc, cb) {
+function routeByType(loc: LocationActionTarget, cb: LocationCallbacks): unknown {
   const t = loc.type;
   const id = loc.id;
 
