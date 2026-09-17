@@ -20,8 +20,8 @@ export const LOCATION_ACTIONS = {
 
   // --- Банк ---
   bank: [
-    { value: 'enter',         label: '� Войти в банк' },
-    { value: 'atm',           label: '� Использовать банкомат' },
+    { value: 'enter',         label: '🏦 Войти в банк' },
+    { value: 'atm',           label: '🏧 Использовать банкомат' },
     { value: 'sublocation',   label: '📍 Перейти в зал' },
   ],
 
@@ -29,7 +29,7 @@ export const LOCATION_ACTIONS = {
   gas: [
     { value: 'refuel',        label: '⛽ Заправиться' },
     { value: 'enter',         label: '🛒 Войти в магазин АЗС' },
-    { value: 'atm',           label: '� Использовать банкомат' },
+    { value: 'atm',           label: '🏧 Использовать банкомат' },
     { value: 'sublocation',   label: '📍 Часть локации' },
   ],
 
@@ -66,7 +66,7 @@ export const LOCATION_ACTIONS = {
   showroom: [
     { value: 'enter',         label: '🚗 Войти в автосалон' },
     { value: 'buy_vehicle',   label: '🛒 Купить авто' },
-    { value: 'atm',           label: '� Использовать банкомат' },
+    { value: 'atm',           label: '🏧 Использовать банкомат' },
     { value: 'sublocation',   label: '📍 Часть локации' },
   ],
 
@@ -86,7 +86,7 @@ export const LOCATION_ACTIONS = {
   nightclub: [
     { value: 'enter',         label: '💃 Войти в клуб' },
     { value: 'atm',           label: '🏧 Использовать банкомат' },
-    { value: 'sublocation',   label: '� Часть локации' },
+    { value: 'sublocation',   label: '📍 Часть локации' },
   ],
 
   // --- Бар ---
@@ -156,7 +156,7 @@ export const LOCATION_ACTIONS = {
   // --- Fallback для неизвестных типов ---
   default: [
     { value: 'enter',         label: '🚪 Войти в здание / интерьер' },
-    { value: 'atm',           label: '� Использовать банкомат' },
+    { value: 'atm',           label: '🏧 Использовать банкомат' },
     { value: 'buy_business',  label: '💼 Купить бизнес / инфо' },
     { value: 'sublocation',   label: '📍 Часть локации' },
   ],

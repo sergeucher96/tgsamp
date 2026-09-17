@@ -170,7 +170,7 @@ export default function TuningShopView({ onClose }) {
               <button onClick={handleRepairForMoney}
                 className="w-full bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-400 py-2 rounded-xl text-xs font-black uppercase transition-all"
                 disabled={isLoading}>
-                � Отремонтировать ({(Math.round(100 - health) * REPAIR_COST_PER_PERCENT).toLocaleString()} ₽)
+                🔧 Отремонтировать ({(Math.round(100 - health) * REPAIR_COST_PER_PERCENT).toLocaleString()} ₽)
               </button>
               <button onClick={handleRepair}
                 className="w-full bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-400 py-2 rounded-xl text-xs font-black uppercase transition-all">

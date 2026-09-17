@@ -68,7 +68,7 @@ export default function KitchenView({ onClose, houseId }) {
         storage_id: item.storage_type === 'player' ? source : (source === 'player' ? 'house' : 'house'),
         storage_type: item.storage_type,
         name: itemData?.name || item.item_id,
-        icon: itemData?.icon || '�',
+        icon: itemData?.icon || '📦',
       };
       return next;
     });

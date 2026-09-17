@@ -30,14 +30,14 @@ export default function CategoryEditor({ onClose }) {
   const [name, setName] = useState('');
   const [key, setKey] = useState('');
   const [description, setDescription] = useState('');
-  const [icon, setIcon] = useState('�');
+  const [icon, setIcon] = useState('📂');
   const [parentId, setParentId] = useState('');
 
   useEffect(() => { loadAll(); }, []);
   useEffect(() => { if (selectedCategory) loadCategoryDetails(selectedCategory.id); }, [selectedCategory]);
 
   const toggleExpand = (id) => setExpandedCats(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const resetForm = () => { setName(''); setKey(''); setDescription(''); setIcon('�'); setParentId(''); setEditingCategory(null); };
+  const resetForm = () => { setName(''); setKey(''); setDescription(''); setIcon('📂'); setParentId(''); setEditingCategory(null); };
 
   const handleCreate = async () => {
     if (!name || !key) return alert('Название и ID обязательны');
@@ -55,7 +55,7 @@ export default function CategoryEditor({ onClose }) {
     setLoading(false);
   };
 
-  const openEdit = (cat) => { setName(cat.name); setKey(cat.key); setDescription(cat.description || ''); setIcon(cat.icon || '�'); setParentId(cat.parent_id || ''); setEditingCategory(cat); setShowForm(true); };
+  const openEdit = (cat) => { setName(cat.name); setKey(cat.key); setDescription(cat.description || ''); setIcon(cat.icon || '📂'); setParentId(cat.parent_id || ''); setEditingCategory(cat); setShowForm(true); };
 
   const rootCategories = categories.filter(c => !c.parent_id);
   const parentOptions = categories.filter(c => c.id !== selectedCategory?.id);
@@ -68,7 +68,7 @@ export default function CategoryEditor({ onClose }) {
       <div key={cat.id}>
         <button onClick={() => { if (children.length) toggleExpand(cat.id); setSelectedCategory(cat); }} className={`w-full flex items-center gap-2 p-3 rounded-xl text-left ${selectedCategory?.id === cat.id ? 'bg-[#7eff69]/20 border border-[#7eff69]/40' : 'hover:bg-white/5'}`}>
           {children.length ? (isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />) : <div className="w-4" />}
-          <span className="text-xl">{cat.icon || '�'}</span>
+          <span className="text-xl">{cat.icon || '📂'}</span>
           <span className="font-black text-[#d6ff9f] flex-1">{cat.name}</span>
           <span className="text-[10px] text-slate-400">{children.length}</span>
         </button>
@@ -104,7 +104,7 @@ export default function CategoryEditor({ onClose }) {
           { key: 'allItems', label: `Все предметы (${items.length})` }
         ].map(t => (
           <button key={t.key} onClick={() => setMainTab(t.key)} className={`flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-black whitespace-nowrap ${mainTab === t.key ? 'bg-[#7eff69]/20 text-[#7eff69]' : 'text-slate-400'}`}>
-            {t.key === 'categories' ? '� ' : '� '}{t.label}
+            {t.key === 'categories' ? '📂 ' : '📦 '}{t.label}
           </button>
         ))}
       </div>
@@ -131,7 +131,7 @@ export default function CategoryEditor({ onClose }) {
             </button>
           </div>
         )}
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="� Поиск..." className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-sm mb-4" />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Поиск..." className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-sm mb-4" />
         <div className="space-y-1">{renderTree(filteredRoots)}</div>
         {filteredRoots.length === 0 && <p className="text-center text-slate-500 text-sm py-8">Нет категорий</p>}
         </>)}
@@ -152,7 +152,7 @@ function CategoryDetail({ category, onBack, onEdit, onDelete, properties, effect
   const [itemName, setItemName] = useState('');
   const [itemKey, setItemKey] = useState('');
   const [itemDescription, setItemDescription] = useState('');
-  const [itemIcon, setItemIcon] = useState('�');
+  const [itemIcon, setItemIcon] = useState('📦');
   const [itemStackable, setItemStackable] = useState(false);
   const [itemMaxStack, setItemMaxStack] = useState(10);
   const [itemProperties, setItemProperties] = useState({});
@@ -403,7 +403,7 @@ function CategoryDetail({ category, onBack, onEdit, onDelete, properties, effect
             )}
 
             <div className="flex gap-2 mb-4">
-              <input value={itemSearch} onChange={e => setItemSearch(e.target.value)} placeholder="� Поиск предметов..." className="flex-1 bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-sm" />
+              <input value={itemSearch} onChange={e => setItemSearch(e.target.value)} placeholder="🔍 Поиск предметов..." className="flex-1 bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-sm" />
               <button onClick={openNewItem} className="flex items-center gap-1 px-3 py-2 rounded-xl bg-green-600 text-xs font-black whitespace-nowrap">
                 <Plus className="h-3 w-3" /> Добавить
               </button>
@@ -478,7 +478,7 @@ function AllItemsView({ items, categories, onClose }) {
 
   const getCategoryName = (catId) => {
     const cat = categories.find(c => c.id === Number(catId));
-    return cat ? `${cat.icon || '�'} ${cat.name}` : 'Без категории';
+    return cat ? `${cat.icon || '📂'} ${cat.name}` : 'Без категории';
   };
 
   return (
@@ -487,7 +487,7 @@ function AllItemsView({ items, categories, onClose }) {
         <input
           value={itemSearch}
           onChange={e => setItemSearch(e.target.value)}
-          placeholder="� Поиск по названию, ID, описанию..."
+          placeholder="🔍 Поиск по названию, ID, описанию..."
           className="flex-1 bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-sm"
         />
         <select

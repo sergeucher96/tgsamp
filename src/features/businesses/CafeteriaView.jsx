@@ -9,7 +9,7 @@ import { ArrowLeft, Wheat, Zap, ShoppingCart, Truck } from 'lucide-react';
 
 const CAFETERIA_DISHES = [
   { id: 'dish_1', name: 'Классический обед', price: 100, energy: 50, crops: 5, icon: '🍗', desc: 'Курица с пюре и салатом' },
-  { id: 'dish_2', name: 'Паста карбонара', price: 100, energy: 50, crops: 5, icon: '�', desc: 'Спагетти с беконом и пармезаном' },
+  { id: 'dish_2', name: 'Паста карбонара', price: 100, energy: 50, crops: 5, icon: '🍝', desc: 'Спагетти с беконом и пармезаном' },
   { id: 'dish_3', name: 'Стейк с овощами', price: 100, energy: 50, crops: 5, icon: '🥩', desc: 'Сочный стейк и свежие овощи' },
 ];
 
@@ -207,7 +207,7 @@ export default function CafeteriaView({ businessId, onClose }) {
           <div className="mb-8">
             <div className="bg-white/[0.03] border border-yellow-500/20 p-5 rounded-[32px]">
               <div className="flex items-center gap-3 mb-3">
-                <span className="text-2xl">�</span>
+                <span className="text-2xl">🍲</span>
                 <div>
                   <p className="text-[10px] text-yellow-500 uppercase font-black">Бизнес продаётся</p>
                   <p className="text-sm text-slate-300">Станьте владельцем столовой и управляйте ею!</p>

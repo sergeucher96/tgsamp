@@ -20,8 +20,8 @@ export interface ResourceTypeInfo {
 }
 
 export const BUSINESS_TYPES: Record<string, BusinessTypeConfig> = {
-  shop: { name: 'Магазин', purchasePrice: 150000, dailyIncome: 3000, icon: '�' },
-  clothes: { name: 'Магазин одежды', purchasePrice: 180000, dailyIncome: 3500, icon: '�' },
+  shop: { name: 'Магазин', purchasePrice: 150000, dailyIncome: 3000, icon: '🛒' },
+  clothes: { name: 'Магазин одежды', purchasePrice: 180000, dailyIncome: 3500, icon: '👕' },
   bar: { name: 'Бар', purchasePrice: 200000, dailyIncome: 4000, icon: '🍺' },
   nightclub: { name: 'Ночной клуб', purchasePrice: 300000, dailyIncome: 6000, icon: '💃' },
   hotel: { name: 'Отель', purchasePrice: 200000, dailyIncome: 5000, icon: '🏨' },

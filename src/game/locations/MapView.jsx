@@ -573,7 +573,7 @@ export default function MapView() {
             </div>
             <div className="mb-4">
               <p className="text-sm text-slate-400 mb-1">Ресурс</p>
-              <p className="font-black">{RESOURCE_TYPES[pendingDelivery.resourceType]?.icon || '�'} {RESOURCE_TYPES[pendingDelivery.resourceType]?.name || pendingDelivery.resourceType}</p>
+              <p className="font-black">{RESOURCE_TYPES[pendingDelivery.resourceType]?.icon || '📦'} {RESOURCE_TYPES[pendingDelivery.resourceType]?.name || pendingDelivery.resourceType}</p>
             </div>
             <div className="mb-4">
               <label className="text-[10px] text-slate-500 uppercase font-black mb-1 block">

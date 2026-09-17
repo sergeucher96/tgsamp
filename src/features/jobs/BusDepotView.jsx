@@ -100,7 +100,7 @@ export default function BusDepotView({ onClose }) {
                     className="w-full p-5 rounded-[28px] border border-white/10 bg-white/[0.04] text-left transition-all active:scale-95 disabled:opacity-50">
                     <div className="flex justify-between items-start mb-2"><p className="font-black uppercase text-white">{r.name}</p><span className="text-xs font-black text-emerald-400 italic">${(r.pay || 500).toLocaleString()}</span></div>
                     <p className="text-xs text-slate-400 mb-2">{r.description}</p>
-                    <div className="flex justify-between text-[10px] text-slate-500"><span>� {r.stops.length} точек</span><span>🎓 +{r.exp} XP</span></div>
+                    <div className="flex justify-between text-[10px] text-slate-500"><span>🚏 {r.stops.length} точек</span><span>🎓 +{r.exp} XP</span></div>
                   </button>
                 ))}
               </div>

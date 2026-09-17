@@ -9,7 +9,7 @@ const FISHING_ROD_PRICE = 2000;
 // Fish types with loot table probabilities
 const FISH_TYPES = [
   { id: 'fish_small',  weight: [1, 3],  chance: 50, icon: '🐟', label: 'Небольшая рыба' },
-  { id: 'fish_medium', weight: [3, 7],  chance: 30, icon: '�', label: 'Рыба' },
+  { id: 'fish_medium', weight: [3, 7],  chance: 30, icon: '🐠', label: 'Рыба' },
   { id: 'fish_large',  weight: [7, 10], chance: 20, icon: '🐡', label: 'Крупная рыба' },
 ];
 

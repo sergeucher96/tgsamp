@@ -1009,7 +1009,7 @@ export default function HotspotTool3D({ onClose }) {
       console.error('[3D Scene Model] Ошибка загрузки модели:', modelUrl);
       console.error('[3D Scene Model] Детали:', err);
       console.error('[3D Scene Model] activeModelUrl:', activeModelUrl, 'normalized:', modelUrl);
-      showToast(isCustomModel ? '�️ Ошибка парсинга 3D модели сцены' : '⚠️ Не удалось загрузить модель сцены. Проверьте консоль.');
+      showToast(isCustomModel ? '⚠️ Ошибка парсинга 3D модели сцены' : '⚠️ Не удалось загрузить модель сцены. Проверьте консоль.');
     };
 
     if (isCustomModel) {
