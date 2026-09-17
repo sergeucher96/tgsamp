@@ -1,7 +1,24 @@
 import { create } from 'zustand';
 import { supabase } from '../services/supabase/client';
 
-export const useOilRigStore = create((set, get) => ({
+interface OilRigRow {
+  oil_count: number;
+}
+
+interface OilRigQueryResult {
+  data: OilRigRow | null;
+  error: unknown | null;
+}
+
+interface OilRigState {
+  oilCount: number;
+  loading: boolean;
+  extracting: boolean;
+  fetchOilCount: () => Promise<void>;
+  extractOil: () => Promise<boolean>;
+}
+
+export const useOilRigStore = create<OilRigState>((set, get) => ({
   oilCount: 0,
   loading: false,
   extracting: false,
@@ -10,11 +27,11 @@ export const useOilRigStore = create((set, get) => ({
   fetchOilCount: async () => {
     set({ loading: true });
     try {
-      const { data, error } = await supabase
+      const { data, error } = (await supabase
         .from('oil_rig')
         .select('oil_count')
         .eq('id', 1)
-        .single();
+        .single()) as OilRigQueryResult;
 
       if (!error && data) {
         set({ oilCount: data.oil_count || 0 });
@@ -34,7 +51,7 @@ export const useOilRigStore = create((set, get) => ({
     set({ extracting: true });
 
     try {
-      const { data, error } = await supabase
+      const { data, error } = (await supabase
         .from('oil_rig')
         .update({
           oil_count: get().oilCount + 1,
@@ -42,7 +59,7 @@ export const useOilRigStore = create((set, get) => ({
         })
         .eq('id', 1)
         .select('oil_count')
-        .single();
+        .single()) as OilRigQueryResult;
 
       if (!error && data) {
         set({ oilCount: data.oil_count });
