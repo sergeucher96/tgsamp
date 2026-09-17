@@ -1,7 +1,24 @@
 import { create } from 'zustand';
 import { supabase } from '../services/supabase/client';
 
-export const useFactoryStore = create((set, get) => ({
+interface FactoryRow {
+  metal_count: number;
+}
+
+interface FactoryQueryResult {
+  data: FactoryRow | null;
+  error: unknown | null;
+}
+
+interface FactoryState {
+  metalCount: number;
+  loading: boolean;
+  producing: boolean;
+  fetchMetalCount: () => Promise<void>;
+  produceMetal: () => Promise<boolean>;
+}
+
+export const useFactoryStore = create<FactoryState>((set, get) => ({
   metalCount: 0,
   loading: false,
   producing: false,
@@ -9,11 +26,11 @@ export const useFactoryStore = create((set, get) => ({
   fetchMetalCount: async () => {
     set({ loading: true });
     try {
-      const { data, error } = await supabase
+      const { data, error } = (await supabase
         .from('factory')
         .select('metal_count')
         .eq('id', 1)
-        .single();
+        .single()) as FactoryQueryResult;
 
       if (!error && data) {
         set({ metalCount: data.metal_count || 0 });
@@ -32,7 +49,7 @@ export const useFactoryStore = create((set, get) => ({
     set({ producing: true });
 
     try {
-      const { data, error } = await supabase
+      const { data, error } = (await supabase
         .from('factory')
         .update({
           metal_count: get().metalCount + 1,
@@ -40,7 +57,7 @@ export const useFactoryStore = create((set, get) => ({
         })
         .eq('id', 1)
         .select('metal_count')
-        .single();
+        .single()) as FactoryQueryResult;
 
       if (!error && data) {
         set({ metalCount: data.metal_count });
