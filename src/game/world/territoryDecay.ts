@@ -5,39 +5,61 @@ import {
   calculateActivityDecay,
   calculateInfluenceDecay,
 } from '../../features/gangs/data/territoriesConfig';
+import type {
+  ActivityDecayConfig,
+  GangContext,
+  InfluenceDecayConfig,
+  Territory,
+  TerritoryInfluence,
+} from '../../features/gangs/data/territoriesConfig';
 
-let activityDecayInterval = null;
-let influenceDecayInterval = null;
+interface SupabaseCollectionResult<T> {
+  data: T[] | null;
+  error: unknown | null;
+}
 
-function clamp(value, min, max) {
+interface SupabaseErrorResult {
+  error: unknown | null;
+}
+
+type DecayUpdateType = 'activity' | 'influence';
+
+let activityDecayInterval: ReturnType<typeof setInterval> | null = null;
+let influenceDecayInterval: ReturnType<typeof setInterval> | null = null;
+
+function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-async function fetchTerritories() {
-  const { data, error } = await supabase.from('territories').select('*');
+async function fetchTerritories(): Promise<Territory[]> {
+  const { data, error } = (await supabase.from('territories').select('*')) as SupabaseCollectionResult<Territory>;
   if (error || !data) return [];
   return data;
 }
 
-async function fetchInfluences() {
-  const { data, error } = await supabase.from('territory_influence').select('*');
+async function fetchInfluences(): Promise<TerritoryInfluence[]> {
+  const { data, error } = (await supabase.from('territory_influence').select('*')) as SupabaseCollectionResult<TerritoryInfluence>;
   if (error || !data) return [];
   return data;
 }
 
-async function updateTerritoryActivity(territoryId, newActivity) {
-  const { error } = await supabase
+async function updateTerritoryActivity(territoryId: number, newActivity: number): Promise<void> {
+  const { error } = (await supabase
     .from('territories')
     .update({ activity: clamp(newActivity, 0, 100), updated_at: new Date().toISOString() })
-    .eq('id', territoryId);
+    .eq('id', territoryId)) as SupabaseErrorResult;
 
   if (error) {
     console.error('Failed to update territory activity:', error);
   }
 }
 
-async function updateTerritoryInfluence(territoryId, gangId, newInfluence) {
-  const { error } = await supabase
+async function updateTerritoryInfluence(
+  territoryId: number,
+  gangId: string,
+  newInfluence: number,
+): Promise<void> {
+  const { error } = (await supabase
     .from('territory_influence')
     .upsert(
       {
@@ -47,14 +69,14 @@ async function updateTerritoryInfluence(territoryId, gangId, newInfluence) {
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'territory_id,gang_id' }
-    );
+    )) as SupabaseErrorResult;
 
   if (error) {
     console.error('Failed to update territory influence:', error);
   }
 }
 
-function getGangContext(territoryId, gangId, territories) {
+function getGangContext(territoryId: number, gangId: string, territories: Territory[]): GangContext {
   const territory = territories.find(t => t.id === territoryId);
   if (!territory) return {};
 
@@ -68,7 +90,7 @@ function getGangContext(territoryId, gangId, territories) {
   };
 }
 
-export async function runActivityDecay() {
+export async function runActivityDecay(): Promise<void> {
   try {
     const territories = await fetchTerritories();
     const promises = territories.map(async (territory) => {
@@ -84,7 +106,7 @@ export async function runActivityDecay() {
   }
 }
 
-export async function runInfluenceDecay() {
+export async function runInfluenceDecay(): Promise<void> {
   try {
     const [territories, influences] = await Promise.all([fetchTerritories(), fetchInfluences()]);
 
@@ -103,7 +125,7 @@ export async function runInfluenceDecay() {
   }
 }
 
-export function startDecayIntervals(onUpdate) {
+export function startDecayIntervals(onUpdate?: (type: DecayUpdateType) => void): void {
   stopDecayIntervals();
 
   activityDecayInterval = setInterval(async () => {
@@ -117,7 +139,7 @@ export function startDecayIntervals(onUpdate) {
   }, INFLUENCE_DECAY_CONFIG.intervalMs);
 }
 
-export function stopDecayIntervals() {
+export function stopDecayIntervals(): void {
   if (activityDecayInterval) {
     clearInterval(activityDecayInterval);
     activityDecayInterval = null;
@@ -129,7 +151,12 @@ export function stopDecayIntervals() {
   }
 }
 
-export function getDecayConfig() {
+interface DecayConfig {
+  activity: ActivityDecayConfig;
+  influence: InfluenceDecayConfig;
+}
+
+export function getDecayConfig(): DecayConfig {
   return {
     activity: ACTIVITY_DECAY_CONFIG,
     influence: INFLUENCE_DECAY_CONFIG,
