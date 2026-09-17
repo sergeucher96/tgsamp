@@ -1,10 +1,52 @@
-import { calculateGangStrength, calculatePlayerContribution, getEventScore, WAR_SCORE_CONFIG } from '../world/warConfig';
+import {
+  calculateGangStrength,
+  calculatePlayerContribution,
+  getEventScore,
+  WAR_SCORE_CONFIG,
+  type LevelledEntity,
+  type WarAction,
+} from '../world/warConfig';
 
-function roll(min, max) {
+export type WarEventType =
+  | 'SHOOTOUT'
+  | 'AMBUSH'
+  | 'STREET_FIGHT'
+  | 'RECON'
+  | 'DEFENSE'
+  | 'ATTACK'
+  | 'SUPPLY';
+
+export type WarOutcomeResult = 'ATTACKER_WIN' | 'DEFENDER_WIN' | 'DRAW';
+
+export interface WarOutcomeDetails {
+  attackerStrength: number;
+  defenderStrength: number;
+  attackerRoll: number;
+  defenderRoll: number;
+}
+
+export interface WarOutcome {
+  result: WarOutcomeResult;
+  attackerScore: number;
+  defenderScore: number;
+  details: WarOutcomeDetails;
+}
+
+export interface WarTerritory {
+  status: string;
+  owner_gang_id: string | null;
+  control: number;
+}
+
+function roll(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-export function resolveEventOutcome(attackerParticipants, defenderParticipants, _eventType) {
+export function resolveEventOutcome(
+  attackerParticipants: readonly LevelledEntity[],
+  defenderParticipants: readonly LevelledEntity[],
+  _eventType: string
+): WarOutcome {
   const attackerStrength = calculateGangStrength(attackerParticipants);
   const defenderStrength = calculateGangStrength(defenderParticipants);
 
@@ -40,13 +82,17 @@ export function resolveEventOutcome(attackerParticipants, defenderParticipants, 
   };
 }
 
-export function calculateWarResult(attackerScore, defenderScore) {
+export function calculateWarResult(attackerScore: number, defenderScore: number): WarOutcomeResult {
   if (attackerScore > defenderScore) return 'ATTACKER_WIN';
   if (defenderScore > attackerScore) return 'DEFENDER_WIN';
   return 'DRAW';
 }
 
-export function applyWarResultToTerritory(territory, result, winnerGangId) {
+export function applyWarResultToTerritory<T extends WarTerritory>(
+  territory: T,
+  result: WarOutcomeResult,
+  winnerGangId: string | null
+): T & { status: 'OCCUPIED'; owner_gang_id: string | null; control: number } {
   if (result === 'DRAW') {
     return {
       ...territory,
@@ -64,7 +110,7 @@ export function applyWarResultToTerritory(territory, result, winnerGangId) {
   };
 }
 
-export function getAvailableActions(eventType) {
+export function getAvailableActions(eventType: WarEventType): WarAction[] {
   switch (eventType) {
     case 'SHOOTOUT':
     case 'AMBUSH':
