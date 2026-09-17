@@ -2,7 +2,48 @@
 // category: tutorial | main | side
 // condition.type: deposit | withdraw | transfer | visit | buy_house | buy_vehicle | complete_job | reach_level | earn_money
 
-export const QUESTS_DATABASE = [
+export type QuestCategory = 'tutorial' | 'main' | 'side';
+
+export type QuestConditionType =
+  | 'deposit'
+  | 'withdraw'
+  | 'transfer'
+  | 'visit'
+  | 'buy_house'
+  | 'buy_vehicle'
+  | 'complete_job'
+  | 'reach_level'
+  | 'earn_money';
+
+export interface QuestCondition {
+  type: QuestConditionType;
+  amount?: number;
+  count?: number;
+}
+
+export interface QuestReward {
+  money?: number;
+}
+
+export interface Quest {
+  id: string;
+  title: string;
+  description: string;
+  category: QuestCategory;
+  icon: string;
+  condition: QuestCondition;
+  reward: QuestReward;
+  rewardText: string;
+  order: number;
+  nextQuest: string | null;
+}
+
+export interface QuestUI extends Quest {
+  completed: boolean;
+  progress: number;
+}
+
+export const QUESTS_DATABASE: Quest[] = [
   // === TUTORIAL QUESTS ===
   {
     id: 'tutorial_bank_deposit',
@@ -103,13 +144,16 @@ export const QUESTS_DATABASE = [
   },
 ];
 
-export const getActiveQuests = (completedQuestIds = []) =>
+export const getActiveQuests = (completedQuestIds: string[] = []): Quest[] =>
   QUESTS_DATABASE.filter(q => !completedQuestIds.includes(q.id));
 
-export const getTutorialQuests = () =>
+export const getTutorialQuests = (): Quest[] =>
   QUESTS_DATABASE.filter(q => q.category === 'tutorial').sort((a, b) => a.order - b.order);
 
-export const getQuestsForUI = (completedQuestIds = [], questProgress = {}) => {
+export const getQuestsForUI = (
+  completedQuestIds: string[] = [],
+  questProgress: Record<string, number> = {},
+): QuestUI[] => {
   return QUESTS_DATABASE
     .filter(q => !completedQuestIds.includes(q.id))
     .map(q => ({

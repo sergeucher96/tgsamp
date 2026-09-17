@@ -241,12 +241,12 @@ export default function CafeteriaView({ businessId, onClose }) {
         {/* Purchased by somоne else */}
         {state.purchased && !owner && (
           <div className="mb-6 rounded-3xl border border-blue-500/20 bg-[#0a0a1a]/80 p-4">
-            <p className="text-sm text-blue-400">� Этот бизнес имеет владельца. Вы можете использовать услуги столовой.</p>
+            <p className="text-sm text-blue-400">🏢 Этот бизнес имеет владельца. Вы можете использовать услуги столовой.</p>
           </div>
         )}
 
         {/* Owner Panel – Delivery */}
-        <h3 className="text-xl font-black uppercase italic mb-4 text-orange-400">� Меню</h3>
+        <h3 className="text-xl font-black uppercase italic mb-4 text-orange-400">🍽️ Меню</h3>
         <div className="space-y-4 mb-8">
           {CAFETERIA_DISHES.map((dish) => (
             <div key={dish.id} className="bg-white/[0.03] border border-white/5 p-5 rounded-[32px]">
