@@ -1,8 +1,115 @@
 import { create } from 'zustand';
 import { supabase } from '../services/supabase/client';
-import { useInventoryStore } from './useInventoryStore';
 
-export const usePlayerStore = create((set, get) => ({
+export interface Profile {
+  id: string;
+  username: string;
+  first_name: string | null;
+  last_name: string | null;
+  gender: string | null;
+  money: number;
+  hp: number;
+  hunger: number;
+  energy: number;
+  registered_at: string | null;
+  rotation: number;
+  inv_slots: number;
+  activeVehicle: Vehicle | null;
+  pos_x: number;
+  pos_y: number;
+  last_node_id: string | null;
+  bank_balance: number;
+  deposit_balance: number;
+  phone_number: string | null;
+  driving_exam_attempts: { moto: number; car: number; truck: number };
+  gun_range_attempts: number;
+  organization_id: string | null;
+  organization_rank: string | null;
+}
+
+export interface Skill {
+  player_id: string;
+  skill_name: string;
+  value: number;
+  category: string;
+}
+
+export interface License {
+  id?: string;
+  name?: string;
+  icon?: string;
+  desc?: string;
+  player_id?: string;
+  license_type?: string;
+  expires_at?: string;
+}
+
+export interface Buff {
+  id: string;
+  name: string;
+  duration_minutes: number;
+  effect: string;
+  appliedAt: number;
+  expiresAt: number;
+}
+
+export interface Vehicle {
+  id: string;
+  model_id: string;
+  color: number;
+  house_id: string | null;
+  fuel: number;
+  max_fuel: number;
+  fuel_type: string;
+  plate: string;
+  engine_stage: number;
+  suspension_stage: number;
+  brakes_stage: number;
+  has_nitro: boolean;
+  health: number;
+  is_active: boolean;
+  owner_id: string;
+  x: number;
+  y: number;
+}
+
+interface AuthResponse {
+  success: boolean;
+  profile?: Profile;
+  skills?: Skill[];
+  licenses?: License[];
+  activeVehicle?: Vehicle | null;
+  error?: string;
+}
+
+interface PlayerState {
+  player: Profile | null;
+  skills: Skill[];
+  licenses: License[];
+  activeVehicle: Vehicle | null;
+  loading: boolean;
+  needsRegistration: boolean;
+  metabolismInterval: ReturnType<typeof setInterval> | null;
+  buffsInterval: ReturnType<typeof setInterval> | null;
+  activeBuffs: Buff[];
+  authError: string | null;
+
+  login: () => Promise<boolean>;
+  logout: () => void;
+  processMetabolism: () => Promise<void>;
+  updateProfile: (updates: Partial<Profile>) => Promise<boolean>;
+  setLocalActiveVehicle: (veh: Vehicle | null) => void;
+  addSkillProgress: (skillName: string, amount: number) => Promise<void>;
+  loadBuffs: () => Buff[];
+  saveBuffs: (buffs: Buff[]) => void;
+  applyBuff: (buff: Omit<Buff, 'id' | 'appliedAt' | 'expiresAt'>) => void;
+  removeBuff: (buffId: string) => void;
+  tickBuffs: () => Promise<void>;
+  getActiveBuffs: () => Buff[];
+  finishRegistration: (form: { firstName: string; lastName: string; gender: string }) => Promise<void>;
+}
+
+export const usePlayerStore = create<PlayerState>((set, get) => ({
   player: null,
   skills: [],
   licenses: [],
@@ -17,17 +124,15 @@ export const usePlayerStore = create((set, get) => ({
   login: async () => {
     set({ loading: true });
 
-    // Wait for Telegram WebApp script to load
     let tg = window.Telegram?.WebApp;
     let attempts = 0;
-    const maxAttempts = 30; // max 3 seconds
+    const maxAttempts = 30;
     while (!tg && attempts < maxAttempts) {
       await new Promise(r => setTimeout(r, 100));
       tg = window.Telegram?.WebApp;
       attempts++;
     }
 
-    // Получаем сырую подписанную строку от Telegram Web App
     const rawInitData = tg?.initData || (import.meta.env.DEV ? 'DEV_DEBUG' : '');
     console.log('[Auth] Telegram detected:', !!tg);
     console.log('[Auth] initData length:', rawInitData?.length || 0);
@@ -36,13 +141,11 @@ export const usePlayerStore = create((set, get) => ({
     try {
       const response = await fetch('/api/auth', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ initData: rawInitData }),
       });
 
-      const result = await response.json();
+      const result: AuthResponse = await response.json();
       console.log('[Auth] Response status:', response.status);
 
       if (!response.ok || !result.success) {
@@ -68,7 +171,6 @@ export const usePlayerStore = create((set, get) => ({
         authError: null
       });
 
-      // Clean up existing intervals if any
       if (get().metabolismInterval) {
         clearInterval(get().metabolismInterval);
       }
@@ -76,12 +178,10 @@ export const usePlayerStore = create((set, get) => ({
         clearInterval(get().buffsInterval);
       }
 
-      // ЗАПУСКАЕМ МЕТАБОЛИЗМ (Раз в 2 минуты -1 голод)
       const metabolismInterval = setInterval(() => {
         get().processMetabolism();
       }, 120000);
 
-      // ЗАПУСКАЕМ ОБРАБОТКУ БАФФОВ (Раз в 30 секунд)
       const buffsInterval = setInterval(() => {
         get().tickBuffs();
       }, 30000);
@@ -98,7 +198,6 @@ export const usePlayerStore = create((set, get) => ({
   },
 
   logout: () => {
-    // Clean up intervals on logout
     if (get().metabolismInterval) {
       clearInterval(get().metabolismInterval);
       set({ metabolismInterval: null });
@@ -118,14 +217,12 @@ export const usePlayerStore = create((set, get) => ({
     });
   },
 
-  // ЛОГИКА ПАССИВНОГО ГОЛОДА
   processMetabolism: async () => {
     const { player, updateProfile } = get();
     if (!player) return;
 
-    const updates = {};
+    const updates: Partial<Profile> = {};
 
-    // Голод уменьшается со временем
     if (player.hunger > 0) {
       updates.hunger = Math.max(0, player.hunger - 1);
     } else if (player.hp > 5) {
@@ -137,14 +234,12 @@ export const usePlayerStore = create((set, get) => ({
     }
   },
 
-  updateProfile: async (updates) => {
+  updateProfile: async (updates: Partial<Profile>) => {
     const { player } = get();
-    if (!player) return;
+    if (!player) return false;
 
-    // Локальное обновление
     set({ player: { ...player, ...updates } });
 
-    // Чистка для БД
     const dbFields = { ...updates };
     ['rotation', 'activeVehicle'].forEach(k => delete dbFields[k]);
 
@@ -155,10 +250,9 @@ export const usePlayerStore = create((set, get) => ({
     return true;
   },
 
-  setLocalActiveVehicle: (veh) => set({ activeVehicle: veh }),
+  setLocalActiveVehicle: (veh: Vehicle | null) => set({ activeVehicle: veh }),
 
-  // Прокачка профессионального навыка (0-100)
-  addSkillProgress: async (skillName, amount) => {
+  addSkillProgress: async (skillName: string, amount: number) => {
     const { player, skills } = get();
     if (!player || !skillName || !amount) return;
 
@@ -197,14 +291,14 @@ export const usePlayerStore = create((set, get) => ({
     }
   },
 
-  saveBuffs: (buffs) => {
+  saveBuffs: (buffs: Buff[]) => {
     localStorage.setItem('player_active_buffs', JSON.stringify(buffs));
   },
 
-  applyBuff: (buff) => {
+  applyBuff: (buff: Omit<Buff, 'id' | 'appliedAt' | 'expiresAt'>) => {
     const { player, activeBuffs } = get();
     if (!player) return;
-    const newBuff = {
+    const newBuff: Buff = {
       ...buff,
       id: `buff_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
       appliedAt: Date.now(),
@@ -215,7 +309,7 @@ export const usePlayerStore = create((set, get) => ({
     get().saveBuffs(updated);
   },
 
-  removeBuff: (buffId) => {
+  removeBuff: (buffId: string) => {
     const { activeBuffs } = get();
     const updated = activeBuffs.filter(b => b.id !== buffId);
     set({ activeBuffs: updated });
@@ -223,7 +317,7 @@ export const usePlayerStore = create((set, get) => ({
   },
 
   tickBuffs: async () => {
-    const { player, activeBuffs, updateProfile } = get();
+    const { player, activeBuffs } = get();
     if (!player || !activeBuffs.length) return;
 
     const now = Date.now();
@@ -241,13 +335,16 @@ export const usePlayerStore = create((set, get) => ({
     const now = Date.now();
     return activeBuffs.filter(b => b.expiresAt > now);
   },
-  
-  finishRegistration: async (form) => {
+
+  finishRegistration: async (form: { firstName: string; lastName: string; gender: string }) => {
     const { player } = get();
     const { data, error } = await supabase.from('profiles').update({
-      first_name: form.firstName, last_name: form.lastName, gender: form.gender,
-      username: `${form.firstName}_${form.lastName}`, registered_at: new Date().toISOString(),
-      inv_slots: 12 // Устанавливаем базу при регистрации
+      first_name: form.firstName,
+      last_name: form.lastName,
+      gender: form.gender,
+      username: `${form.firstName}_${form.lastName}`,
+      registered_at: new Date().toISOString(),
+      inv_slots: 12
     }).eq('id', player.id).select().single();
     if (!error) set({ player: data, needsRegistration: false });
   }

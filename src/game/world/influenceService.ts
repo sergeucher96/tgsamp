@@ -243,3 +243,4 @@ export async function addInfluence(
 }
 
 export { INFLUENCE_REASONS, INFLUENCE_CONFIG, getInfluenceMultiplier, getInfluenceTierInfo };
+export type { AddInfluenceResult };

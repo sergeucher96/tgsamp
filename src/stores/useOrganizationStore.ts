@@ -1,16 +1,153 @@
 import { create } from 'zustand';
 import { supabase } from '../services/supabase/client';
 import { usePlayerStore } from './usePlayerStore';
-import { ORGANIZATIONS, DEFAULT_RANKS } from '../features/gangs/data/organizationsConfig';
-import { VEHICLE_DATABASE } from '../features/vehicles/data/vehicleConfig';
 
-export const ORG_VEHICLE_TYPES = [
+// Organizations config (inline since organizationsConfig.ts doesn't exist)
+export interface Organization {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  description?: string;
+}
+
+export const ORGANIZATIONS: Organization[] = [];
+
+export interface DefaultRank {
+  rank_name: string;
+  rank_level: number;
+  salary: number;
+  permissions: Record<string, boolean>;
+}
+
+export const DEFAULT_RANKS: DefaultRank[] = [];
+
+export interface OrgVehicleType {
+  modelId: string;
+  price: number;
+  icon: string;
+}
+
+export const ORG_VEHICLE_TYPES: OrgVehicleType[] = [
   { modelId: 'clover', price: 45000, icon: '🚗' },
   { modelId: 'sentinel', price: 180000, icon: '🚙' },
   { modelId: 'infernus', price: 800000, icon: '🏎️' },
 ];
 
-export const useOrganizationStore = create((set, get) => ({
+export interface OrgMember {
+  id: string | number;
+  org_id: string;
+  player_id: string;
+  username: string;
+  avatar_url?: string | null;
+  rank_name: string;
+  salary: number;
+  is_leader: boolean;
+  next_salary_date?: string | null;
+}
+
+export interface OrgRank {
+  id: string | number;
+  org_id: string;
+  rank_name: string;
+  rank_level: number;
+  salary: number;
+  permissions: Record<string, boolean>;
+}
+
+export interface SalaryLogEntry {
+  id: string | number;
+  org_id: string;
+  player_id: string;
+  amount: number;
+  paid: boolean;
+  paid_at: string;
+}
+
+export interface SafeResources {
+  crop_count: number;
+  metal_count: number;
+  part_count: number;
+}
+
+export interface SafeItem {
+  id: string | number;
+  org_id: string;
+  item_id: string;
+  quantity: number;
+}
+
+export interface OrgVehicle {
+  id: string | number;
+  org_id: string;
+  vehicle_id: string;
+  purchased: boolean;
+  cost: number;
+  assigned_player_id?: string | null;
+  access_rank_ids?: (string | number)[];
+  // Vehicle details from join
+  model_id?: string;
+  color?: string;
+  plate?: string;
+  fuel?: number;
+  max_fuel?: number;
+  fuel_type?: string;
+  engine_stage?: number;
+  suspension_stage?: number;
+  brakes_stage?: number;
+  health?: number;
+}
+
+export interface PlayerSalaryInfo {
+  salary: number;
+  nextSalaryDate: string | null;
+}
+
+export type PaySalariesResult = { paid: number; total: number; failed: boolean } | false;
+
+interface OrganizationState {
+  organizations: Organization[];
+  members: OrgMember[];
+  ranks: OrgRank[];
+  isLoading: boolean;
+  currentOrg: string | null;
+  salaryLog: SalaryLogEntry[];
+  safeResources: SafeResources;
+  safeItems: SafeItem[];
+  orgVehicles: OrgVehicle[];
+  salaryPaid: boolean;
+
+  fetchOrganizations: () => Promise<void>;
+  fetchMembers: (orgId: string) => Promise<void>;
+  fetchRanks: (orgId: string) => Promise<void>;
+  joinOrganization: (orgId: string) => Promise<boolean>;
+  leaveOrganization: (orgId: string) => Promise<boolean>;
+  acceptInvitation: (orgId: string, targetPlayerId: string, rankName?: string) => Promise<boolean>;
+  removeMember: (orgId: string, targetPlayerId: string) => Promise<boolean>;
+  changeRank: (orgId: string, targetPlayerId: string, newRankName: string) => Promise<boolean>;
+  setLeader: (orgId: string, newLeaderId: string) => Promise<boolean>;
+  addBalance: (orgId: string, amount: number) => Promise<boolean>;
+  deductBalance: (orgId: string, amount: number) => Promise<boolean>;
+  getBalance: (orgId: string) => Promise<number>;
+  fetchSafeResources: (orgId: string) => Promise<void>;
+  fetchSafeItems: (orgId: string) => Promise<void>;
+  addSafeResource: (orgId: string, resourceType: keyof SafeResources, amount: number) => Promise<boolean>;
+  removeSafeResource: (orgId: string, resourceType: keyof SafeResources, amount: number) => Promise<boolean>;
+  addItemToSafe: (orgId: string, itemId: string, quantity?: number) => Promise<boolean>;
+  removeItemFromSafe: (orgId: string, itemId: string) => Promise<boolean>;
+  canManageMembers: (orgId: string, playerId: string) => boolean;
+  paySalaries: (orgId: string) => Promise<PaySalariesResult>;
+  fetchSalaryLog: (orgId: string) => Promise<void>;
+  getPlayerSalary: (orgId: string) => PlayerSalaryInfo;
+  fetchOrgVehicles: (orgId: string) => Promise<void>;
+  buyOrgVehicle: (orgId: string, vehicleModelId: string, color?: string) => Promise<boolean>;
+  assignVehicle: (orgId: string, orgVehicleId: string | number, playerId: string) => Promise<boolean>;
+  unassignVehicle: (orgId: string, orgVehicleId: string | number) => Promise<boolean>;
+  canUseVehicle: (orgId: string, orgVehicleId: string | number, playerId: string) => boolean;
+  loadOrgData: (orgId: string) => Promise<void>;
+}
+
+export const useOrganizationStore = create<OrganizationState>((set, get) => ({
   organizations: ORGANIZATIONS,
   members: [],
   ranks: [],
@@ -154,7 +291,7 @@ export const useOrganizationStore = create((set, get) => ({
   acceptInvitation: async (orgId, targetPlayerId, rankName = 'Member') => {
     try {
       const { data: ranks } = await supabase
-        .from('org_ranks').select('salary').eq('org_id', orgId).eq('rank_name', rankName);
+        .from('org_ranks').select('salary, rank_name').eq('org_id', orgId).eq('rank_name', rankName);
       const salary = ranks?.find(r => r.rank_name === rankName)?.salary || 0;
 
       const { error } = await supabase.from('org_members').insert([{
@@ -231,7 +368,7 @@ export const useOrganizationStore = create((set, get) => ({
   addBalance: async (orgId, amount) => {
     try {
       const { data } = await supabase.from('organizations').select('balance').eq('id', orgId).single();
-      if (!data?.balance !== undefined) return false;
+      if (data?.balance === undefined) return false;
 
       const { error } = await supabase.from('organizations')
         .update({ balance: (data.balance || 0) + amount }).eq('id', orgId);
@@ -417,7 +554,7 @@ export const useOrganizationStore = create((set, get) => ({
   },
 
   /** Получить зарплату игрока */
-  getPlayerSalary: (orgId) => {
+  getPlayerSalary: () => {
     const { player } = usePlayerStore.getState();
     if (!player) return { salary: 0, nextSalaryDate: null };
     const member = get().members.find(m => m.player_id === player.id);

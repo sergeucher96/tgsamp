@@ -2,7 +2,14 @@
 // Создавайте через RoadEditor → вкладка "LSPD"
 // и копируйте экспортированные маршруты сюда
 
-export const PATROL_ROUTES = [
+export interface PatrolRoute {
+  id: string;
+  name: string;
+  stops: string[];
+  description: string;
+}
+
+export const PATROL_ROUTES: PatrolRoute[] = [
   {
     id: 'route_military_port',
     name: 'Военный порт',

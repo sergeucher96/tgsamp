@@ -2,25 +2,47 @@ import { create } from 'zustand';
 import { usePlayerStore } from './usePlayerStore';
 import { useTravelStore } from './useTravelStore';
 import { FINAL_LOCATIONS } from '../game/locations/locations';
-import { JOBS_DATABASE } from '../features/jobs/data/jobsConfig';
+import { JOBS_DATABASE, type JobTask, type PayRange, type RandomStops, type RouteJob, type StationJob, type GarbageJob } from '../features/jobs/data/jobsConfig';
 import { WAYPOINTS } from '../game/locations/roads';
 
-const POI_TYPES = ['shop', 'bar', 'hotel', 'gym', 'clothes', 'nightclub', 'parking'];
+interface Location {
+  id: string;
+  x: number;
+  y: number;
+  name?: string;
+  icon?: string;
+  color?: string;
+  type?: string;
+  desc?: string;
+  class?: string;
+  entrance_id?: string;
+  category?: string;
+}
 
-const rand = ([min, max]) => min + Math.floor(Math.random() * (max - min + 1));
+const POI_TYPES = ['shop', 'bar', 'hotel', 'gym', 'clothes', 'nightclub', 'parking'] as const;
 
-const pickFrom = (list, exclude = []) => {
+type JobKind = 'route' | 'station' | 'garbage';
+
+type ShiftStatusRoute = 'assigned' | 'working' | 'driving' | 'arrived' | 'toBase' | 'returning';
+type ShiftStatusGarbage = 'selecting' | 'driving_to_bin' | 'at_bin' | 'driving_to_base' | 'at_base' | 'full' | 'collecting' | 'unloading';
+type ShiftStatusStation = 'working';
+
+type ShiftStatus = ShiftStatusRoute | ShiftStatusGarbage | ShiftStatusStation;
+
+const rand = ([min, max]: PayRange) => min + Math.floor(Math.random() * (max - min + 1));
+
+const pickFrom = (list: Location[], exclude: string[] = []) => {
   const pool = list.filter((loc) => !exclude.includes(loc.id));
   if (pool.length === 0) return null;
   return pool[Math.floor(Math.random() * pool.length)];
 };
 
-const locationsByPool = (pool, base) => {
+const locationsByPool = (pool: string, base: Location | undefined) => {
   switch (pool) {
     case 'house':
       return FINAL_LOCATIONS.filter((l) => l.type === 'house');
     case 'poi':
-      return FINAL_LOCATIONS.filter((l) => POI_TYPES.includes(l.type));
+      return FINAL_LOCATIONS.filter((l) => POI_TYPES.includes(l.type as typeof POI_TYPES[number]));
     case 'warehouse':
       return FINAL_LOCATIONS.filter((l) => l.type === 'warehouse' || l.id === 'port_ls');
     case 'far': {
@@ -34,76 +56,95 @@ const locationsByPool = (pool, base) => {
   }
 };
 
-// Строит список остановок смены: [{ location, pay, exp, label }]
-const buildStops = (job) => {
-  const base = FINAL_LOCATIONS.find((l) => l.id === job.locationId);
-  const stops = [];
-  const used = [job.locationId];
+interface ShiftStop {
+  location: Location;
+  pay: number;
+  exp: number;
+  label: string;
+}
 
-  if (job.stops.type === 'fixed') {
-    const available = job.stops.ids
-      .map((id) => FINAL_LOCATIONS.find((l) => l.id === id))
-      .filter(Boolean);
-    for (let i = 0; i < job.stops.count; i += 1) {
-      const location = pickFrom(available, used);
-      if (!location) break;
-      used.push(location.id);
-      stops.push({ location, pay: rand(job.payPerStop), exp: rand(job.expPerStop), label: `Остановка ${i + 1}` });
-    }
-    return stops;
-  }
+interface BaseShift {
+  jobId: string;
+  kind: JobKind;
+  status: ShiftStatus;
+  earned: number;
+  exp: number;
+  tips: number;
+  tasksDone: number;
+  cargo: string | null;
+  previousVehicle: any;
+}
 
-  for (let i = 0; i < job.stops.count; i += 1) {
-    job.stops.pools.forEach((pool, poolIndex) => {
-      const location = pickFrom(locationsByPool(pool, base), used);
-      if (!location) return;
-      used.push(location.id);
-      const isFinalLeg = poolIndex === job.stops.pools.length - 1;
-      stops.push({
-        location,
-        pay: isFinalLeg ? rand(job.payPerStop) : 0,
-        exp: isFinalLeg ? rand(job.expPerStop) : 0,
-        label: labelForPool(job, pool, i + 1),
-      });
-    });
-  }
+interface RouteShift extends BaseShift {
+  kind: 'route';
+  status: ShiftStatusRoute;
+  stops: ShiftStop[];
+  currentStop: number;
+}
 
-  return stops;
-};
+interface GarbageShift extends BaseShift {
+  kind: 'garbage';
+  status: ShiftStatusGarbage;
+  activeBins: string[];
+  selectedBinId: string | null;
+  capacity: number;
+  lastBinAmount: number;
+  collecting: boolean;
+  collectProgress: number;
+  unloading: boolean;
+  unloadProgress: number;
+}
 
-const labelForPool = (job, pool, index) => {
-  if (job.id === 'taxi_driver') return pool === 'house' ? `Подача к клиенту #${index}` : `Высадка пассажира #${index}`;
-  if (job.id === 'trucker') return pool === 'warehouse' ? `Погрузка #${index}` : `Выгрузка #${index}`;
-  return `Точка ${index}`;
-};
+interface StationShift extends BaseShift {
+  kind: 'station';
+  status: ShiftStatusStation;
+}
 
-const generateSingleBin = (baseWaypointId, excludeIds = new Set()) => {
-  const allIds = Object.keys(WAYPOINTS);
-  const base = WAYPOINTS[baseWaypointId];
-  let safety = 0;
-  while (safety < allIds.length * 3) {
-    safety++;
-    const id = allIds[Math.floor(Math.random() * allIds.length)];
-    if (excludeIds.has(id)) continue;
-    const wp = WAYPOINTS[id];
-    if (base && Math.hypot(wp.x - base.x, wp.y - base.y) < 300) continue;
-    excludeIds.add(id);
-    return id;
-  }
-  return null;
-};
+type ActiveShift = RouteShift | GarbageShift | StationShift;
 
-const generateBins = (baseWaypointId, count) => {
-  const used = new Set();
-  const bins = [];
-  for (let i = 0; i < count; i++) {
-    const bin = generateSingleBin(baseWaypointId, used);
-    if (bin) bins.push(bin);
-  }
-  return bins;
-};
+interface JobState {
+  activeShift: ActiveShift | null;
+  isProcessing: boolean;
+  jobMessage: string | null;
+  taskProgress: number;
+  lastTask: { name: string; pay: number; exp: number } | null;
+  showUnloadConfirm: boolean;
 
-export const useJobStore = create((set, get) => ({
+  // Общие методы
+  hasLicenseFor: (jobId: string) => boolean;
+  skillValue: (jobId: string) => number;
+  startShift: (jobId: string) => boolean;
+  cancelShift: () => void;
+  requestUnload: () => void;
+  freeDrive: (targetLocId: string) => Promise<void>;
+  cancelUnload: () => void;
+  goToDump: () => Promise<void>;
+  confirmUnload: () => Promise<void>;
+  skipBin: () => void;
+  selectBin: (binId: string) => Promise<void>;
+  goToBase: () => Promise<void>;
+  arriveAtBase: () => void;
+
+  // Работы с поездками (route)
+  goToCurrentStop: () => Promise<void>;
+  arriveAtStop: () => void;
+  completeStop: () => void;
+  returnToBase: () => Promise<void>;
+  finishShift: () => Promise<void>;
+
+  // Мусорщик
+  arriveAtBin: () => void;
+  collectGarbage: () => Promise<void>;
+  performUnload: (skipDrive?: boolean) => Promise<void>;
+  finishGarbageShift: () => Promise<void>;
+
+  // Станционные работы
+  availableTasks: (jobId: string) => JobTask[];
+  runTask: (taskId: string) => Promise<void>;
+  endStationShift: () => void;
+}
+
+export const useJobStore = create<JobState>((set, get) => ({
   activeShift: null, // { jobId, kind, stops, currentStop, earned, exp, status, cargo }
   isProcessing: false,
   jobMessage: null,
@@ -142,15 +183,16 @@ export const useJobStore = create((set, get) => ({
     }
 
     const previousVehicle = usePlayerStore.getState().activeVehicle;
-    if (job.vehicle) usePlayerStore.getState().setLocalActiveVehicle(job.vehicle);
+    if (job.vehicle) usePlayerStore.getState().setLocalActiveVehicle(job.vehicle as any);
 
-    let activeShift;
+    let activeShift: ActiveShift;
     if (job.kind === 'garbage') {
-      const baseWp = FINAL_LOCATIONS.find((l) => l.id === job.locationId)?.entrance_id || '1';
+      const garbageJob = job as GarbageJob;
+      const baseWp = FINAL_LOCATIONS.find((l) => l.id === garbageJob.locationId)?.entrance_id || '1';
       const activeBins = generateBins(baseWp, 5);
       activeShift = {
         jobId,
-        kind: job.kind,
+        kind: 'garbage',
         status: 'selecting',
         activeBins,
         selectedBinId: null,
@@ -167,18 +209,31 @@ export const useJobStore = create((set, get) => ({
         unloading: false,
         unloadProgress: 0,
       };
-    } else {
+    } else if (job.kind === 'route') {
+      const routeJob = job as RouteJob;
       activeShift = {
         jobId,
-        kind: job.kind,
-        status: job.kind === 'route' ? 'assigned' : 'working',
-        stops: job.kind === 'route' ? buildStops(job) : [],
+        kind: 'route',
+        status: 'assigned',
+        stops: buildStops(routeJob),
         currentStop: 0,
         earned: 0,
         exp: 0,
         tips: 0,
         tasksDone: 0,
-        cargo: job.cargo ? job.cargo[Math.floor(Math.random() * job.cargo.length)] : null,
+        cargo: routeJob.cargo ? routeJob.cargo[Math.floor(Math.random() * routeJob.cargo.length)] : null,
+        previousVehicle,
+      };
+    } else {
+      activeShift = {
+        jobId,
+        kind: 'station',
+        status: 'working',
+        earned: 0,
+        exp: 0,
+        tips: 0,
+        tasksDone: 0,
+        cargo: null,
         previousVehicle,
       };
     }
@@ -252,7 +307,7 @@ export const useJobStore = create((set, get) => ({
   selectBin: async (binId) => {
     const shift = get().activeShift;
     if (!shift || shift.kind !== 'garbage' || shift.status !== 'selecting' || get().isProcessing) return;
-    const job = JOBS_DATABASE[shift.jobId];
+    const job = JOBS_DATABASE[shift.jobId] as GarbageJob;
 
     if (shift.capacity >= job.capacity) {
       set({ activeShift: { ...shift, status: 'full' }, jobMessage: 'Мусоровоз полон! Возвращайтесь на базу для выгрузки.' });
@@ -272,7 +327,7 @@ export const useJobStore = create((set, get) => ({
   goToBase: async () => {
     const shift = get().activeShift;
     if (!shift || shift.kind !== 'garbage' || get().isProcessing) return;
-    const job = JOBS_DATABASE[shift.jobId];
+    const job = JOBS_DATABASE[shift.jobId] as GarbageJob;
 
     const baseLocation = FINAL_LOCATIONS.find((l) => l.id === job.locationId);
     const playerPos = usePlayerStore.getState().player;
@@ -341,7 +396,7 @@ export const useJobStore = create((set, get) => ({
   completeStop: () => {
     const shift = get().activeShift;
     if (!shift || shift.status !== 'arrived') return;
-    const job = JOBS_DATABASE[shift.jobId];
+    const job = JOBS_DATABASE[shift.jobId] as RouteJob;
     const stop = shift.stops[shift.currentStop];
 
     let tip = 0;
@@ -373,7 +428,7 @@ export const useJobStore = create((set, get) => ({
 
     if (shift.kind === 'garbage') {
       if (shift.status === 'driving_to_base') return;
-      const job = JOBS_DATABASE[shift.jobId];
+      const job = JOBS_DATABASE[shift.jobId] as GarbageJob;
       set({ isProcessing: true, activeShift: { ...shift, status: 'driving_to_base' } });
       await useTravelStore.getState().startRoute(job.locationId);
       set({ isProcessing: false });
@@ -386,7 +441,7 @@ export const useJobStore = create((set, get) => ({
     }
 
     if (shift.status !== 'toBase' || get().isProcessing) return;
-    const job = JOBS_DATABASE[shift.jobId];
+    const job = JOBS_DATABASE[shift.jobId] as RouteJob;
 
     set({ isProcessing: true, activeShift: { ...shift, status: 'returning' } });
     await useTravelStore.getState().startRoute(job.locationId);
@@ -397,14 +452,13 @@ export const useJobStore = create((set, get) => ({
   finishShift: async () => {
     const shift = get().activeShift;
     if (!shift) return;
-    const job = JOBS_DATABASE[shift.jobId];
+    const job = JOBS_DATABASE[shift.jobId] as RouteJob;
     const { player, updateProfile, setLocalActiveVehicle, addSkillProgress } = usePlayerStore.getState();
 
     const total = shift.earned + (job.bonusOnFinish || 0);
 
     await updateProfile({
       money: Number(player.money || 0) + total,
-      exp: (player.exp || 0) + shift.exp,
       energy: Math.max(0, (player.energy || 100) - job.energyCost),
     });
     await addSkillProgress(job.skillId, 1);
@@ -421,7 +475,7 @@ export const useJobStore = create((set, get) => ({
   arriveAtBin: () => {
     const shift = get().activeShift;
     if (!shift || shift.status !== 'driving_to_bin') return;
-    const job = JOBS_DATABASE[shift.jobId];
+    const job = JOBS_DATABASE[shift.jobId] as GarbageJob;
     const binAmount = rand(job.garbagePerBin);
     const realAmount = Math.min(binAmount, job.capacity - shift.capacity);
     set({
@@ -433,15 +487,15 @@ export const useJobStore = create((set, get) => ({
   collectGarbage: async () => {
     const shift = get().activeShift;
     if (!shift || shift.status !== 'at_bin' || get().isProcessing) return;
-    const job = JOBS_DATABASE[shift.jobId];
+    const job = JOBS_DATABASE[shift.jobId] as GarbageJob;
 
-    set({ isProcessing: true, activeShift: { ...shift, collecting: true, collectProgress: 0 } });
-    const currentShift = get().activeShift;
+    set({ isProcessing: true, activeShift: { ...shift, collecting: true, collectProgress: 0 } as GarbageShift });
+    const currentShift = get().activeShift as GarbageShift;
 
     await runProgress(5000, (value) => {
       const fresh = get().activeShift;
       if (fresh) {
-        set({ activeShift: { ...fresh, collecting: true, collectProgress: value } });
+        set({ activeShift: { ...fresh, collecting: true, collectProgress: value } as GarbageShift });
       }
     });
 
@@ -454,7 +508,7 @@ export const useJobStore = create((set, get) => ({
     if (isFull) message = `Кузов полон (${newCapacity}/${job.capacity})!`;
 
     const baseWp = FINAL_LOCATIONS.find((l) => l.id === job.locationId)?.entrance_id || '1';
-    const usedIds = new Set(currentShift.activeBins);
+    const usedIds = new Set<string>(currentShift.activeBins);
     const newBin = generateSingleBin(baseWp, usedIds);
     const nextActiveBins = newBin
       ? [...currentShift.activeBins.filter(id => id !== currentShift.selectedBinId), newBin]
@@ -469,7 +523,7 @@ export const useJobStore = create((set, get) => ({
         status: 'selecting',
         collecting: false,
         collectProgress: 0,
-      },
+      } as GarbageShift,
       jobMessage: message,
       isProcessing: false,
     });
@@ -478,7 +532,7 @@ export const useJobStore = create((set, get) => ({
   performUnload: async (skipDrive = false) => {
     const shift = get().activeShift;
     if (!shift || shift.kind !== 'garbage' || shift.capacity <= 0 || get().isProcessing) return;
-    const job = JOBS_DATABASE[shift.jobId];
+    const job = JOBS_DATABASE[shift.jobId] as GarbageJob;
 
     // Прерываем текущую поездку (например, к контейнеру), чтобы можно было
     // уехать на свалку прямо в пути.
@@ -499,7 +553,7 @@ export const useJobStore = create((set, get) => ({
     const alreadyAtBase = distToBase < 150;
 
     if (!skipDrive && !alreadyAtBase) {
-      set({ isProcessing: true, activeShift: { ...shift, status: 'driving_to_base' } });
+      set({ isProcessing: true, activeShift: { ...shift, status: 'driving_to_base' } as GarbageShift });
       await useTravelStore.getState().startRoute(job.locationId);
       set({ isProcessing: false });
     }
@@ -513,7 +567,7 @@ export const useJobStore = create((set, get) => ({
         status: 'selecting',
         unloading: true,
         unloadProgress: 0,
-      },
+      } as GarbageShift,
       isProcessing: true,
     });
 
@@ -529,10 +583,10 @@ export const useJobStore = create((set, get) => ({
     // Таймер разгрузки (10 сек) с видимым прогрессом
     const DURATION = 10000;
     const startTime = Date.now();
-    await new Promise((resolve) => {
+    await new Promise<void>((resolve) => {
       const timer = setInterval(() => {
         const p = Math.min(100, ((Date.now() - startTime) / DURATION) * 100);
-        set({ activeShift: { ...get().activeShift, unloadProgress: p } });
+        set({ activeShift: { ...get().activeShift, unloadProgress: p } as GarbageShift });
         if (p >= 100) {
           clearInterval(timer);
           resolve();
@@ -549,7 +603,7 @@ export const useJobStore = create((set, get) => ({
     try {
       await updateProfile({
         money: Number(fresh.money || 0) + pay,
-        exp: (fresh.exp || 0) + exp,
+        energy: Math.max(0, (fresh.energy || 100) - job.energyCost),
       });
       await addSkillProgress(job.skillId, 1);
     } catch (e) {
@@ -565,16 +619,16 @@ export const useJobStore = create((set, get) => ({
         status: 'selecting',
         unloading: false,
         unloadProgress: 0,
-      },
+      } as GarbageShift,
       jobMessage: `Разгружено. Заработано ${pay.toLocaleString()}$, +${exp} XP.`,
       isProcessing: false,
     });
   },
 
   finishGarbageShift: async () => {
-    const shift = get().activeShift;
+    const shift = get().activeShift as GarbageShift | null;
     if (!shift) return;
-    const job = JOBS_DATABASE[shift.jobId];
+    const job = JOBS_DATABASE[shift.jobId] as GarbageJob;
     const { player, updateProfile, setLocalActiveVehicle, addSkillProgress } = usePlayerStore.getState();
 
     const pay = shift.capacity * job.payPerUnit;
@@ -583,7 +637,6 @@ export const useJobStore = create((set, get) => ({
     if (shift.capacity > 0) {
       await updateProfile({
         money: Number(player.money || 0) + pay,
-        exp: (player.exp || 0) + exp,
         energy: Math.max(0, (player.energy || 100) - job.energyCost),
       });
       await addSkillProgress(job.skillId, 1);
@@ -602,7 +655,7 @@ export const useJobStore = create((set, get) => ({
   // ---------- РАБОТЫ НА МЕСТЕ (завод / СТО) ----------
 
   availableTasks: (jobId) => {
-    const job = JOBS_DATABASE[jobId];
+    const job = JOBS_DATABASE[jobId] as StationJob;
     const skill = get().skillValue(jobId);
     return (job?.tasks || []).filter((t) => skill >= t.minSkill);
   },
@@ -611,7 +664,7 @@ export const useJobStore = create((set, get) => ({
     const shift = get().activeShift;
     if (!shift || shift.kind !== 'station' || get().isProcessing) return;
 
-    const job = JOBS_DATABASE[shift.jobId];
+    const job = JOBS_DATABASE[shift.jobId] as StationJob;
     const task = job.tasks.find((t) => t.id === taskId);
     const { player } = usePlayerStore.getState();
     if (!task) return;
@@ -632,7 +685,6 @@ export const useJobStore = create((set, get) => ({
     const fresh = usePlayerStore.getState().player;
     await updateProfile({
       money: Number(fresh.money || 0) + pay,
-      exp: (fresh.exp || 0) + exp,
       energy: Math.max(0, (fresh.energy || 100) - job.energyCost),
     });
     await addSkillProgress(job.skillId, 1);
@@ -660,10 +712,10 @@ export const useJobStore = create((set, get) => ({
   },
 }));
 
-function runProgress(duration, onTick) {
-  return new Promise((resolve) => {
+function runProgress(duration: number, onTick: (value: number) => void) {
+  return new Promise<void>((resolve) => {
     const start = performance.now();
-    const step = (now) => {
+    const step = (now: number) => {
       const progress = Math.min(((now - start) / duration) * 100, 100);
       onTick(progress);
       if (progress < 100) requestAnimationFrame(step);
@@ -671,4 +723,73 @@ function runProgress(duration, onTick) {
     };
     requestAnimationFrame(step);
   });
+}
+
+function buildStops(job: RouteJob): ShiftStop[] {
+  const base = FINAL_LOCATIONS.find((l) => l.id === job.locationId);
+  const stops: ShiftStop[] = [];
+  const used = [job.locationId];
+
+  if (job.stops.type === 'fixed') {
+    const found = job.stops.ids
+      .map((id) => FINAL_LOCATIONS.find((l) => l.id === id))
+      .filter((l) => l !== undefined);
+    const available = found as Location[];
+    for (let i = 0; i < job.stops.count; i += 1) {
+      const location = pickFrom(available, used);
+      if (!location) break;
+      used.push(location.id);
+      stops.push({ location, pay: rand(job.payPerStop), exp: rand(job.expPerStop), label: `Остановка ${i + 1}` });
+    }
+    return stops;
+  }
+
+  for (let i = 0; i < (job.stops as RandomStops).count; i += 1) {
+    (job.stops as RandomStops).pools.forEach((pool, poolIndex) => {
+      const location = pickFrom(locationsByPool(pool, base), used);
+      if (!location) return;
+      used.push(location.id);
+      const isFinalLeg = poolIndex === (job.stops as RandomStops).pools.length - 1;
+      stops.push({
+        location,
+        pay: isFinalLeg ? rand(job.payPerStop) : 0,
+        exp: isFinalLeg ? rand(job.expPerStop) : 0,
+        label: labelForPool(job, pool, i + 1),
+      });
+    });
+  }
+
+  return stops;
+}
+
+function labelForPool(job: RouteJob, pool: string, index: number): string {
+  if (job.id === 'taxi_driver') return pool === 'house' ? `Подача к клиенту #${index}` : `Высадка пассажира #${index}`;
+  if (job.id === 'trucker') return pool === 'warehouse' ? `Погрузка #${index}` : `Выгрузка #${index}`;
+  return `Точка ${index}`;
+}
+
+function generateSingleBin(baseWaypointId: string, excludeIds: Set<string> = new Set()): string | null {
+  const allIds = Object.keys(WAYPOINTS);
+  const base = WAYPOINTS[baseWaypointId];
+  let safety = 0;
+  while (safety < allIds.length * 3) {
+    safety++;
+    const id = allIds[Math.floor(Math.random() * allIds.length)];
+    if (excludeIds.has(id)) continue;
+    const wp = WAYPOINTS[id];
+    if (base && Math.hypot(wp.x - base.x, wp.y - base.y) < 300) continue;
+    excludeIds.add(id);
+    return id;
+  }
+  return null;
+}
+
+function generateBins(baseWaypointId: string, count: number): string[] {
+  const used = new Set<string>();
+  const bins: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const bin = generateSingleBin(baseWaypointId, used);
+    if (bin) bins.push(bin);
+  }
+  return bins;
 }

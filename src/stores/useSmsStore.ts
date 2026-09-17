@@ -1,8 +1,30 @@
 import { create } from 'zustand';
 import { supabase } from '../services/supabase/client';
 import { usePlayerStore } from './usePlayerStore';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
-export const useSmsStore = create((set, get) => ({
+export interface SmsMessage {
+  id: string;
+  from_phone: string;
+  to_phone: string;
+  message: string;
+  read: boolean;
+  created_at: string;
+}
+
+interface SmsState {
+  messages: SmsMessage[];
+  realtimeChannel: RealtimeChannel | null;
+
+  fetchMessages: () => Promise<void>;
+  sendSms: (toPhone: string, message: string) => Promise<boolean>;
+  markAsRead: (id: string) => Promise<void>;
+  startRealtimeSubscription: () => void;
+  stopRealtimeSubscription: () => void;
+  getUnreadCount: () => number;
+}
+
+export const useSmsStore = create<SmsState>((set, get) => ({
   messages: [],
   realtimeChannel: null,
 
@@ -21,7 +43,7 @@ export const useSmsStore = create((set, get) => ({
     }
   },
 
-  sendSms: async (toPhone, message) => {
+  sendSms: async (toPhone: string, message: string) => {
     const { player } = usePlayerStore.getState();
     if (!player || !toPhone || !message.trim()) return false;
 
@@ -38,12 +60,11 @@ export const useSmsStore = create((set, get) => ({
       return false;
     }
 
-    // Refresh inbox
     get().fetchMessages();
     return true;
   },
 
-  markAsRead: async (id) => {
+  markAsRead: async (id: string) => {
     const { error } = await supabase
       .from('sms_messages')
       .update({ read: true })
@@ -69,7 +90,7 @@ export const useSmsStore = create((set, get) => ({
           filter: `to_phone=eq.${player.phone_number}`,
         },
         (payload) => {
-          set({ messages: [payload.new, ...get().messages] });
+          set({ messages: [payload.new as SmsMessage, ...get().messages] });
         }
       )
       .subscribe();

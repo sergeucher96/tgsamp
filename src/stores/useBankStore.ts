@@ -3,11 +3,67 @@ import { supabase } from '../services/supabase/client';
 import { usePlayerStore } from './usePlayerStore';
 import { useQuestStore } from './useQuestStore';
 import { useHouseStore } from './useHouseStore';
-import { HOUSE_CLASSES } from '../features/houses/data/houseConfig';
+import { HOUSE_CLASSES, HouseClass } from '../features/houses/data/houseConfig';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
 const BANK_INTEREST_RATE = 0.001; // 0.1% в час (только на депозит)
 
-export const useBankStore = create((set, get) => ({
+export interface Transaction {
+  id: string;
+  player_id: string;
+  type: string;
+  amount: number;
+  description: string;
+  created_at: string;
+}
+
+export interface HouseTaxInfo {
+  id: string;
+  name: string;
+  class: string;
+  taxAmount: number;
+  isPaid: boolean;
+  daysLeft: number;
+  taxPaidUntil: string | null;
+}
+
+export interface BankNotification {
+  id: number;
+  type: 'success' | 'error' | 'transfer_received';
+  amount?: number;
+  message: string;
+}
+
+interface BankState {
+  interestIntervalId: ReturnType<typeof setInterval> | null;
+  realtimeChannel: RealtimeChannel | null;
+  _lastBalance: number;
+  notifications: BankNotification[];
+  transactions: Transaction[];
+  isUpdatingLocally: boolean;
+
+  _normalizeAmount: (input: string | number) => number | null;
+  addNotification: (notification: Omit<BankNotification, 'id'>) => void;
+  loadTransactions: () => Promise<void>;
+  _addTransaction: (type: string, amount: number, description: string, playerID?: string) => Promise<void>;
+  startRealtimeSubscription: () => void;
+  stopRealtimeSubscription: () => void;
+  depositToOwnAccount: (amountInput: string | number) => Promise<boolean>;
+  withdrawFromOwnAccount: (amountInput: string | number) => Promise<boolean>;
+  transferToPhone: (phoneNumber: string, amountInput: string | number) => Promise<boolean>;
+  moveToDeposit: (amountInput: string | number) => Promise<boolean>;
+  withdrawFromDeposit: (amountInput: string | number) => Promise<boolean>;
+  accrueInterest: () => Promise<boolean>;
+  startInterestAccrual: () => void;
+  stopInterestAccrual: () => void;
+  atmDeposit: (amountInput: string | number) => Promise<boolean>;
+  atmWithdraw: (amountInput: string | number) => Promise<boolean>;
+  getHouseTaxInfo: () => Promise<HouseTaxInfo[]>;
+  payTax: (amountInput: string | number) => Promise<boolean>;
+  payHouseTax: (houseId: string) => Promise<boolean>;
+}
+
+export const useBankStore = create<BankState>((set, get) => ({
   interestIntervalId: null,
   realtimeChannel: null,
   _lastBalance: 0,
@@ -15,13 +71,13 @@ export const useBankStore = create((set, get) => ({
   transactions: [],
   isUpdatingLocally: false,
 
-  _normalizeAmount: (input) => {
+  _normalizeAmount: (input: string | number) => {
     const amount = Number(input);
     if (Number.isNaN(amount) || amount <= 0) return null;
     return Math.round(amount * 100) / 100;
   },
 
-  addNotification: (notification) => {
+  addNotification: (notification: Omit<BankNotification, 'id'>) => {
     const id = Date.now();
     set({ notifications: [...get().notifications, { ...notification, id }] });
     setTimeout(() => {
@@ -43,7 +99,7 @@ export const useBankStore = create((set, get) => ({
     }
   },
 
-  _addTransaction: async (type, amount, description, playerID) => {
+  _addTransaction: async (type: string, amount: number, description: string, playerID?: string) => {
     const { player } = usePlayerStore.getState();
     const targetID = playerID || (player ? player.id : null);
     if (!targetID) return;
@@ -74,12 +130,12 @@ export const useBankStore = create((set, get) => ({
           table: 'profiles',
           filter: `id=eq.${player.id}`,
         },
-        (payload) => {
+        (payload: { new: { bank_balance?: number | string } }) => {
           if (get().isUpdatingLocally) return;
-          
+
           const newBalance = Number(payload.new.bank_balance || 0);
           const lastBalance = get()._lastBalance;
-          
+
           if (newBalance > lastBalance) {
             const receivedAmount = Number((newBalance - lastBalance).toFixed(2));
             get().addNotification({
@@ -104,7 +160,7 @@ export const useBankStore = create((set, get) => ({
     }
   },
 
-  depositToOwnAccount: async (amountInput) => {
+  depositToOwnAccount: async (amountInput: string | number) => {
     const { player, updateProfile } = usePlayerStore.getState();
     const amount = get()._normalizeAmount(amountInput);
     if (!player || amount === null) return false;
@@ -124,7 +180,7 @@ export const useBankStore = create((set, get) => ({
       bank_balance: newBalance
     });
     setTimeout(() => set({ isUpdatingLocally: false }), 1000);
-    
+
     if (success) {
       set({ _lastBalance: newBalance });
       useQuestStore.getState().registerEvent('deposit', amount);
@@ -138,7 +194,7 @@ export const useBankStore = create((set, get) => ({
     return success;
   },
 
-  withdrawFromOwnAccount: async (amountInput) => {
+  withdrawFromOwnAccount: async (amountInput: string | number) => {
     const { player, updateProfile } = usePlayerStore.getState();
     const amount = get()._normalizeAmount(amountInput);
     if (!player || amount === null) return false;
@@ -158,7 +214,7 @@ export const useBankStore = create((set, get) => ({
       bank_balance: newBalance
     });
     setTimeout(() => set({ isUpdatingLocally: false }), 1000);
-    
+
     if (success) {
       set({ _lastBalance: newBalance });
       useQuestStore.getState().registerEvent('withdraw', amount);
@@ -172,7 +228,7 @@ export const useBankStore = create((set, get) => ({
     return success;
   },
 
-  transferToPhone: async (phoneNumber, amountInput) => {
+  transferToPhone: async (phoneNumber: string, amountInput: string | number) => {
     const { player, updateProfile } = usePlayerStore.getState();
     const amount = get()._normalizeAmount(amountInput);
     if (!player || amount === null) return false;
@@ -230,7 +286,7 @@ export const useBankStore = create((set, get) => ({
       set({ isUpdatingLocally: true });
       const success = await updateProfile({ bank_balance: Number(senderBankBalance.toFixed(2)) });
       setTimeout(() => set({ isUpdatingLocally: false }), 1000);
-      
+
       if (!success) throw new Error('Не удалось списать средства со счета отправителя.');
 
       set({ _lastBalance: Number(senderBankBalance.toFixed(2)) });
@@ -257,7 +313,7 @@ export const useBankStore = create((set, get) => ({
     }
   },
 
-  moveToDeposit: async (amountInput) => {
+  moveToDeposit: async (amountInput: string | number) => {
     const { player, updateProfile } = usePlayerStore.getState();
     const amount = get()._normalizeAmount(amountInput);
     if (!player || amount === null) return false;
@@ -288,7 +344,7 @@ export const useBankStore = create((set, get) => ({
     return success;
   },
 
-  withdrawFromDeposit: async (amountInput) => {
+  withdrawFromDeposit: async (amountInput: string | number) => {
     const { player, updateProfile } = usePlayerStore.getState();
     const amount = get()._normalizeAmount(amountInput);
     if (!player || amount === null) return false;
@@ -358,8 +414,7 @@ export const useBankStore = create((set, get) => ({
     }
   },
 
-  // Банкомат: пополнение счёта (наличные → счёт, без комиссии)
-  atmDeposit: async (amountInput) => {
+  atmDeposit: async (amountInput: string | number) => {
     const { player, updateProfile } = usePlayerStore.getState();
     const amount = get()._normalizeAmount(amountInput);
     if (!player || amount === null) return false;
@@ -392,8 +447,7 @@ export const useBankStore = create((set, get) => ({
     return success;
   },
 
-  // Банкомат: снятие со счёта (счёт → наличные, комиссия 3% вычитается из получаемой суммы)
-  atmWithdraw: async (amountInput) => {
+  atmWithdraw: async (amountInput: string | number) => {
     const { player, updateProfile } = usePlayerStore.getState();
     const amount = get()._normalizeAmount(amountInput);
     if (!player || amount === null) return false;
@@ -429,7 +483,6 @@ export const useBankStore = create((set, get) => ({
     return success;
   },
 
-  // Получение информации о налоговой задолженности по домам игрока
   getHouseTaxInfo: async () => {
     const { player } = usePlayerStore.getState();
     if (!player) return [];
@@ -442,11 +495,11 @@ export const useBankStore = create((set, get) => ({
     if (error || !houses) return [];
 
     return houses.map(house => {
-      const hConfig = HOUSE_CLASSES[house.class] || HOUSE_CLASSES.economy;
+      const hConfig = HOUSE_CLASSES[house.class as HouseClass] || HOUSE_CLASSES.economy;
       const taxAmount = Math.round(hConfig.price * 0.01);
       const taxPaidUntil = house.tax_paid_until ? new Date(house.tax_paid_until) : null;
       const isPaid = taxPaidUntil && taxPaidUntil > new Date();
-      const daysLeft = isPaid ? Math.ceil((taxPaidUntil - new Date()) / (1000 * 60 * 60 * 24)) : 0;
+      const daysLeft = isPaid ? Math.ceil((taxPaidUntil.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : 0;
 
       return {
         id: house.id_name,
@@ -460,8 +513,7 @@ export const useBankStore = create((set, get) => ({
     });
   },
 
-  // Оплата налога (с банковского счета)
-  payTax: async (amountInput) => {
+  payTax: async (amountInput: string | number) => {
     const { player, updateProfile } = usePlayerStore.getState();
     const amount = get()._normalizeAmount(amountInput);
     if (!player || amount === null) return false;
@@ -480,7 +532,7 @@ export const useBankStore = create((set, get) => ({
       bank_balance: newBalance
     });
     setTimeout(() => set({ isUpdatingLocally: false }), 1000);
-    
+
     if (success) {
       set({ _lastBalance: newBalance });
       await get()._addTransaction('tax_payment', amount, 'Оплата налога');
@@ -493,12 +545,10 @@ export const useBankStore = create((set, get) => ({
     return success;
   },
 
-  // Оплата налога на дом (с банковского счета)
-  payHouseTax: async (houseId) => {
+  payHouseTax: async (houseId: string) => {
     const { player, updateProfile } = usePlayerStore.getState();
     if (!player) return false;
 
-    // Найти дом игрока
     const { data: house, error: houseError } = await supabase
       .from('houses')
       .select('*')
@@ -514,8 +564,8 @@ export const useBankStore = create((set, get) => ({
       return false;
     }
 
-    const hConfig = HOUSE_CLASSES[house.class] || HOUSE_CLASSES.economy;
-    const taxAmount = Math.round(hConfig.price * 0.01); // 1% от стоимости дома
+    const hConfig = HOUSE_CLASSES[house.class as HouseClass] || HOUSE_CLASSES.economy;
+    const taxAmount = Math.round(hConfig.price * 0.01);
 
     if (Number(player.bank_balance || 0) < taxAmount) {
       get().addNotification({
@@ -528,17 +578,15 @@ export const useBankStore = create((set, get) => ({
     set({ isUpdatingLocally: true });
     const newBalance = Number((Number(player.bank_balance || 0) - taxAmount).toFixed(2));
 
-    // Обновить баланс игрока
     const success = await updateProfile({ bank_balance: newBalance });
     if (!success) {
       setTimeout(() => set({ isUpdatingLocally: false }), 1000);
       return false;
     }
 
-    // Обновить дату оплаты налога в доме
     const { error: updateError } = await supabase
       .from('houses')
-      .update({ tax_paid_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() }) // +30 дней
+      .update({ tax_paid_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() })
       .eq('id_name', houseId);
 
     setTimeout(() => set({ isUpdatingLocally: false }), 1000);

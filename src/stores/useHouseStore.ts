@@ -2,10 +2,31 @@ import { create } from 'zustand';
 import { supabase } from '../services/supabase/client';
 import { usePlayerStore } from './usePlayerStore';
 import { useQuestStore } from './useQuestStore';
-import { HOUSE_CLASSES } from '../features/houses/data/houseConfig';
+import { HOUSE_CLASSES, HouseClass } from '../features/houses/data/houseConfig';
 
-export const useHouseStore = create((set, get) => ({
-  dbHouses: [], 
+export interface House {
+  id_name: string;
+  owner_id: string | null;
+  is_for_sale: boolean;
+  class: HouseClass;
+  name: string;
+  garage_slots: number;
+  wardrobe_slots: number;
+  safe_balance: number;
+  [key: string]: unknown;
+}
+
+interface HouseState {
+  dbHouses: House[];
+  isProcessing: boolean;
+
+  fetchDbHouses: () => Promise<void>;
+  manageSafe: (houseId: string, amountInput: string | number, type: 'deposit' | 'withdraw') => Promise<boolean>;
+  buyHouse: (houseLocation: { id: string; class: HouseClass; name: string }) => Promise<boolean>;
+}
+
+export const useHouseStore = create<HouseState>((set, get) => ({
+  dbHouses: [],
   isProcessing: false,
 
   fetchDbHouses: async () => {
@@ -13,17 +34,16 @@ export const useHouseStore = create((set, get) => ({
     if (!error) set({ dbHouses: data || [] });
   },
 
-  manageSafe: async (houseId, amountInput, type) => {
+  manageSafe: async (houseId: string, amountInput: string | number, type: 'deposit' | 'withdraw') => {
     const { player, updateProfile } = usePlayerStore.getState();
     const house = get().dbHouses.find(h => h.id_name === houseId);
 
     if (!house || !player) return false;
 
-    // --- ЖЕЛЕЗОБЕТОННАЯ ПРОВЕРКА ЧИСЛА ---
-    const amount = parseInt(amountInput); // Превращаем строку в целое число
-    
+    const amount = parseInt(String(amountInput), 10);
+
     if (isNaN(amount) || amount <= 0) {
-      alert("ОШИБКА: Введите корректное положительное число!");
+      alert('ОШИБКА: Введите корректное положительное число!');
       return false;
     }
 
@@ -32,14 +52,14 @@ export const useHouseStore = create((set, get) => ({
 
     if (type === 'deposit') {
       if (newPlayerMoney < amount) {
-        alert("У вас нет такой суммы наличными!");
+        alert('У вас нет такой суммы наличными!');
         return false;
       }
       newSafeBalance += amount;
       newPlayerMoney -= amount;
     } else {
       if (newSafeBalance < amount) {
-        alert("В сейфе недостаточно средств!");
+        alert('В сейфе недостаточно средств!');
         return false;
       }
       newSafeBalance -= amount;
@@ -47,7 +67,6 @@ export const useHouseStore = create((set, get) => ({
     }
 
     try {
-      // Обновляем сейф в БД
       const { error } = await supabase
         .from('houses')
         .update({ safe_balance: newSafeBalance })
@@ -55,10 +74,7 @@ export const useHouseStore = create((set, get) => ({
 
       if (error) throw error;
 
-      // Обновляем деньги игрока
       await updateProfile({ money: newPlayerMoney });
-      
-      // Обновляем локальный список домов
       await get().fetchDbHouses();
       return true;
     } catch (e) {
@@ -67,12 +83,12 @@ export const useHouseStore = create((set, get) => ({
     }
   },
 
-  buyHouse: async (houseLocation) => {
+  buyHouse: async (houseLocation: { id: string; class: HouseClass; name: string }) => {
     const { player, updateProfile } = usePlayerStore.getState();
     const hConfig = HOUSE_CLASSES[houseLocation.class] || HOUSE_CLASSES.economy;
 
     if (!player || Number(player.money) < hConfig.price) {
-      alert("Недостаточно наличных!");
+      alert('Недостаточно наличных!');
       return false;
     }
 
@@ -93,11 +109,11 @@ export const useHouseStore = create((set, get) => ({
       await updateProfile({ money: Number(player.money) - hConfig.price });
       useQuestStore.getState().registerEvent('buy_house');
       await get().fetchDbHouses();
-      alert(`Поздравляем с покупкой!`);
+      alert('Поздравляем с покупкой!');
       return true;
     } catch (err) {
       console.error(err);
-      alert("Ошибка БД. Проверьте UNIQUE у id_name");
+      alert('Ошибка БД. Проверьте UNIQUE у id_name');
     }
     return false;
   }

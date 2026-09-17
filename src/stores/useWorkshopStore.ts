@@ -1,7 +1,27 @@
 import { create } from 'zustand';
 import { supabase } from '../services/supabase/client';
 
-export const useWorkshopStore = create((set, get) => ({
+interface WorkshopState {
+  metalCount: number;
+  partCount: number;
+  oilCount: number;
+  microchipCount: number;
+  factoryMetalCount: number;
+  oilRigOilCount: number;
+  loading: boolean;
+  delivering: boolean;
+  producing: boolean;
+
+  fetchWorkshopData: () => Promise<void>;
+  fetchFactoryMetalCount: () => Promise<void>;
+  fetchOilRigOilCount: () => Promise<void>;
+  deliverMetal: () => Promise<boolean>;
+  deliverOil: () => Promise<boolean>;
+  producePart: () => Promise<boolean>;
+  produceMicrochip: () => Promise<boolean>;
+}
+
+export const useWorkshopStore = create<WorkshopState>((set, get) => ({
   metalCount: 0,
   partCount: 0,
   oilCount: 0,

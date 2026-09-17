@@ -5,33 +5,109 @@ import { useTravelStore } from './useTravelStore';
 import { useBusinessStore } from './useBusinessStore';
 import { FINAL_LOCATIONS } from '../game/locations/locations';
 
+// Window extensions for MapView
+declare global {
+  interface Window {
+    closeAllMapViewViews?: () => void;
+    setMapViewFollowing?: (following: boolean) => void;
+  }
+}
+
 // Transport rental configs
-const TRUCK_TYPES = [
+export interface TruckType {
+  id: string;
+  name: string;
+  capacity: number;
+  rentPrice: number;
+  icon: string;
+}
+
+export const TRUCK_TYPES: TruckType[] = [
   { id: 'small', name: 'Малый фургон', capacity: 50, rentPrice: 100, icon: '🚐' },
   { id: 'medium', name: 'Средний грузовик', capacity: 100, rentPrice: 200, icon: '🚚' },
   { id: 'large', name: 'Большой тягач', capacity: 150, rentPrice: 300, icon: '🚛' },
 ];
 
 // Prices
-const BUY_PRICE = 5;     // Buy resource at $5/unit
-const SELL_PRICE = 10;   // Sell resource at $10/unit
+export const BUY_PRICE = 5;     // Buy resource at $5/unit
+export const SELL_PRICE = 10;   // Sell resource at $10/unit
 
 // Resource source locations
-const RESOURCE_SOURCES = {
+export const RESOURCE_SOURCES = {
   crop: 'farm',       // Farm location id (buy crop)
   metal: 'factory',   // Factory location id (buy metal)
   oil: 'oil_rig',     // Oil rig location id (buy oil)
-};
+} as const;
 
-export const useTruckerStore = create((set, get) => ({
-  rentedTruck: null,       // { type, capacity, cargo: { crop: 0, metal: 0, oil: 0, part: 0, microchip: 0 } }
+type ResourceType = keyof typeof RESOURCE_SOURCES | 'part' | 'microchip';
+
+interface TruckCargo {
+  crop: number;
+  metal: number;
+  oil: number;
+  part: number;
+  microchip: number;
+}
+
+interface RentedTruck {
+  type: string;
+  capacity: number;
+  cargo: TruckCargo;
+}
+
+interface PendingOrder {
+  id: string | number;
+  business_id: string;
+  resource_type: ResourceType;
+  quantity: string | number;
+  price_per_unit: number;
+  business_owner_id: string | null;
+  business_name: string;
+}
+
+interface PendingDelivery {
+  orderId: string | number;
+  resourceType: ResourceType;
+  maxAmount: number;
+  pricePerUnit: number;
+  businessId: string;
+  businessName: string;
+}
+
+interface TruckerState {
+  rentedTruck: RentedTruck | null;
+  farmCropCount: number;
+  factoryMetalCount: number;
+  oilRigOilCount: number;
+  isOperating: boolean;
+  loading: boolean;
+  pendingOrders: PendingOrder[];
+  pendingDelivery: PendingDelivery | null;
+
+  trucks: TruckType[];
+
+  fetchResourceCounts: () => Promise<void>;
+  rentTruck: (truckId: string) => Promise<boolean>;
+  fetchPendingOrders: () => Promise<void>;
+  setPendingDelivery: (orderId: string | number, resourceType: ResourceType) => Promise<boolean>;
+  completeDelivery: (deliveryAmount: number | string) => Promise<boolean>;
+  cancelDelivery: () => void;
+  returnTruck: () => void;
+  getCargo: (resourceType: ResourceType) => number;
+  getLoadedCargo: () => number;
+  buyResource: (resourceType: ResourceType, amount: number) => Promise<boolean>;
+  sellAtPort: () => Promise<boolean>;
+}
+
+export const useTruckerStore = create<TruckerState>((set, get) => ({
+  rentedTruck: null,
   farmCropCount: 0,
   factoryMetalCount: 0,
   oilRigOilCount: 0,
-  isOperating: false,      // Currently traveling for delivery
+  isOperating: false,
   loading: false,
-  pendingOrders: [],        // All pending business orders
-  pendingDelivery: null,    // { orderId, resourceType, maxAmount, pricePerUnit, businessId, businessName }
+  pendingOrders: [],
+  pendingDelivery: null,
 
   trucks: TRUCK_TYPES,
 
@@ -45,9 +121,9 @@ export const useTruckerStore = create((set, get) => ({
         supabase.from('oil_rig').select('oil_count').eq('id', 1).single(),
       ]);
 
-      if (!farmRes.error) set(state => ({ farmCropCount: farmRes.data?.crop_count || 0 }));
-      if (!factoryRes.error) set(state => ({ factoryMetalCount: factoryRes.data?.metal_count || 0 }));
-      if (!oilRes.error) set(state => ({ oilRigOilCount: oilRes.data?.oil_count || 0 }));
+      if (!farmRes.error) set(() => ({ farmCropCount: farmRes.data?.crop_count || 0 }));
+      if (!factoryRes.error) set(() => ({ factoryMetalCount: factoryRes.data?.metal_count || 0 }));
+      if (!oilRes.error) set(() => ({ oilRigOilCount: oilRes.data?.oil_count || 0 }));
     } catch (err) {
       console.error('Failed to fetch resource counts:', err);
     } finally {
@@ -75,7 +151,7 @@ export const useTruckerStore = create((set, get) => ({
 
     try {
       await updateProfile({ money: player.money - truck.rentPrice });
-      set({ rentedTruck: { type: truck.id, capacity: truck.capacity, cargo: { crop: 0, metal: 0, oil: 0 } } });
+      set({ rentedTruck: { type: truck.id, capacity: truck.capacity, cargo: { crop: 0, metal: 0, oil: 0, part: 0, microchip: 0 } } });
       return true;
     } catch (err) {
       console.error('Rent truck error:', err);
@@ -128,7 +204,7 @@ export const useTruckerStore = create((set, get) => ({
     if (!truck) return false;
 
     const cargoHas = get().getCargo(resourceType);
-    const order = get().pendingOrders.find(o => o.id === parseInt(orderId));
+    const order = get().pendingOrders.find(o => String(o.id) === String(orderId));
     if (!order) {
       alert('Заказ не найден!');
       return false;
@@ -277,7 +353,8 @@ export const useTruckerStore = create((set, get) => ({
 
   // Total loaded cargo
   getLoadedCargo: () => {
-    const cargo = get().rentedTruck?.cargo || {};
+    const cargo = get().rentedTruck?.cargo;
+    if (!cargo) return 0;
     return (cargo.crop || 0) + (cargo.metal || 0) + (cargo.oil || 0);
   },
 
@@ -375,7 +452,7 @@ export const useTruckerStore = create((set, get) => ({
       set(state => ({
         rentedTruck: {
           ...state.rentedTruck,
-          cargo: { crop: 0, metal: 0, oil: 0 }
+          cargo: { crop: 0, metal: 0, oil: 0, part: 0, microchip: 0 }
         },
         isOperating: false
       }));
@@ -389,5 +466,3 @@ export const useTruckerStore = create((set, get) => ({
     }
   },
 }));
-
-export { TRUCK_TYPES, BUY_PRICE, SELL_PRICE };

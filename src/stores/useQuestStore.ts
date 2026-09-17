@@ -1,9 +1,36 @@
 import { create } from 'zustand';
 import { supabase } from '../services/supabase/client';
 import { usePlayerStore } from './usePlayerStore';
-import { getActiveQuests } from '../features/gangs/data/questsConfig';
+import { getActiveQuests, Quest, QuestConditionType, QUESTS_DATABASE } from '../features/gangs/data/questsConfig';
 
-export const useQuestStore = create((set, get) => ({
+export interface QuestProgress {
+  [questId: string]: number;
+}
+
+export interface QuestState {
+  completedQuestIds: string[];
+  questProgress: QuestProgress;
+  checkedLocations: string[];
+  totalEarned: number;
+  totalDeposited: number;
+  totalWithdrawn: number;
+  totalTransferred: number;
+  housesCount: number;
+  vehiclesCount: number;
+  intervalId: ReturnType<typeof setInterval> | null;
+
+  loadProgress: () => Promise<void>;
+  saveCompleted: (questId: string) => Promise<void>;
+  registerEvent: (eventType: QuestConditionType | 'earn_money' | 'buy_house' | 'buy_vehicle' | 'visit', amount?: number) => void;
+  startQuestTimer: () => void;
+  stopQuestTimer: () => void;
+  checkQuests: () => void;
+  completeQuest: (quest: Quest) => Promise<void>;
+  getQuestProgress: (quest: Quest) => number;
+  getQuestsForUI: () => (Quest & { completed: boolean; progress: number })[];
+}
+
+export const useQuestStore = create<QuestState>((set, get) => ({
   completedQuestIds: [],
   questProgress: {},
   checkedLocations: [],
@@ -15,7 +42,6 @@ export const useQuestStore = create((set, get) => ({
   vehiclesCount: 0,
   intervalId: null,
 
-  // Загрузка прогресса из БД
   loadProgress: async () => {
     const { player } = usePlayerStore.getState();
     if (!player) return;
@@ -25,19 +51,17 @@ export const useQuestStore = create((set, get) => ({
         .from('player_quests')
         .select('quest_id, completed')
         .eq('player_id', player.id);
-      
+
       if (data) {
         const completed = data.filter(q => q.completed).map(q => q.quest_id);
         set({ completedQuestIds: completed });
       }
     } catch (err) {
-      // Таблица может ещё не существовать
-      console.log('Quest progress table not ready:', err.message);
+      console.log('Quest progress table not ready:', (err as Error).message);
     }
   },
 
-  // Сохранение завершения квеста в БД
-  saveCompleted: async (questId) => {
+  saveCompleted: async (questId: string) => {
     const { player } = usePlayerStore.getState();
     if (!player) return;
 
@@ -46,48 +70,45 @@ export const useQuestStore = create((set, get) => ({
         .from('player_quests')
         .upsert({ player_id: player.id, quest_id: questId, completed: true });
     } catch (err) {
-      console.log('Quest save error:', err.message);
+      console.log('Quest save error:', (err as Error).message);
     }
   },
 
-  // Регистрация события (вызывается из банковских операций, покупки дома и т.д.)
-  registerEvent: (eventType, amount = 0) => {
-    const state = get();
-    const newState = { ...state.questProgress };
-
+  registerEvent: (eventType: QuestConditionType | 'earn_money' | 'buy_house' | 'buy_vehicle' | 'visit', amount: number = 0) => {
     switch (eventType) {
       case 'deposit':
-        set({ totalDeposited: state.totalDeposited + amount });
+        set({ totalDeposited: get().totalDeposited + amount });
         break;
       case 'withdraw':
-        set({ totalWithdrawn: state.totalWithdrawn + amount });
+        set({ totalWithdrawn: get().totalWithdrawn + amount });
         break;
       case 'transfer':
-        set({ totalTransferred: state.totalTransferred + amount });
+        set({ totalTransferred: get().totalTransferred + amount });
         break;
       case 'earn_money':
-        set({ totalEarned: state.totalEarned + amount });
+        set({ totalEarned: get().totalEarned + amount });
         break;
       case 'buy_house':
-        set({ housesCount: state.housesCount + 1 });
+        set({ housesCount: get().housesCount + 1 });
         break;
       case 'buy_vehicle':
-        set({ vehiclesCount: state.vehiclesCount + 1 });
+        set({ vehiclesCount: get().vehiclesCount + 1 });
         break;
       case 'visit':
-        const locId = amount;
-        const newLocations = [...get().checkedLocations];
-        if (!newLocations.includes(locId)) {
-          newLocations.push(locId);
+        {
+          const locId = String(amount);
+          const newLocations = [...get().checkedLocations];
+          if (!newLocations.includes(locId)) {
+            newLocations.push(locId);
+          }
+          set({ checkedLocations: newLocations });
         }
-        set({ checkedLocations: newLocations });
         break;
       default:
         break;
     }
   },
 
-  // Таймер проверяет условия квестов каждые 10 секунд
   startQuestTimer: () => {
     if (get().intervalId) return;
     const intervalId = setInterval(() => {
@@ -104,11 +125,10 @@ export const useQuestStore = create((set, get) => ({
     }
   },
 
-  // Проверка всех активных квестов
   checkQuests: () => {
     const { completedQuestIds, totalDeposited, totalWithdrawn, totalTransferred, totalEarned, housesCount, vehiclesCount, checkedLocations } = get();
     const activeQuests = getActiveQuests(completedQuestIds);
-    const newlyCompleted = [];
+    const newlyCompleted: Quest[] = [];
 
     for (const quest of activeQuests) {
       const cond = quest.condition;
@@ -116,16 +136,16 @@ export const useQuestStore = create((set, get) => ({
 
       switch (cond.type) {
         case 'deposit':
-          isCompleted = totalDeposited >= cond.amount;
+          isCompleted = totalDeposited >= (cond.amount || 0);
           break;
         case 'withdraw':
-          isCompleted = totalWithdrawn >= cond.amount;
+          isCompleted = totalWithdrawn >= (cond.amount || 0);
           break;
         case 'transfer':
-          isCompleted = totalTransferred >= cond.amount;
+          isCompleted = totalTransferred >= (cond.amount || 0);
           break;
         case 'earn_money':
-          isCompleted = totalEarned >= cond.amount;
+          isCompleted = totalEarned >= (cond.amount || 0);
           break;
         case 'buy_house':
           isCompleted = housesCount >= 1;
@@ -134,7 +154,7 @@ export const useQuestStore = create((set, get) => ({
           isCompleted = vehiclesCount >= 1;
           break;
         case 'visit':
-          isCompleted = checkedLocations.length >= cond.count;
+          isCompleted = checkedLocations.length >= (cond.count || 0);
           break;
         default:
           break;
@@ -145,25 +165,21 @@ export const useQuestStore = create((set, get) => ({
       }
     }
 
-    // Выполняем награды
     for (const quest of newlyCompleted) {
       get().completeQuest(quest);
     }
   },
 
-  // Завершение квеста + выдача награды
-  completeQuest: async (quest) => {
+  completeQuest: async (quest: Quest) => {
     const { completedQuestIds } = get();
     set({ completedQuestIds: [...completedQuestIds, quest.id] });
     await get().saveCompleted(quest.id);
 
-    // Выдаём награду
     if (quest.reward?.money) {
       usePlayerStore.getState().updateProfile({
         money: Number(usePlayerStore.getState().player?.money || 0) + quest.reward.money,
       });
-      
-      // Уведомление
+
       try {
         const { useBankStore } = await import('./useBankStore');
         useBankStore.getState().addNotification({
@@ -176,32 +192,30 @@ export const useQuestStore = create((set, get) => ({
     }
   },
 
-  // Получение прогресса по конкретному квесту (0-100)
-  getQuestProgress: (quest) => {
+  getQuestProgress: (quest: Quest) => {
     const { totalDeposited, totalWithdrawn, totalTransferred, totalEarned, housesCount, vehiclesCount, checkedLocations } = get();
     const cond = quest.condition;
-    
+
     switch (cond.type) {
       case 'deposit':
-        return Math.min(100, (totalDeposited / cond.amount) * 100);
+        return Math.min(100, (totalDeposited / (cond.amount || 1)) * 100);
       case 'withdraw':
-        return Math.min(100, (totalWithdrawn / cond.amount) * 100);
+        return Math.min(100, (totalWithdrawn / (cond.amount || 1)) * 100);
       case 'transfer':
-        return Math.min(100, (totalTransferred / cond.amount) * 100);
+        return Math.min(100, (totalTransferred / (cond.amount || 1)) * 100);
       case 'earn_money':
-        return Math.min(100, (totalEarned / cond.amount) * 100);
+        return Math.min(100, (totalEarned / (cond.amount || 1)) * 100);
       case 'buy_house':
         return housesCount >= 1 ? 100 : 0;
       case 'buy_vehicle':
         return vehiclesCount >= 1 ? 100 : 0;
       case 'visit':
-        return Math.min(100, (checkedLocations.length / cond.count) * 100);
+        return Math.min(100, (checkedLocations.length / (cond.count || 1)) * 100);
       default:
         return 0;
     }
   },
 
-  // Получить активные и завершенные квесты с прогрессом
   getQuestsForUI: () => {
     const { completedQuestIds } = get();
     return QUESTS_DATABASE.map(quest => {

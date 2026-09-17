@@ -4,15 +4,19 @@ import {
   resolveEventOutcome,
   calculateWarResult,
   applyWarResultToTerritory,
+  type WarOutcome,
+  type WarOutcomeResult,
+  calculatePlayerContribution,
 } from '../game/world/warScoring';
 import { useTerritoryStore } from './useTerritoryStore';
 import { usePlayerStore } from './usePlayerStore';
+import { type LevelledEntity, type WarAction } from '../game/world/warConfig';
 
 const WAR_STATUSES = {
   WAR_PREPARATION: 'WAR_PREPARATION',
   WAR_ACTIVE: 'WAR_ACTIVE',
   ENDED: 'ENDED',
-};
+} as const;
 
 const EVENT_TYPES = {
   SHOOTOUT: 'SHOOTOUT',
@@ -22,15 +26,88 @@ const EVENT_TYPES = {
   DEFENSE: 'DEFENSE',
   ATTACK: 'ATTACK',
   SUPPLY: 'SUPPLY',
-};
+} as const;
 
 const EVENT_RESULTS = {
   ATTACKER_WIN: 'ATTACKER_WIN',
   DEFENDER_WIN: 'DEFENDER_WIN',
   DRAW: 'DRAW',
-};
+} as const;
 
-export const useWarStore = create((set, get) => ({
+export type WarStatus = typeof WAR_STATUSES[keyof typeof WAR_STATUSES];
+export type EventType = typeof EVENT_TYPES[keyof typeof EVENT_TYPES];
+export type EventResult = typeof EVENT_RESULTS[keyof typeof EVENT_RESULTS];
+
+export interface War {
+  id: string | number;
+  territory_id: number;
+  attacker_gang_id: string;
+  defender_gang_id: string;
+  status: WarStatus;
+  attacker_score: number;
+  defender_score: number;
+  started_at?: string | null;
+  ends_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface WarEvent {
+  id: string | number;
+  war_id: string | number;
+  territory_id: number;
+  type: EventType;
+  status: string;
+  attacker_gang_id: string;
+  defender_gang_id: string;
+  result?: EventResult | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface WarParticipant {
+  id: string | number;
+  event_id: string | number;
+  war_id: string | number;
+  player_id: string;
+  gang_id: string;
+  contribution: number;
+  result?: string | null;
+  reward?: number | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+interface WarState {
+  wars: War[];
+  events: WarEvent[];
+  participants: WarParticipant[];
+  selectedWar: War | null;
+  selectedEvent: WarEvent | null;
+  isLoading: boolean;
+
+  fetchWars: (territoryId?: number) => Promise<void>;
+  fetchWar: (warId: string | number) => Promise<void>;
+  fetchEvents: (warId?: string | number) => Promise<void>;
+  fetchParticipants: (warId?: string | number, eventId?: string | number) => Promise<void>;
+  createWar: (territoryId: number, attackerGangId: string, defenderGangId: string) => Promise<War | null>;
+  startWar: (warId: string | number) => Promise<boolean>;
+  endWar: (warId: string | number, result: WarOutcomeResult) => Promise<boolean>;
+  createEvent: (warId: string | number, territoryId: number, type: EventType, attackerGangId: string, defenderGangId: string) => Promise<WarEvent | null>;
+  joinEvent: (eventId: string | number, warId: string | number, playerId: string, gangId: string) => Promise<WarParticipant | null>;
+  updateEventResult: (eventId: string | number, result: EventResult) => Promise<boolean>;
+  updateParticipantResult: (participantId: string | number, result: string, reward: number) => Promise<boolean>;
+  getActiveWarForTerritory: (territoryId: number) => War | undefined;
+  getWarEvents: (warId: string | number) => WarEvent[];
+  getEventParticipants: (eventId: string | number) => WarParticipant[];
+  selectWar: (warId: string | number) => void;
+  selectEvent: (eventId: string | number) => void;
+  resolveEvent: (eventId: string | number, warId: string | number, territoryId: number) => Promise<WarOutcome | null>;
+  performPlayerAction: (eventId: string | number, warId: string | number, territoryId: number, playerId: string, gangId: string, action: WarAction) => Promise<{ success: boolean; action: WarAction; contribution: number; outcome?: WarOutcome | null }>;
+  completeExpiredWars: () => Promise<void>;
+}
+
+export const useWarStore = create<WarState>((set, get) => ({
   wars: [],
   events: [],
   participants: [],
@@ -288,7 +365,7 @@ export const useWarStore = create((set, get) => ({
     return true;
   },
 
-  updateParticipantResult: async (participantId, _result, reward) => {
+  updateParticipantResult: async (participantId, result, reward) => {
     const { data, error } = await supabase
       .from('war_participants')
       .update({ result, reward, updated_at: new Date().toISOString() })
@@ -344,7 +421,10 @@ export const useWarStore = create((set, get) => ({
       p => p.event_id === eventId && p.gang_id === event.defender_gang_id
     );
 
-    const outcome = resolveEventOutcome(attackerParticipants, defenderParticipants, event.type);
+    const attackerLevelled: LevelledEntity[] = attackerParticipants.map(_ => ({ level: 1 }));
+    const defenderLevelled: LevelledEntity[] = defenderParticipants.map(_ => ({ level: 1 }));
+
+    const outcome = resolveEventOutcome(attackerLevelled, defenderLevelled, event.type);
 
     await get().updateEventResult(eventId, outcome.result);
 
@@ -362,8 +442,8 @@ export const useWarStore = create((set, get) => ({
   },
 
   performPlayerAction: async (eventId, warId, territoryId, playerId, gangId, action) => {
-    const { player } = usePlayerStore.getState();
-    const level = player?.level || 1;
+    const { skills } = usePlayerStore.getState();
+    const level = skills.find(s => s.skill_name === 'combat')?.value || 1;
     const contribution = calculatePlayerContribution(action, level);
 
     const existing = get().participants.find(

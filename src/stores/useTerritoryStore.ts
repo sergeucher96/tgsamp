@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { supabase } from '../services/supabase/client';
-import { DEFAULT_TERRITORIES, DEFAULT_INFLUENCE } from '../features/gangs/data/territoriesConfig';
-import { addInfluence } from '../game/world/influenceService';
+import { DEFAULT_TERRITORIES, DEFAULT_INFLUENCE, Territory, TerritoryInfluence } from '../features/gangs/data/territoriesConfig';
+import { addInfluence, type AddInfluenceResult } from '../game/world/influenceService';
 import {
   startDecayIntervals,
   stopDecayIntervals,
@@ -10,7 +10,7 @@ import {
 } from '../game/world/territoryDecay';
 import { usePlayerStore } from './usePlayerStore';
 
-let stabilizationInterval = null;
+let stabilizationInterval: ReturnType<typeof setInterval> | null = null;
 
 async function runStabilization() {
   try {
@@ -53,7 +53,45 @@ async function runStabilization() {
   }
 }
 
-export const useTerritoryStore = create((set, get) => ({
+interface TerritoryState {
+  territories: Territory[];
+  influences: TerritoryInfluence[];
+  selectedTerritory: Territory | null;
+  isLoading: boolean;
+
+  fetchTerritories: () => Promise<void>;
+  fetchTerritory: (territoryId: number) => Promise<void>;
+  createTerritory: (territoryData: Partial<Territory>) => Promise<boolean>;
+  updateTerritory: (territoryId: number, updates: Partial<Territory>) => Promise<boolean>;
+  deleteTerritory: (territoryId: number) => Promise<boolean>;
+  captureTerritory: (territoryId: number, gangId: string) => Promise<boolean>;
+  loseTerritory: (territoryId: number) => Promise<boolean>;
+  updateControl: (territoryId: number, controlDelta: number) => Promise<boolean>;
+  getGangTerritories: (gangId: string) => Territory[];
+  getTerritoryIncome: (gangId: string) => number;
+  selectTerritory: (territoryId: number) => void;
+  loadTerritoryData: () => Promise<void>;
+
+  // === DECAY ===
+  startDecay: (onUpdate: () => void) => void;
+  stopDecay: () => void;
+  refreshTerritories: () => Promise<void>;
+  refreshInfluences: () => Promise<void>;
+
+  // === STABILIZATION ===
+  startStabilization: () => void;
+  stopStabilization: () => void;
+
+  // === ВЛИЯНИЕ ===
+  fetchInfluences: (territoryId?: number) => Promise<void>;
+  getInfluencesForTerritory: (territoryId: number) => TerritoryInfluence[];
+  setInfluence: (territoryId: number, gangId: string, influence: number) => Promise<boolean>;
+  updateInfluence: (territoryId: number, gangId: string, delta: number) => Promise<boolean>;
+  addInfluence: (territoryId: number, gangId: string, amount: number, reason: string) => Promise<AddInfluenceResult>;
+  getTerritoryOwner: (territoryId: number) => string | null;
+}
+
+export const useTerritoryStore = create<TerritoryState>((set, get) => ({
   territories: [],
   influences: [],
   selectedTerritory: null,

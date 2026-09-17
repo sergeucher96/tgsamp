@@ -1,19 +1,9 @@
 import React from 'react';
-import { useBankStore } from '../../stores/useBankStore';
+import { useBankStore, type BankNotification } from '../../stores/useBankStore';
 import { CheckCircle, XCircle, Banknote } from 'lucide-react';
 
-interface BankNotification {
-  id: string;
-  type: 'success' | 'error' | 'transfer_received' | 'interest' | 'deposit' | 'withdraw';
-  message: string;
-}
-
-interface BankStoreSlice {
-  notifications: BankNotification[];
-}
-
 export default function BankNotifications() {
-  const notifications = useBankStore((state: BankStoreSlice) => state.notifications);
+  const notifications = useBankStore((state) => state.notifications);
 
   if (notifications.length === 0) return null;
 

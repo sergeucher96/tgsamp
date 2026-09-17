@@ -1,13 +1,53 @@
 import { create } from 'zustand';
 import { usePlayerStore } from './usePlayerStore';
-import { useVehicleStore } from './useVehicleStore';
+import { useVehicleStore, Vehicle } from './useVehicleStore';
 import { WAYPOINTS } from '../game/locations/roads';
 import { getMergedLocations, refreshFinalLocations } from '../game/locations/locations';
-import { findShortestPath } from '../game/world/pathfinder';
+import { findShortestPath, type NodeId } from '../game/world/pathfinder';
 import { VEHICLE_DATABASE } from '../features/vehicles/data/vehicleConfig';
-import { applyWear, calculateOverallCondition, getPerformanceMultiplier } from '../features/vehicles/utils/vehicleWear';
+import { applyWear, getPerformanceMultiplier } from '../features/vehicles/utils/vehicleWear';
 
-export const useTravelStore = create((set, get) => ({
+export interface Location {
+  id: string;
+  x: number;
+  y: number;
+  name?: string;
+  icon?: string;
+  color?: string;
+  type?: string;
+  desc?: string;
+  class?: string;
+  entrance_id?: string;
+  category?: string;
+}
+
+interface Waypoint {
+  x: number;
+  y: number;
+}
+
+interface RouteTarget {
+  x: number;
+  y: number;
+}
+
+interface TravelState {
+  isMoving: boolean;
+  remainingPath: string[];
+  routeTarget: RouteTarget | null;
+  animatedPosition: { x: number; y: number } | null;
+  animatedRotation: number;
+  routePath: string[];
+  currentSegment: number;
+  routeToken: number;
+
+  startRoute: (targetLocId: string) => Promise<void>;
+  stopRoute: () => void;
+}
+
+const waypoints = WAYPOINTS as Record<string, Waypoint>;
+
+export const useTravelStore = create<TravelState>((set, get) => ({
   isMoving: false,
   remainingPath: [],
   routeTarget: null,
@@ -17,14 +57,14 @@ export const useTravelStore = create((set, get) => ({
   currentSegment: 0,
   routeToken: 0,
 
-  startRoute: async (targetLocId) => {
+  startRoute: async (targetLocId: string) => {
     refreshFinalLocations();
     const { player, activeVehicle } = usePlayerStore.getState();
-    const locations = getMergedLocations();
+    const locations = getMergedLocations() as Location[];
     let location = locations.find(l => l.id === targetLocId);
 
-    if (!location && WAYPOINTS[targetLocId]) {
-      const wp = WAYPOINTS[targetLocId];
+    if (!location && waypoints[targetLocId]) {
+      const wp = waypoints[targetLocId];
       location = { id: targetLocId, x: wp.x, y: wp.y, entrance_id: targetLocId };
     }
 
@@ -33,31 +73,31 @@ export const useTravelStore = create((set, get) => ({
     const token = get().routeToken + 1;
     set({ routeToken: token, isMoving: true });
 
-    const speedCfg = activeVehicle ? VEHICLE_DATABASE[activeVehicle.model_id] : VEHICLE_DATABASE['pedestrian'];
+    const speedCfg = activeVehicle ? VEHICLE_DATABASE[activeVehicle.model_id] : { speed: 150 };
     const moveSpeed = speedCfg?.speed || 150;
 
     let startNodeId = player.last_node_id;
     if (!startNodeId) {
-        let minD = Infinity;
-        Object.entries(WAYPOINTS).forEach(([id, pt]) => {
-            const d = Math.hypot(player.pos_x - pt.x, player.pos_y - pt.y);
-            if (d < minD) { minD = d; startNodeId = id; }
-        });
+      let minD = Infinity;
+      Object.entries(waypoints).forEach(([id, pt]) => {
+        const d = Math.hypot(player.pos_x - pt.x, player.pos_y - pt.y);
+        if (d < minD) { minD = d; startNodeId = id; }
+      });
     }
 
     let endNodeId = location.entrance_id;
-    if (!endNodeId || !WAYPOINTS[endNodeId]) {
+    if (!endNodeId || !waypoints[endNodeId]) {
       let minD = Infinity;
-      Object.entries(WAYPOINTS).forEach(([id, pt]) => {
+      Object.entries(waypoints).forEach(([id, pt]) => {
         const d = Math.hypot(location.x - pt.x, location.y - pt.y);
         if (d < minD) { minD = d; endNodeId = id; }
       });
     }
 
-    const path = findShortestPath(startNodeId, endNodeId);
+    const path = findShortestPath(startNodeId as NodeId, endNodeId as NodeId);
     if (path.length === 0) return;
 
-    const routeCoordinates = path.map(id => WAYPOINTS[id]).filter(Boolean);
+    const routeCoordinates = path.map(id => waypoints[id]).filter(Boolean);
     const fullRoute = [{ x: player.pos_x, y: player.pos_y }, ...routeCoordinates, { x: location.x, y: location.y }];
     const segmentLengths = fullRoute.slice(1).map((to, index) => {
       const from = fullRoute[index];
@@ -78,10 +118,10 @@ export const useTravelStore = create((set, get) => ({
 
     // Apply wear system
     let effectiveSpeed = moveSpeed;
-    let vehicleId = null;
+    let vehicleId: string | null = null;
     if (activeVehicle) {
       vehicleId = activeVehicle.id;
-      const vehicleUpdates = applyWear(activeVehicle, totalDistance);
+      const vehicleUpdates = applyWear(activeVehicle as Vehicle, totalDistance);
       const condition = vehicleUpdates.condition || 100;
       const perf = getPerformanceMultiplier(condition);
       effectiveSpeed = Math.round(moveSpeed * perf.speed);
@@ -127,10 +167,16 @@ export const useTravelStore = create((set, get) => ({
   }
 }));
 
-async function animateRoute(points, path, segmentLengths, moveSpeed, totalDistance, routeToken) {
-  return new Promise(resolve => {
+async function animateRoute(
+  points: { x: number; y: number }[],
+  path: string[],
+  segmentLengths: number[],
+  moveSpeed: number,
+  totalDistance: number,
+  routeToken: number
+) {
+  return new Promise<void>(resolve => {
     const travelState = useTravelStore.getState();
-    const startPos = travelState.animatedPosition || { x: points[0].x, y: points[0].y };
     const startRotation = travelState.animatedRotation || usePlayerStore.getState().player.rotation || 0;
     const totalTime = (totalDistance / moveSpeed) * 1000;
     const startTime = performance.now();
@@ -142,8 +188,9 @@ async function animateRoute(points, path, segmentLengths, moveSpeed, totalDistan
     }
 
     // Binary search for segment index
-    function getSegmentIndexAndFraction(distance) {
-      let lo = 0, hi = segmentLengths.length - 1;
+    function getSegmentIndexAndFraction(distance: number): { index: number; fraction: number } {
+      let lo = 0;
+      let hi = segmentLengths.length - 1;
       while (lo < hi) {
         const mid = (lo + hi) >> 1;
         if (cumulativeLengths[mid + 1] < distance) lo = mid + 1;
@@ -154,7 +201,7 @@ async function animateRoute(points, path, segmentLengths, moveSpeed, totalDistan
       return { index: lo, fraction };
     }
 
-    function update(currentTime) {
+    function update(currentTime: number) {
       if (useTravelStore.getState().routeToken !== routeToken) {
         resolve();
         return;

@@ -35,6 +35,7 @@ export interface Territory {
 }
 
 export interface TerritoryInfluence {
+  id?: string | number;
   territory_id: number;
   gang_id: string;
   influence: number;
