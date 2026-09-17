@@ -1,20 +1,61 @@
 import { supabase } from '../../services/supabase/client';
-import { INFLUENCE_REASONS, INFLUENCE_CONFIG, getInfluenceMultiplier, getInfluenceTierInfo } from '../world/influenceConfig';
+import {
+  INFLUENCE_REASONS,
+  INFLUENCE_CONFIG,
+  getInfluenceMultiplier,
+  getInfluenceTierInfo,
+} from '../world/influenceConfig';
+import type { InfluenceReason, InfluenceTierInfo } from '../world/influenceConfig';
 
-function isInvalidGangId(gangId) {
+interface InfluenceActionRecord {
+  id: string | number;
+  territory_id: number;
+  gang_id: string;
+  reason: InfluenceReason;
+  action_count: number;
+  period_start: string;
+  updated_at?: string | null;
+}
+
+interface InfluenceRecord {
+  id?: string | number;
+  territory_id: number;
+  gang_id: string;
+  influence: number | null;
+  updated_at?: string | null;
+}
+
+interface SupabaseSingleResult<T> {
+  data: T | null;
+  error: unknown | null;
+}
+
+interface AddInfluenceResult {
+  success: boolean;
+  influence: number | null;
+  applied: number;
+  multiplier: number;
+  tier: InfluenceTierInfo | null;
+}
+
+function isInvalidGangId(gangId: unknown): boolean {
   return !gangId || typeof gangId !== 'string' || gangId.trim() === '';
 }
 
-function isInvalidTerritoryId(territoryId) {
+function isInvalidTerritoryId(territoryId: unknown): boolean {
   return !territoryId || typeof territoryId !== 'number';
 }
 
-function clamp(value, min, max) {
+function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-async function fetchActionRecord(territoryId, gangId, reason) {
-  const { data, error } = await supabase
+async function fetchActionRecord(
+  territoryId: number,
+  gangId: string,
+  reason: InfluenceReason,
+): Promise<InfluenceActionRecord | null> {
+  const { data, error } = (await supabase
     .from('territory_influence_actions')
     .select('*')
     .eq('territory_id', territoryId)
@@ -22,7 +63,7 @@ async function fetchActionRecord(territoryId, gangId, reason) {
     .eq('reason', reason)
     .order('period_start', { ascending: false })
     .limit(1)
-    .maybeSingle();
+    .maybeSingle()) as SupabaseSingleResult<InfluenceActionRecord>;
 
   if (error) {
     console.error('Failed to fetch influence action record:', error);
@@ -32,12 +73,16 @@ async function fetchActionRecord(territoryId, gangId, reason) {
   return data;
 }
 
-async function createActionRecord(territoryId, gangId, reason) {
-  const { data, error } = await supabase
+async function createActionRecord(
+  territoryId: number,
+  gangId: string,
+  reason: InfluenceReason,
+): Promise<InfluenceActionRecord | null> {
+  const { data, error } = (await supabase
     .from('territory_influence_actions')
     .insert([{ territory_id: territoryId, gang_id: gangId, reason, action_count: 0 }])
     .select()
-    .single();
+    .single()) as SupabaseSingleResult<InfluenceActionRecord>;
 
   if (error) {
     console.error('Failed to create influence action record:', error);
@@ -47,14 +92,17 @@ async function createActionRecord(territoryId, gangId, reason) {
   return data;
 }
 
-async function incrementActionCount(recordId, currentCount) {
+async function incrementActionCount(
+  recordId: string | number,
+  currentCount: number,
+): Promise<InfluenceActionRecord | null> {
   const newCount = (currentCount || 0) + 1;
-  const { data, error } = await supabase
+  const { data, error } = (await supabase
     .from('territory_influence_actions')
     .update({ action_count: newCount, updated_at: new Date().toISOString() })
     .eq('id', recordId)
     .select()
-    .single();
+    .single()) as SupabaseSingleResult<InfluenceActionRecord>;
 
   if (error) {
     console.error('Failed to increment action count:', error);
@@ -64,13 +112,13 @@ async function incrementActionCount(recordId, currentCount) {
   return data;
 }
 
-async function fetchCurrentInfluence(territoryId, gangId) {
-  const { data, error } = await supabase
+async function fetchCurrentInfluence(territoryId: number, gangId: string): Promise<number> {
+  const { data, error } = (await supabase
     .from('territory_influence')
     .select('influence')
     .eq('territory_id', territoryId)
     .eq('gang_id', gangId)
-    .maybeSingle();
+    .maybeSingle()) as SupabaseSingleResult<Pick<InfluenceRecord, 'influence'>>;
 
   if (error) {
     console.error('Failed to fetch current influence:', error);
@@ -80,16 +128,20 @@ async function fetchCurrentInfluence(territoryId, gangId) {
   return data?.influence || 0;
 }
 
-async function upsertInfluence(territoryId, gangId, newInfluence) {
+async function upsertInfluence(
+  territoryId: number,
+  gangId: string,
+  newInfluence: number,
+): Promise<InfluenceRecord | null> {
   const clamped = clamp(Math.round(newInfluence), 0, 100);
-  const { data, error } = await supabase
+  const { data, error } = (await supabase
     .from('territory_influence')
     .upsert(
       { territory_id: territoryId, gang_id: gangId, influence: clamped, updated_at: new Date().toISOString() },
       { onConflict: 'territory_id,gang_id' }
     )
     .select()
-    .single();
+    .single()) as SupabaseSingleResult<InfluenceRecord>;
 
   if (error) {
     console.error('Failed to upsert influence:', error);
@@ -99,7 +151,12 @@ async function upsertInfluence(territoryId, gangId, newInfluence) {
   return data;
 }
 
-export async function addInfluence(gangId, territoryId, amount, reason) {
+export async function addInfluence(
+  gangId: string,
+  territoryId: number,
+  amount?: number,
+  reason?: string,
+): Promise<AddInfluenceResult> {
   if (isInvalidGangId(gangId)) {
     console.warn('addInfluence: invalid gangId', gangId);
     return { success: false, influence: 0, applied: 0, multiplier: 0, tier: null };
@@ -111,20 +168,21 @@ export async function addInfluence(gangId, territoryId, amount, reason) {
   }
 
   const normalizedReason = (reason || '').toUpperCase();
-  if (!Object.values(INFLUENCE_REASONS).includes(normalizedReason)) {
+  if (!(Object.values(INFLUENCE_REASONS) as InfluenceReason[]).includes(normalizedReason as InfluenceReason)) {
     console.warn('addInfluence: invalid reason', reason);
     return { success: false, influence: 0, applied: 0, multiplier: 0, tier: null };
   }
+  const influenceReason = normalizedReason as InfluenceReason;
 
   const baseAmount = typeof amount === 'number' ? amount : INFLUENCE_CONFIG.defaultAmount;
   const clampedBaseAmount = Math.max(0, baseAmount);
 
-  let record = await fetchActionRecord(territoryId, gangId, normalizedReason);
+  let record = await fetchActionRecord(territoryId, gangId, influenceReason);
   const now = new Date();
   const periodStart = new Date(now.getTime() - INFLUENCE_CONFIG.resetPeriodMs);
 
   if (!record) {
-    const created = await createActionRecord(territoryId, gangId, normalizedReason);
+    const created = await createActionRecord(territoryId, gangId, influenceReason);
     if (!created) {
       return { success: false, influence: 0, applied: 0, multiplier: 0, tier: null };
     }
