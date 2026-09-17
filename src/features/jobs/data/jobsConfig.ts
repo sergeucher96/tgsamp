@@ -2,7 +2,89 @@
 // и к навыку из skills.js. Тип 'route' - работа с поездками по городу,
 // тип 'station' - работа на месте (циклы задач с прогресс-баром).
 
-export const JOBS_DATABASE = {
+export type JobKind = 'route' | 'station' | 'garbage';
+
+export type PayRange = [number, number];
+
+export interface JobVehicle {
+  model_id: string;
+  color: string;
+  name: string;
+}
+
+export interface FixedStops {
+  type: 'fixed';
+  ids: string[];
+  count: number;
+}
+
+export interface RandomStops {
+  type: 'random';
+  pools: string[];
+  count: number;
+}
+
+export type JobStops = FixedStops | RandomStops;
+
+export interface JobTask {
+  id: string;
+  name: string;
+  pay: PayRange;
+  exp: number;
+  minSkill: number;
+}
+
+export interface JobTip {
+  chance: number;
+  min: number;
+  max: number;
+}
+
+export interface JobBase {
+  id: string;
+  kind: JobKind;
+  name: string;
+  short: string;
+  icon: string;
+  accent: string;
+  locationId: string;
+  skillId: string;
+  license?: string;
+  vehicle: JobVehicle | null;
+  energyCost: number;
+  minEnergy: number;
+  desc: string;
+}
+
+export interface RouteJob extends JobBase {
+  kind: 'route';
+  stops: JobStops;
+  payPerStop: PayRange;
+  expPerStop: PayRange;
+  bonusOnFinish: number;
+  tip?: JobTip;
+  cargo?: string[];
+}
+
+export interface StationJob extends JobBase {
+  kind: 'station';
+  vehicle: null;
+  taskTime: number;
+  tasks: JobTask[];
+}
+
+export interface GarbageJob extends JobBase {
+  kind: 'garbage';
+  vehicle: JobVehicle;
+  capacity: number;
+  payPerUnit: number;
+  binsPerShift: number;
+  garbagePerBin: PayRange;
+}
+
+export type Job = RouteJob | StationJob | GarbageJob;
+
+export const JOBS_DATABASE: Record<string, Job> = {
   bus_driver: {
     id: 'bus_driver',
     kind: 'route',
@@ -131,7 +213,7 @@ export const JOBS_DATABASE = {
   },
 };
 
-export const JOBS_LIST = Object.values(JOBS_DATABASE);
+export const JOBS_LIST: Job[] = Object.values(JOBS_DATABASE);
 
-export const getJobByLocation = (locationId) =>
+export const getJobByLocation = (locationId: string): Job | null =>
   JOBS_LIST.find((job) => job.locationId === locationId) || null;
