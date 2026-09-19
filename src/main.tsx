@@ -15,15 +15,6 @@ if (window.Telegram?.WebApp) {
   }
 }
 
-// Dynamically set viewport dimensions for proper fullscreen on all platforms
-const setDynamicViewport = () => {
-  const root = document.documentElement;
-  root.style.setProperty('--app-height', `${window.innerHeight}px`);
-  root.style.setProperty('--app-width', `${window.innerWidth}px`);
-};
-setDynamicViewport();
-window.addEventListener('resize', setDynamicViewport);
-
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <App />
