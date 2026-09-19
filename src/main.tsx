@@ -9,18 +9,22 @@ if (window.Telegram?.WebApp) {
   tg.ready();
   tg.expand();
 
-  // Try fullscreen mode (Telegram Desktop / newer clients)
-  if (typeof (tg as any).setFullscreen === 'function') {
-    (tg as any).setFullscreen(true);
+  // Fullscreen only on mobile — Telegram Desktop positions the window correctly by default
+  // Calling setFullscreen on desktop causes the window to open in the wrong position
+  const isDesktop = tg.platform === 'tdesktop' || tg.platform === 'macos' || tg.platform === 'weba' || tg.platform === 'webk';
+
+  if (!isDesktop && typeof tg.setFullscreen === 'function') {
+    tg.setFullscreen(true);
   }
 
-  // Dynamically set viewport height for proper fullscreen on desktop webviews
-  const setDynamicHeight = () => {
-    const root = document.documentElement;
-    root.style.setProperty('--app-height', `${window.innerHeight}px`);
+  // Use Telegram's viewport dimensions for precise positioning on desktop
+  const root = document.documentElement;
+  const applyViewport = () => {
+    if (tg.viewportWidth) root.style.setProperty('--tg-w', `${tg.viewportWidth}px`);
+    if (tg.viewportHeight) root.style.setProperty('--tg-h', `${tg.viewportHeight}px`);
   };
-  setDynamicHeight();
-  window.addEventListener('resize', setDynamicHeight);
+  applyViewport();
+  tg.onEvent('viewportChanged', applyViewport);
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(

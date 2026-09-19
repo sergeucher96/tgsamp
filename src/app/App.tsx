@@ -204,15 +204,18 @@ function App() {
 
   if (loading) return (
     <div className="fixed inset-0 bg-[#050805] flex flex-col items-center justify-center">
-      <Loader2 className="w-12 h-12 text-[#8cff4a] animate-spin" />
-      <p className="text-[#8cff4a] font-black uppercase text-[10px] mt-4 tracking-[0.4em] animate-pulse">Загрузка данных...</p>
+      <div className="absolute inset-0 bg-[#050805]" />
+      <div className="relative z-10 flex flex-col items-center">
+        <Loader2 className="w-12 h-12 text-[#8cff4a] animate-spin" />
+        <p className="text-[#8cff4a] font-black uppercase text-[10px] mt-4 tracking-[0.4em] animate-pulse">Загрузка данных...</p>
+      </div>
     </div>
   );
 
   if (needsRegistration) return <RegistrationView />;
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-[#020617] text-white select-none overflow-hidden font-sans">
+    <div className="flex flex-col w-full h-full min-h-screen bg-[#020617] text-white select-none overflow-hidden font-sans">
       
       {/* Bank Notifications */}
       <BankNotifications />

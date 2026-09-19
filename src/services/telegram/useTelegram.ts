@@ -18,8 +18,6 @@ export function useTelegram(): TelegramState {
   useEffect(() => {
     const tg = window.Telegram?.WebApp;
     if (tg) {
-      tg.ready();
-      tg.expand();
       setIsTelegram(true);
 
       if (tg.initDataUnsafe?.user) {

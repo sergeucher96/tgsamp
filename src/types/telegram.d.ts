@@ -6,6 +6,11 @@ declare global {
       WebApp: {
         ready: () => void;
         expand: () => void;
+        setFullscreen: (isExpanded: boolean) => void;
+        viewportWidth: number;
+        viewportHeight: number;
+        viewportStableHeight: number;
+        close: () => void;
         onCloseEvent: (callback: () => void) => void;
         offEvent: (eventType: string, callback: () => void) => void;
         onEvent: (eventType: string, callback: () => void) => void;
@@ -44,6 +49,7 @@ declare global {
         };
         initData: string;
         version: string;
+        platform: string;
       };
     };
   }
