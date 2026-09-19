@@ -215,7 +215,7 @@ function App() {
   if (needsRegistration) return <RegistrationView />;
 
   return (
-    <div className="relative flex flex-col w-full h-full min-h-screen bg-[#020617] text-white select-none overflow-hidden font-sans">
+    <div className="flex flex-col w-full h-full min-h-screen bg-[#020617] text-white select-none overflow-hidden font-sans">
       
       {/* Bank Notifications */}
       <BankNotifications />
