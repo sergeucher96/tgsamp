@@ -10,9 +10,20 @@ if (window.Telegram?.WebApp) {
 
   const isDesktop = tg.platform === 'tdesktop' || tg.platform === 'macos' || tg.platform === 'weba' || tg.platform === 'webk';
 
-  // expand() и fullscreen вызываем ТОЛЬКО на мобильных устройствах.
-  // На ПК Telegram Desktop сам идеально позиционирует окно, если его не трогать.
-  if (!isDesktop) {
+  if (isDesktop) {
+    const tgAny = tg as any;
+    // Если Telegram Desktop открыл Main App в кривом fullscreen — принудительно выходим из него
+    if (tgAny.isFullscreen && typeof tgAny.exitFullscreen === 'function') {
+      tgAny.exitFullscreen();
+    }
+    // На случай, если флаг fullscreen применится чуть позже при инициализации
+    tg.onEvent('fullscreen_changed', () => {
+      if (tgAny.isFullscreen && typeof tgAny.exitFullscreen === 'function') {
+        tgAny.exitFullscreen();
+      }
+    });
+  } else {
+    // На смартфонах разворачиваем на весь экран
     tg.expand();
     if (typeof (tg as any).requestFullscreen === 'function') {
       (tg as any).requestFullscreen();
