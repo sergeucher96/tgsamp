@@ -48,14 +48,14 @@ import FarmHarvestGame from '../components/game/FarmHarvestGame';
 // 🔧 ИМПОРТ 3D АВТОСЕРВИСА (СТО МЕХАНИК)
 import AutoServiceMechanicGame from '../components/game/AutoServiceMechanicGame';
 
-import { Loader2 } from 'lucide-react';
+import { Loader2, Maximize2, Minimize2 } from 'lucide-react';
 
 function App() {
   const { player, loading, login, needsRegistration, skills, licenses, activeVehicle } = usePlayerStore();
   const { activeTab, setActiveTab, currentInterior, currentGarage, showPhone, closePhone } = useNavigationStore();
   const { fetchDbHouses, dbHouses } = useHouseStore();
   const { fetchVehicles, myVehicles } = useVehicleStore();
-  const { isTelegram } = useTelegram();
+  const { isTelegram, isDesktop, isFullscreen, toggleFullscreen } = useTelegram();
   const { startDecay, stopDecay, startStabilization, stopStabilization } = useTerritoryStore();
   const { completeExpiredWars, fetchWars } = useWarStore();
   
@@ -294,14 +294,36 @@ function App() {
       {!currentInterior && !currentGarage && (
         <>
           <header className="shrink-0 h-24 px-6 bg-[#071006]/95 border-b border-[#68ff79]/15 backdrop-blur-sm z-50 flex items-center justify-between gta-panel gta-frame">
-              <div className="text-left">
-                  <p className="text-[10px] font-black uppercase gta-label tracking-[0.45em] mb-1">SAN ANDREAS</p>
-                  <h1 className="text-xl font-black uppercase italic tracking-[0.18em] leading-none gta-title">
-                      {player?.username || "Гражданин"}
-                  </h1>
-                  <p className="text-[9px] font-black uppercase mt-1 gta-label opacity-80">Гражданин штата</p>
-              </div>
-              <div className="text-right">
+           <div className="text-left">
+                <p className="text-[10px] font-black uppercase gta-label tracking-[0.45em] mb-1">SAN ANDREAS</p>
+                <h1 className="text-xl font-black uppercase italic tracking-[0.18em] leading-none gta-title">
+                    {player?.username || "Гражданин"}
+                </h1>
+                <p className="text-[9px] font-black uppercase mt-1 gta-label opacity-80">Гражданин штата</p>
+            </div>
+
+            {/* Кнопка полного экрана — видна ТОЛЬКО на ПК и ноутбуках */}
+            {isDesktop && (
+              <button
+                onClick={toggleFullscreen}
+                className="gta-button px-3.5 py-2 rounded flex items-center gap-2 text-xs font-black uppercase tracking-wider transition-all hover:brightness-125 active:scale-95 shadow-md border border-[#7eff67]/30"
+                title={isFullscreen ? "Свернуть в окно" : "Развернуть на весь экран"}
+              >
+                {isFullscreen ? (
+                  <>
+                    <Minimize2 className="w-4 h-4 text-[#9eff52]" />
+                    <span className="hidden sm:inline">Обычный экран</span>
+                  </>
+                ) : (
+                  <>
+                    <Maximize2 className="w-4 h-4 text-[#9eff52]" />
+                    <span className="hidden sm:inline">На весь экран</span>
+                  </>
+                )}
+              </button>
+            )}
+
+            <div className="text-right">
                   <div className="text-[#9eff52] font-black italic text-2xl leading-none">
                     ${Number(player?.money || 0).toLocaleString()}
                   </div>

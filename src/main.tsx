@@ -11,21 +11,15 @@ if (window.Telegram?.WebApp) {
   const isDesktop = tg.platform === 'tdesktop' || tg.platform === 'macos' || tg.platform === 'weba' || tg.platform === 'webk';
 
   if (isDesktop) {
-    // На ПК даём окну 250 мс, чтобы Telegram отцентрировал его,
-    // и затем плавно разворачиваем на весь экран
-    setTimeout(() => {
-      const isApi8 = typeof tg.isVersionAtLeast === 'function' ? tg.isVersionAtLeast('8.0') : false;
-      if (isApi8 && typeof (tg as any).requestFullscreen === 'function') {
-        (tg as any).requestFullscreen();
-      }
-    }, 250);
-  } else {
-    // На мобильных устройствах
-    tg.expand();
-    const isApi8 = typeof tg.isVersionAtLeast === 'function' ? tg.isVersionAtLeast('8.0') : false;
-    if (isApi8 && typeof (tg as any).requestFullscreen === 'function') {
-      (tg as any).requestFullscreen();
+    // На ПК открываем в стандартном ровном окне Telegram
+    // Если Telegram Desktop попытался принудительно навязать fullscreen — сбрасываем его
+    const tgAny = tg as any;
+    if (tgAny.isFullscreen && typeof tgAny.exitFullscreen === 'function') {
+      tgAny.exitFullscreen();
     }
+  } else {
+    // На мобильных устройствах раскрываем на стандартную высоту шторки
+    tg.expand();
   }
 }
 
