@@ -78,7 +78,19 @@ export interface Item {
   price?: number;
   sell_price?: number;
   production_resources?: Record<string, number>;
+  rarity?: ItemRarity;
+  base_cost?: number;
 }
+
+export type ItemRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
+
+export const RARITY_CONFIG: Record<ItemRarity, { label: string; color: string; border: string; bg: string }> = {
+  common: { label: 'Обычный', color: 'text-slate-300', border: 'border-slate-500/40', bg: 'bg-slate-500/10' },
+  uncommon: { label: 'Необычный', color: 'text-green-400', border: 'border-green-500/40', bg: 'bg-green-500/10' },
+  rare: { label: 'Редкий', color: 'text-blue-400', border: 'border-blue-500/40', bg: 'bg-blue-500/10' },
+  epic: { label: 'Эпический', color: 'text-purple-400', border: 'border-purple-500/40', bg: 'bg-purple-500/10' },
+  legendary: { label: 'Легендарный', color: 'text-amber-400', border: 'border-amber-500/40', bg: 'bg-amber-500/10' },
+};
 
 export interface CategoryPropertyLink {
   id: string | number;
@@ -471,12 +483,13 @@ export const useItemCategoryStore = create<ItemCategoryState>((set, get) => ({
     return false;
   },
 
-  // ============ ITEM CRUD ============
+   // ============ ITEM CRUD ============
 
   createItem: async (data) => {
+    const normalized = normalizeItemData(data);
     const { data: result, error } = await supabase
       .from('items_db')
-      .insert([data])
+      .insert([normalized])
       .select('*, category:category_id (id, name, key, icon, parent_id)')
       .single();
     if (!error) {
@@ -487,9 +500,10 @@ export const useItemCategoryStore = create<ItemCategoryState>((set, get) => ({
   },
 
   updateItem: async (id, data) => {
+    const normalized = normalizeItemData(data);
     const { data: result, error } = await supabase
       .from('items_db')
-      .update({ ...data, updated_at: new Date().toISOString() })
+      .update({ ...normalized, updated_at: new Date().toISOString() })
       .eq('id', id)
       .select('*, category:category_id (id, name, key, icon, parent_id)')
       .single();
@@ -624,4 +638,16 @@ function getCategoryAncestors(cat, allCats) {
     current = allCats.find(c => c.id === current.parent_id) || null;
   }
   return ancestors;
+}
+
+function normalizeItemData(data: Partial<Item>): Partial<Item> {
+  const { rarity, base_cost, ...rest } = data;
+  const properties = { ...(rest.properties as Record<string, unknown> || {}) };
+  if (rarity !== undefined) {
+    properties.rarity = rarity;
+  }
+  if (base_cost !== undefined) {
+    properties.base_cost = base_cost;
+  }
+  return { ...rest, properties: properties as Item['properties'] };
 }

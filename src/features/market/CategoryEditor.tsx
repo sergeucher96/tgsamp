@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Plus, Trash2, Save, X, ChevronRight, ChevronDown, Upload } from 'lucide-react';
-import { useItemCategoryStore } from '../../stores/useItemCategoryStore';
+import { ArrowLeft, Plus, Trash2, Save, X, ChevronRight, ChevronDown, Upload, Search, Copy, Maximize2, Minimize2 } from 'lucide-react';
+import { useItemCategoryStore, type ItemRarity, RARITY_CONFIG } from '../../stores/useItemCategoryStore';
 import { RESOURCE_TYPES } from '../businesses/data/businessConfig';
 import { isImageIcon } from '../../utils/iconHelper';
 
@@ -53,6 +53,8 @@ interface Item {
   effects?: Array<{ effect_key?: string; key?: string; value: number }>;
   tags?: string[];
   production_resources?: Record<string, number>;
+  rarity?: ItemRarity;
+  base_cost?: number;
 }
 
 interface InheritedProperty extends Property {
@@ -252,6 +254,9 @@ function CategoryDetail({ category, onBack, onEdit, onDelete, properties, effect
   const [savingItem, setSavingItem] = useState(false);
   const [itemImgErrors, setItemImgErrors] = useState<Record<number, boolean>>({});
   const [itemIconPreview, setItemIconPreview] = useState<string | null>(null);
+  const [itemRarity, setItemRarity] = useState<ItemRarity>('common');
+  const [itemBaseCost, setItemBaseCost] = useState<number>(0);
+  const [filterRarity, setFilterRarity] = useState<ItemRarity | 'all'>('all');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { createItem, updateItem, deleteItem, getInheritedProperties, getInheritedEffects, getInheritedActions, getInheritedTags } = useItemCategoryStore();
@@ -259,7 +264,17 @@ function CategoryDetail({ category, onBack, onEdit, onDelete, properties, effect
   const resourceKeys = Object.keys(RESOURCE_TYPES);
 
   const catItems = items.filter(i => i.category_id === category.id);
-  const filteredItems = itemSearch ? catItems.filter(i => i.name.toLowerCase().includes(itemSearch.toLowerCase()) || i.item_key?.toLowerCase().includes(itemSearch.toLowerCase())) : catItems;
+  const getItemRarity = (item: Item): ItemRarity => {
+    return item.rarity || (item.properties?.rarity as ItemRarity | undefined) || 'common';
+  };
+  const filteredItems = catItems.filter(i => {
+    const matchesSearch = !itemSearch ||
+      i.name.toLowerCase().includes(itemSearch.toLowerCase()) ||
+      i.item_key?.toLowerCase().includes(itemSearch.toLowerCase()) ||
+      (i.description || '').toLowerCase().includes(itemSearch.toLowerCase());
+    const matchesRarity = filterRarity === 'all' || getItemRarity(i) === filterRarity;
+    return matchesSearch && matchesRarity;
+  });
   const inhProps = getInheritedProperties(category.id);
   const inhEffects = getInheritedEffects(category.id);
   const inhActions = getInheritedActions(category.id);
@@ -279,6 +294,8 @@ function CategoryDetail({ category, onBack, onEdit, onDelete, properties, effect
     setItemName(''); setItemKey(''); setItemDescription('');
     setItemIcon('📦'); setItemIconPreview(null);
     setItemStackable(false); setItemMaxStack(10);
+    setItemRarity('common');
+    setItemBaseCost(0);
     const initProps: Record<string, string> = {};
     inhProps.forEach(p => { initProps[String(p.id)] = String(p.defaultValue ?? ''); });
     setItemProperties(initProps);
@@ -302,6 +319,8 @@ function CategoryDetail({ category, onBack, onEdit, onDelete, properties, effect
     setItemIconPreview(item.icon?.startsWith('data:image') ? item.icon : null);
     setItemStackable(item.stackable || false);
     setItemMaxStack(item.max_stack || 10);
+    setItemRarity(item.rarity || 'common');
+    setItemBaseCost(item.base_cost || 0);
     setItemProperties(item.properties || {});
     setItemEffects((item.effects || []) as unknown as Record<string, number>);
     setItemResources(item.production_resources || {});
@@ -310,43 +329,86 @@ function CategoryDetail({ category, onBack, onEdit, onDelete, properties, effect
     setShowItemForm(true);
   };
 
+  const handleDuplicateItem = (item: Item) => {
+    setItemName(`${item.name} (Копия)`);
+    const baseKey = item.item_key || item.name;
+    setItemKey(`${baseKey}_copy`);
+    setItemDescription(item.description || '');
+    setItemIcon(item.icon || '📦');
+    setItemIconPreview(item.icon?.startsWith('data:image') ? item.icon : null);
+    setItemStackable(item.stackable || false);
+    setItemMaxStack(item.max_stack || 10);
+    setItemRarity(item.rarity || 'common');
+    setItemBaseCost(item.base_cost || 0);
+    setItemProperties(item.properties || {});
+    setItemEffects((item.effects || []) as unknown as Record<string, number>);
+    setItemResources(item.production_resources || {});
+    setItemTags(item.tags ? Array.isArray(item.tags) ? (item.tags as string[]).join(', ') : String((item.tags as any).tags || '') : '');
+    setEditingItem(null);
+    setShowItemForm(true);
+  };
+
   const handleCreateItem = async () => {
-    if (!itemName || !itemKey) return alert('Название и ID обязательны');
+    // Валидация: обязательные поля
+    if (!itemName.trim() || !itemKey.trim()) return alert('Название и ID обязательны');
+    // Очистка itemKey: латиница, цифры, дефис, подчеркивание; пробелы → _; нижний регистр
+    const sanitizedKey = itemKey.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9-_]/g, '');
+    if (!sanitizedKey) return alert('ID должен содержать только латинские буквы, цифры, дефис или подчеркивание');
+
     setSavingItem(true);
     const tagsArr = itemTags.split(',').map(t => t.trim()).filter(Boolean);
     const resources: Record<string, number> = {};
-    Object.entries(itemResources).forEach(([k, v]) => { if (Number(v) > 0) resources[k] = Number(v); });
+    Object.entries(itemResources).forEach(([k, v]) => {
+      const num = Math.max(0, Number(v) || 0);
+      if (num > 0) resources[k] = num;
+    });
     const result = await createItem({
-      key: itemKey,
+      key: sanitizedKey,
       name: itemName,
       description: itemDescription,
       icon: itemIcon,
       stack_size: itemStackable ? 1 : 0,
+      max_stack: Math.max(0, itemMaxStack || 0),
       category_id: category.id,
       properties: itemProperties,
       effects: itemEffects as any,
       tags: tagsArr,
+      rarity: itemRarity,
+      base_cost: Math.max(0, itemBaseCost || 0),
+      production_resources: resources,
     });
     if (result) { resetItemForm(); } else alert('Ошибка создания предмета');
     setSavingItem(false);
   };
 
   const handleUpdateItem = async () => {
-    if (!itemName || !itemKey) return alert('Название и ID обязательны');
+    // Валидация: обязательные поля
+    if (!itemName.trim() || !itemKey.trim()) return alert('Название и ID обязательны');
+    // Очистка itemKey: латиница, цифры, дефис, подчеркивание; пробелы → _; нижний регистр
+    const sanitizedKey = itemKey.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9-_]/g, '');
+    if (!sanitizedKey) return alert('ID должен содержать только латинские буквы, цифры, дефис или подчеркивание');
+
     setSavingItem(true);
     const tagsArr = itemTags.split(',').map(t => t.trim()).filter(Boolean);
     const resources: Record<string, number> = {};
-    Object.entries(itemResources).forEach(([k, v]) => { if (Number(v) > 0) resources[k] = Number(v); });
+    Object.entries(itemResources).forEach(([k, v]) => {
+      const num = Math.max(0, Number(v) || 0);
+      if (num > 0) resources[k] = num;
+    });
     const result = await updateItem(editingItem!.id, {
-      key: itemKey,
+      key: sanitizedKey,
       name: itemName,
       description: itemDescription,
       icon: itemIcon,
       stack_size: itemStackable ? 1 : 0,
+      max_stack: Math.max(0, itemMaxStack || 0),
       category_id: category.id,
       properties: itemProperties,
       effects: itemEffects as any,
       tags: tagsArr,
+      rarity: itemRarity,
+      base_cost: Math.max(0, itemBaseCost || 0),
+      production_resources: resources,
     });
     if (result) { resetItemForm(); } else alert('Ошибка обновления предмета');
     setSavingItem(false);
@@ -416,12 +478,83 @@ function CategoryDetail({ category, onBack, onEdit, onDelete, properties, effect
                     <Upload className="h-4 w-4" />
                   </button>
                 </div>
-                <div className="flex items-center gap-3">
-                  <label className="flex items-center gap-2 text-xs">
-                    <input type="checkbox" checked={itemStackable} onChange={e => setItemStackable(e.target.checked)} /> Стопка
-                  </label>
-                  {itemStackable && <input type="number" value={itemMaxStack} onChange={e => setItemMaxStack(Number(e.target.value))} placeholder="Max" className="w-20 bg-black/50 border border-white/10 rounded-xl px-2 py-1 text-xs" />}
-                </div>
+                 <div className="flex items-center gap-3">
+                   <label className="flex items-center gap-2 text-xs">
+                     <input type="checkbox" checked={itemStackable} onChange={e => setItemStackable(e.target.checked)} /> Стопка
+                   </label>
+                   {itemStackable && <input type="number" value={itemMaxStack} onChange={e => setItemMaxStack(Math.max(0, Number(e.target.value) || 0))} placeholder="Max" className="w-20 bg-black/50 border border-white/10 rounded-xl px-2 py-1 text-xs" />}
+                 </div>
+
+                 <div>
+                   <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400 mb-1">Редкость</p>
+                   <div className="flex gap-1.5 flex-wrap">
+                     {(Object.keys(RARITY_CONFIG) as ItemRarity[]).map(rarity => {
+                       const cfg = RARITY_CONFIG[rarity];
+                       const isActive = itemRarity === rarity;
+                       return (
+                         <button
+                           key={rarity}
+                           type="button"
+                           onClick={() => setItemRarity(rarity)}
+                           className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase transition-all ${
+                             isActive
+                               ? `${cfg.bg} ${cfg.border} ${cfg.color} scale-105`
+                               : 'bg-black/50 border border-white/10 text-slate-400 hover:bg-white/5'
+                           }`}
+                         >
+                           {cfg.label}
+                         </button>
+                       );
+                     })}
+                   </div>
+                 </div>
+
+                 <div>
+                   <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400 mb-1">Базовая стоимость</p>
+                   <input
+                     type="number"
+                     min="0"
+                     value={itemBaseCost}
+                     onChange={e => setItemBaseCost(Math.max(0, Number(e.target.value) || 0))}
+                     placeholder="0"
+                     className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-sm"
+                   />
+                 </div>
+
+                 {/* === Live Slot Preview === */}
+                 <div>
+                   <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400 mb-2">Предпросмотр слота инвентаря</p>
+                   <div className="flex items-start gap-4">
+                     <div className={`w-18 h-18 rounded-2xl border-2 flex items-center justify-center overflow-hidden shrink-0 ${RARITY_CONFIG[itemRarity].border} ${RARITY_CONFIG[itemRarity].bg}`}>
+                       {itemIconPreview ? (
+                         <img src={itemIconPreview} className="w-12 h-12 object-contain drop-shadow-[0_0_8px_rgba(126,255,105,0.5)]" />
+                       ) : isImageIcon(itemIcon) ? (
+                         <img src={itemIcon} className="w-12 h-12 object-contain drop-shadow-[0_0_8px_rgba(126,255,105,0.5)]" />
+                       ) : (
+                         <span className="text-3xl drop-shadow-[0_0_8px_rgba(126,255,105,0.5)]">{itemIcon || '📦'}</span>
+                       )}
+                       {itemStackable && (
+                         <div className="absolute translate-y-5 bg-[#020617]/90 border border-[#7eff67]/30 text-[8px] font-black text-[#d6ff9f] rounded-full px-2 py-0.5">
+                           x{itemMaxStack}
+                         </div>
+                       )}
+                     </div>
+                     <div className="flex-1">
+                       <p className={`font-black text-lg ${RARITY_CONFIG[itemRarity].color}`}>{itemName || 'Неизвестный предмет'}</p>
+                       {itemDescription && <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-2">{itemDescription}</p>}
+                       {itemEffects && Object.keys(itemEffects).length > 0 && (
+                         <div className="flex gap-1 flex-wrap mt-1">
+                           {Object.entries(itemEffects).map(([k, v]) => (
+                             <span key={k} className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 text-slate-300">{k}: {v}</span>
+                           ))}
+                         </div>
+                       )}
+                       {itemTags && (
+                         <p className="text-[9px] text-slate-500 mt-1">Теги: {itemTags || '—'}</p>
+                       )}
+                     </div>
+                   </div>
+                 </div>
 
                 {inhProps.length > 0 && (
                   <div className="space-y-2">
@@ -473,12 +606,39 @@ function CategoryDetail({ category, onBack, onEdit, onDelete, properties, effect
                             type="number"
                             min="0"
                             value={qty}
-                            onChange={e => setItemResources(prev => ({ ...prev, [key]: Number(e.target.value) }))}
+                            onChange={e => setItemResources(prev => ({ ...prev, [key]: Math.max(0, Number(e.target.value) || 0) }))}
                             className="w-16 bg-black/50 border border-white/10 rounded-lg px-1.5 py-1 text-xs text-center"
                           />
                         </div>
                       );
                     })}
+                  </div>
+                </div>
+
+                {/* калькулятор ресурсов */}
+                <div className="p-3 rounded-xl border border-[#7eff67]/20 bg-[#0b1b0d]/80">
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400 mb-2">Калькулятор крафта</p>
+                  <div className="grid grid-cols-2 gap-2 text-[11px]">
+                    <div>
+                      <span className="text-slate-500">Всего материалов:</span>
+                      <span className="text-[#d6ff9f] font-black ml-1">
+                        {Object.values(itemResources).reduce((sum, v) => sum + (Number(v) || 0), 0)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Базовая цена:</span>
+                      <span className="text-[#9eff52] font-black ml-1">${itemBaseCost || 0}</span>
+                    </div>
+                    <div className="col-span-2">
+                      <span className="text-slate-500">Ориент. себестоимость:</span>
+                      <span className={`font-black ml-1 ${
+                        Object.values(itemResources).reduce((sum, v) => sum + (Number(v) || 0), 0) > itemBaseCost
+                          ? 'text-red-400'
+                          : 'text-[#9eff52]'
+                      }`}>
+                        ${Math.max(0, Object.values(itemResources).reduce((sum, v) => sum + (Number(v) || 0), 0) - itemBaseCost)}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
@@ -489,33 +649,84 @@ function CategoryDetail({ category, onBack, onEdit, onDelete, properties, effect
             )}
 
             <div className="flex gap-2 mb-4">
-              <input value={itemSearch} onChange={e => setItemSearch(e.target.value)} placeholder="🔍 Поиск предметов..." className="flex-1 bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-sm" />
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <input
+                  value={itemSearch}
+                  onChange={e => setItemSearch(e.target.value)}
+                  placeholder="🔍 Поиск предметов..."
+                  className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 pl-10 text-sm"
+                />
+              </div>
               <button onClick={openNewItem} className="flex items-center gap-1 px-3 py-2 rounded-xl bg-green-600 text-xs font-black whitespace-nowrap">
                 <Plus className="h-3 w-3" /> Добавить
               </button>
+            </div>
+
+            {/* chips фильтра по редкости */}
+            <div className="flex gap-1.5 mb-3 flex-wrap">
+              <button
+                onClick={() => setFilterRarity('all')}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase transition-all ${
+                  filterRarity === 'all'
+                    ? 'bg-[#7eff69]/20 text-[#7eff69] border border-[#7eff69]/40'
+                    : 'bg-white/5 text-slate-400 hover:bg-white/10'
+                }`}
+              >
+                Все
+              </button>
+              {(Object.keys(RARITY_CONFIG) as ItemRarity[]).map(rarity => {
+                const cfg = RARITY_CONFIG[rarity];
+                const isActive = filterRarity === rarity;
+                return (
+                  <button
+                    key={rarity}
+                    onClick={() => setFilterRarity(rarity)}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase transition-all ${
+                      isActive
+                        ? `${cfg.bg} ${cfg.border} ${cfg.color} scale-105`
+                        : 'bg-black/50 border border-white/10 text-slate-400 hover:bg-white/5'
+                    }`}
+                  >
+                    {cfg.label}
+                  </button>
+                );
+              })}
             </div>
 
             <div className="space-y-2">
               {filteredItems.map(item => (
                 <div key={item.id} className="p-4 rounded-2xl border border-[#7eff67]/10 bg-[#0b1b0d]/80">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      {itemImgErrors[item.id] ? (
-                        <span className="text-xl">📦</span>
-                      ) : isImageIcon(item.icon) ? (
-                        <img src={item.icon} onError={() => setItemImgErrors(prev => ({ ...prev, [item.id]: true }))} className="w-8 h-8 object-contain rounded" />
-                      ) : (
-                        <span className="text-xl">{item.icon || '📦'}</span>
-                      )}
-                      <div>
-                        <p className="font-black text-[#d6ff9f]">{item.name}</p>
-                        <p className="text-[10px] text-slate-400">ID: {item.item_key}</p>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => openEditItem(item)} className="p-2 rounded-lg bg-white/5">✏️</button>
-                      <button onClick={() => { if (confirm('Удалить предмет?')) deleteItem(item.id); }} className="p-2 rounded-lg bg-red-900/30 text-red-400"><Trash2 className="h-3 w-3" /></button>
-                    </div>
+                     <div className="flex items-center gap-2">
+                       {itemImgErrors[item.id] ? (
+                         <span className="text-xl">📦</span>
+                       ) : isImageIcon(item.icon) ? (
+                         <img src={item.icon} onError={() => setItemImgErrors(prev => ({ ...prev, [item.id]: true }))} className="w-8 h-8 object-contain rounded" />
+                       ) : (
+                         <span className="text-xl">{item.icon || '📦'}</span>
+                       )}
+                       <div>
+                         <div className="flex items-center gap-2">
+                           <p className="font-black text-[#d6ff9f]">{item.name}</p>
+                           {(() => {
+                             const rarity = getItemRarity(item);
+                             const cfg = RARITY_CONFIG[rarity];
+                             return (
+                               <span className={`text-[9px] px-1.5 py-0.5 rounded font-black ${cfg.color} ${cfg.bg} ${cfg.border}`}>{cfg.label}</span>
+                             );
+                           })()}
+                         </div>
+                         <p className="text-[10px] text-slate-400">ID: {item.item_key}</p>
+                       </div>
+                     </div>
+                   <div className="flex gap-2">
+                     <button onClick={() => openEditItem(item)} className="p-1.5 rounded-lg bg-white/5">✏️</button>
+                     <button onClick={() => handleDuplicateItem(item)} className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300" title="Клонировать">
+                       <Copy className="h-3 w-3" />
+                     </button>
+                     <button onClick={() => { if (confirm('Удалить предмет?')) deleteItem(item.id); }} className="p-1.5 rounded-lg bg-red-900/30 text-red-400"><Trash2 className="h-3 w-3" /></button>
+                   </div>
                   </div>
                   {inhTags.automatic && inhTags.automatic.length > 0 && (
                     <div className="flex gap-1 flex-wrap mt-2">
@@ -552,6 +763,11 @@ function AllItemsView({ items, categories, onClose }: { items: Item[]; categorie
   const { deleteItem } = useItemCategoryStore();
   const [itemSearch, setItemSearch] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
+  const [filterRarity, setFilterRarity] = useState<ItemRarity | 'all'>('all');
+
+  const getItemRarity = (item: Item): ItemRarity => {
+    return item.rarity || (item.properties?.rarity as ItemRarity | undefined) || 'common';
+  };
 
   const filtered = items.filter(item => {
     const matchSearch = !itemSearch ||
@@ -559,7 +775,8 @@ function AllItemsView({ items, categories, onClose }: { items: Item[]; categorie
       item.item_key?.toLowerCase().includes(itemSearch.toLowerCase()) ||
       (item.description || '').toLowerCase().includes(itemSearch.toLowerCase());
     const matchCat = !filterCategory || item.category_id === Number(filterCategory);
-    return matchSearch && matchCat;
+    const matchRarity = filterRarity === 'all' || getItemRarity(item) === filterRarity;
+    return matchSearch && matchCat && matchRarity;
   });
 
   const getCategoryName = (catId: number | string) => {
@@ -570,12 +787,15 @@ function AllItemsView({ items, categories, onClose }: { items: Item[]; categorie
   return (
     <div>
       <div className="flex gap-2 mb-4">
-        <input
-          value={itemSearch}
-          onChange={e => setItemSearch(e.target.value)}
-          placeholder="🔍 Поиск по названию, ID, описанию..."
-          className="flex-1 bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-sm"
-        />
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+          <input
+            value={itemSearch}
+            onChange={e => setItemSearch(e.target.value)}
+            placeholder="🔍 Поиск по названию, ID, описанию..."
+            className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 pl-10 text-sm"
+          />
+        </div>
         <select
           value={filterCategory}
           onChange={e => setFilterCategory(e.target.value)}
@@ -588,6 +808,37 @@ function AllItemsView({ items, categories, onClose }: { items: Item[]; categorie
         </select>
       </div>
 
+      {/* chips фильтра по редкости */}
+      <div className="flex gap-1.5 mb-3 flex-wrap">
+        <button
+          onClick={() => setFilterRarity('all')}
+          className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase transition-all ${
+            filterRarity === 'all'
+              ? 'bg-[#7eff69]/20 text-[#7eff69] border border-[#7eff69]/40'
+              : 'bg-white/5 text-slate-400 hover:bg-white/10'
+          }`}
+        >
+          Все
+        </button>
+        {(Object.keys(RARITY_CONFIG) as ItemRarity[]).map(rarity => {
+          const cfg = RARITY_CONFIG[rarity];
+          const isActive = filterRarity === rarity;
+          return (
+            <button
+              key={rarity}
+              onClick={() => setFilterRarity(rarity)}
+              className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase transition-all ${
+                isActive
+                  ? `${cfg.bg} ${cfg.border} ${cfg.color} scale-105`
+                  : 'bg-black/50 border border-white/10 text-slate-400 hover:bg-white/5'
+              }`}
+            >
+              {cfg.label}
+            </button>
+          );
+        })}
+      </div>
+
       <div className="mb-2 text-xs text-slate-400">Всего: {items.length} • Показано: {filtered.length}</div>
 
       {filtered.length === 0 && (
@@ -598,16 +849,18 @@ function AllItemsView({ items, categories, onClose }: { items: Item[]; categorie
 
       <div className="space-y-2">
         {filtered.map(item => (
-          <ItemRow key={item.id} item={item} getCategoryName={getCategoryName} deleteItem={deleteItem} />
+          <ItemRow key={item.id} item={item} getCategoryName={getCategoryName} deleteItem={deleteItem} getItemRarity={getItemRarity} />
         ))}
       </div>
     </div>
   );
 }
 
-function ItemRow({ item, getCategoryName, deleteItem }: { item: Item; getCategoryName: (catId: number | string) => string; deleteItem: (id: string | number) => any }) {
+function ItemRow({ item, getCategoryName, deleteItem, getItemRarity }: { item: Item; getCategoryName: (catId: number | string) => string; deleteItem: (id: string | number) => any; getItemRarity: (item: Item) => ItemRarity }) {
   const [expanded, setExpanded] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const rarity = getItemRarity(item);
+  const cfg = RARITY_CONFIG[rarity];
   return (
     <div className="rounded-2xl border border-[#7eff67]/10 bg-[#0b1b0d]/80 overflow-hidden">
       <button onClick={() => setExpanded(!expanded)} className="w-full flex items-center justify-between px-4 py-3 text-left">
@@ -620,7 +873,10 @@ function ItemRow({ item, getCategoryName, deleteItem }: { item: Item; getCategor
             <span className="text-2xl">{item.icon || '📦'}</span>
           )}
           <div>
-            <p className="font-black text-sm text-[#d6ff9f]">{item.name}</p>
+            <div className="flex items-center gap-2">
+              <p className="font-black text-sm text-[#d6ff9f]">{item.name}</p>
+              <span className={`text-[9px] px-1.5 py-0.5 rounded font-black ${cfg.color} ${cfg.bg} ${cfg.border}`}>{cfg.label}</span>
+            </div>
             <p className="text-[10px] text-slate-400">ID: {item.item_key} • {getCategoryName(item.category_id)}</p>
           </div>
         </div>
@@ -633,6 +889,7 @@ function ItemRow({ item, getCategoryName, deleteItem }: { item: Item; getCategor
           {item.description && <p className="text-xs text-slate-300 mt-2">{item.description}</p>}
           <div className="flex gap-4 text-[10px] text-slate-400">
             <span>Стопка: {item.stackable ? `до ${item.max_stack}` : 'Нет'}</span>
+            <span>Редкость: <span className={`font-black ${cfg.color}`}>{cfg.label}</span></span>
           </div>
           {item.properties && Object.keys(item.properties).length > 0 && (
             <div>
