@@ -11,21 +11,19 @@ if (window.Telegram?.WebApp) {
   const isDesktop = tg.platform === 'tdesktop' || tg.platform === 'macos' || tg.platform === 'weba' || tg.platform === 'webk';
 
   if (isDesktop) {
-    const tgAny = tg as any;
-    // Если Telegram Desktop открыл Main App в кривом fullscreen — принудительно выходим из него
-    if (tgAny.isFullscreen && typeof tgAny.exitFullscreen === 'function') {
-      tgAny.exitFullscreen();
-    }
-    // На случай, если флаг fullscreen применится чуть позже при инициализации
-    tg.onEvent('fullscreen_changed', () => {
-      if (tgAny.isFullscreen && typeof tgAny.exitFullscreen === 'function') {
-        tgAny.exitFullscreen();
+    // На ПК даём окну 250 мс, чтобы Telegram отцентрировал его,
+    // и затем плавно разворачиваем на весь экран
+    setTimeout(() => {
+      const isApi8 = typeof tg.isVersionAtLeast === 'function' ? tg.isVersionAtLeast('8.0') : false;
+      if (isApi8 && typeof (tg as any).requestFullscreen === 'function') {
+        (tg as any).requestFullscreen();
       }
-    });
+    }, 250);
   } else {
-    // На смартфонах разворачиваем на весь экран
+    // На мобильных устройствах
     tg.expand();
-    if (typeof (tg as any).requestFullscreen === 'function') {
+    const isApi8 = typeof tg.isVersionAtLeast === 'function' ? tg.isVersionAtLeast('8.0') : false;
+    if (isApi8 && typeof (tg as any).requestFullscreen === 'function') {
       (tg as any).requestFullscreen();
     }
   }
