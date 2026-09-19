@@ -18,14 +18,6 @@ export function useTelegram(): TelegramState {
   useEffect(() => {
     const tg = window.Telegram?.WebApp;
     if (tg) {
-      tg.ready();
-      tg.expand();
-
-      // Ensure fullscreen on Telegram Desktop (undo any expand() that exits fullscreen)
-      if (typeof tg.setFullscreen === 'function') {
-        tg.setFullscreen(true);
-      }
-
       setIsTelegram(true);
 
       if (tg.initDataUnsafe?.user) {
