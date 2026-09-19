@@ -49,6 +49,7 @@ declare global {
         };
         initData: string;
         version: string;
+        platform: string;
       };
     };
   }
