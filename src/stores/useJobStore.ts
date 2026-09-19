@@ -1,23 +1,9 @@
 import { create } from 'zustand';
 import { usePlayerStore } from './usePlayerStore';
 import { useTravelStore } from './useTravelStore';
-import { FINAL_LOCATIONS } from '../game/locations/locations';
+import { FINAL_LOCATIONS, type Location } from '../game/locations/locations';
 import { JOBS_DATABASE, type JobTask, type PayRange, type RandomStops, type RouteJob, type StationJob, type GarbageJob } from '../features/jobs/data/jobsConfig';
 import { WAYPOINTS } from '../game/locations/roads';
-
-interface Location {
-  id: string;
-  x: number;
-  y: number;
-  name?: string;
-  icon?: string;
-  color?: string;
-  type?: string;
-  desc?: string;
-  class?: string;
-  entrance_id?: string;
-  category?: string;
-}
 
 const POI_TYPES = ['shop', 'bar', 'hotel', 'gym', 'clothes', 'nightclub', 'parking'] as const;
 
@@ -56,14 +42,14 @@ const locationsByPool = (pool: string, base: Location | undefined) => {
   }
 };
 
-interface ShiftStop {
+export interface ShiftStop {
   location: Location;
   pay: number;
   exp: number;
   label: string;
 }
 
-interface BaseShift {
+export interface BaseShift {
   jobId: string;
   kind: JobKind;
   status: ShiftStatus;
@@ -75,14 +61,14 @@ interface BaseShift {
   previousVehicle: any;
 }
 
-interface RouteShift extends BaseShift {
+export interface RouteShift extends BaseShift {
   kind: 'route';
   status: ShiftStatusRoute;
   stops: ShiftStop[];
   currentStop: number;
 }
 
-interface GarbageShift extends BaseShift {
+export interface GarbageShift extends BaseShift {
   kind: 'garbage';
   status: ShiftStatusGarbage;
   activeBins: string[];
@@ -95,12 +81,12 @@ interface GarbageShift extends BaseShift {
   unloadProgress: number;
 }
 
-interface StationShift extends BaseShift {
+export interface StationShift extends BaseShift {
   kind: 'station';
   status: ShiftStatusStation;
 }
 
-type ActiveShift = RouteShift | GarbageShift | StationShift;
+export type ActiveShift = RouteShift | GarbageShift | StationShift;
 
 interface JobState {
   activeShift: ActiveShift | null;

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { supabase } from '../services/supabase/client';
+import { type Vehicle } from './useVehicleStore';
 
 export interface Profile {
   id: string;
@@ -25,6 +26,9 @@ export interface Profile {
   gun_range_attempts: number;
   organization_id: string | null;
   organization_rank: string | null;
+  exp?: number;
+  lvl?: number;
+  luck?: number;
 }
 
 export interface Skill {
@@ -51,26 +55,8 @@ export interface Buff {
   effect: string;
   appliedAt: number;
   expiresAt: number;
-}
-
-export interface Vehicle {
-  id: string;
-  model_id: string;
-  color: number;
-  house_id: string | null;
-  fuel: number;
-  max_fuel: number;
-  fuel_type: string;
-  plate: string;
-  engine_stage: number;
-  suspension_stage: number;
-  brakes_stage: number;
-  has_nitro: boolean;
-  health: number;
-  is_active: boolean;
-  owner_id: string;
-  x: number;
-  y: number;
+  type?: string;
+  amount?: number;
 }
 
 interface AuthResponse {
@@ -99,6 +85,7 @@ interface PlayerState {
   processMetabolism: () => Promise<void>;
   updateProfile: (updates: Partial<Profile>) => Promise<boolean>;
   setLocalActiveVehicle: (veh: Vehicle | null) => void;
+  addMoney?: (amount: number) => void;
   addSkillProgress: (skillName: string, amount: number) => Promise<void>;
   loadBuffs: () => Buff[];
   saveBuffs: (buffs: Buff[]) => void;

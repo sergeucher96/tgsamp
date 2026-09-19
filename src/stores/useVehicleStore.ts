@@ -21,7 +21,7 @@ import {
 export interface Vehicle {
   id: string;
   model_id: string;
-  color: number;
+  color: string;
   house_id: string | null;
   fuel: number;
   max_fuel: number;
@@ -73,7 +73,7 @@ interface VehicleState {
   hasCarInGarage: (houseId: string) => boolean;
   fetchVehicles: () => Promise<void>;
   setActiveVehicle: (vehicleId: string | null) => Promise<void>;
-  buyVehicle: (modelId: string, colorId: number, house: { id_name: string; class: HouseClass }) => Promise<boolean>;
+  buyVehicle: (modelId: string, colorId: string, house: { id_name: string; class: HouseClass }) => Promise<boolean>;
   tuneVehicle: (vehicleId: string, part: keyof typeof TUNING_CONFIG, stage: number) => Promise<boolean>;
   repairVehicle: (vehicleId: string) => Promise<void>;
   updateVehicleHealth: (vehicleId: string, newHealth: number) => Promise<void>;
@@ -223,7 +223,7 @@ export const useVehicleStore = create<VehicleState>((set, get) => ({
     }
   },
 
-  buyVehicle: async (modelId: string, colorId: number, house: { id_name: string; class: HouseClass }) => {
+  buyVehicle: async (modelId: string, colorId: string, house: { id_name: string; class: HouseClass }) => {
     const { player, updateProfile } = usePlayerStore.getState();
     const config = VEHICLE_DATABASE[modelId];
 

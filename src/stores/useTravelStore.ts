@@ -2,24 +2,11 @@ import { create } from 'zustand';
 import { usePlayerStore } from './usePlayerStore';
 import { useVehicleStore, Vehicle } from './useVehicleStore';
 import { WAYPOINTS } from '../game/locations/roads';
-import { getMergedLocations, refreshFinalLocations } from '../game/locations/locations';
+import { getMergedLocations, refreshFinalLocations, type Location } from '../game/locations/locations';
+export type { Location } from '../game/locations/locations';
 import { findShortestPath, type NodeId } from '../game/world/pathfinder';
 import { VEHICLE_DATABASE } from '../features/vehicles/data/vehicleConfig';
 import { applyWear, getPerformanceMultiplier } from '../features/vehicles/utils/vehicleWear';
-
-export interface Location {
-  id: string;
-  x: number;
-  y: number;
-  name?: string;
-  icon?: string;
-  color?: string;
-  type?: string;
-  desc?: string;
-  class?: string;
-  entrance_id?: string;
-  category?: string;
-}
 
 interface Waypoint {
   x: number;
@@ -158,7 +145,7 @@ export const useTravelStore = create<TravelState>((set, get) => ({
 
     if (get().routeToken !== token) return;
 
-    await usePlayerStore.getState().updateProfile({ pos_x: location.x, pos_y: location.y, last_node_id: location.entrance_id });
+    await usePlayerStore.getState().updateProfile({ pos_x: location.x, pos_y: location.y, last_node_id: location.entrance_id ? String(location.entrance_id) : null });
     set({ isMoving: false, remainingPath: [], routePath: [], currentSegment: 0, routeTarget: null, animatedPosition: null, animatedRotation: 0, routeToken: get().routeToken });
   },
 

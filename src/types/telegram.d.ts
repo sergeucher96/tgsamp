@@ -11,6 +11,7 @@ declare global {
         onEvent: (eventType: string, callback: () => void) => void;
         enableClosingBlocked: (blocked: boolean) => void;
         isClosingConfirmationEnabled: boolean;
+        isVersionAtLeast: (version: string) => boolean;
         backButton: {
           isVisible: boolean;
           show: () => void;

@@ -6,6 +6,7 @@ import { usePlayerStore } from './usePlayerStore';
 export interface Organization {
   id: string;
   name: string;
+  type?: string;
   icon: string;
   color: string;
   description?: string;
@@ -74,6 +75,7 @@ export interface SafeItem {
   id: string | number;
   org_id: string;
   item_id: string;
+  item_name?: string;
   quantity: number;
 }
 
@@ -96,6 +98,8 @@ export interface OrgVehicle {
   suspension_stage?: number;
   brakes_stage?: number;
   health?: number;
+  vehicles?: { model_id?: string; color?: string };
+  status?: string;
 }
 
 export interface PlayerSalaryInfo {

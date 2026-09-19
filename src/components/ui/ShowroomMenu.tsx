@@ -1,9 +1,12 @@
 import React from 'react';
 import { Car, X, Navigation, DoorOpen } from 'lucide-react';
 
-interface Showroom {
+export interface Showroom {
+  id?: string;
   name: string;
   desc: string;
+  x?: number;
+  y?: number;
 }
 
 interface ShowroomMenuProps {
