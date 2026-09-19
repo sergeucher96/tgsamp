@@ -74,6 +74,7 @@ function App() {
   const [showWars, setShowWars] = useState(false);
   const [showCarViewer, setShowCarViewer] = useState(false);
   const [showSceneViewer, setShowSceneViewer] = useState(false);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
 
   // 🌾 Состояние модального окна 3D Фермы
   const [showFarmGame, setShowFarmGame] = useState(false);
@@ -211,7 +212,7 @@ function App() {
   if (needsRegistration) return <RegistrationView />;
 
   return (
-    <div className="absolute inset-0 flex flex-col bg-[#020617] text-white select-none overflow-x-hidden font-sans">
+    <div className="fixed inset-0 flex flex-col bg-[#020617] text-white select-none overflow-hidden font-sans">
       
       {/* Bank Notifications */}
       <BankNotifications />
@@ -401,21 +402,30 @@ function App() {
               >
                 🏔️
               </button>
-              {IS_DEV && <NavButton active={showDevTools} onClick={() => setShowDevTools(true)} icon="🛠️" />}
-              {IS_DEV && <NavButton active={showHotspotTool3D} onClick={() => setShowHotspotTool3D(true)} icon="🧊" title="3D Редактор хотспотов" />}
-              {IS_DEV && <NavButton active={showRoadEditor} onClick={() => setShowRoadEditor(true)} icon="🛣️" />}
-              {IS_DEV && <NavButton active={showBusinessProducts} onClick={() => setShowBusinessProducts(true)} icon="📦" />}
-              {IS_DEV && <NavButton active={showCategoryEditor} onClick={() => setShowCategoryEditor(true)} icon="📚" />}
-              {IS_DEV && <NavButton active={showLocationIconEditor} onClick={() => setShowLocationIconEditor(true)} icon="📍" />}
+              {IS_DEV && <NavButton active={showAdminPanel} onClick={() => setShowAdminPanel(prev => !prev)} icon="🔧" title="Админ панель" />}
               <NavButton active={showCarViewer} onClick={() => setShowCarViewer(true)} icon="🚗" />
-          </footer>
-        </>
-      )}
-    </div>
+            </footer>
+          </>
+        )}
+
+        {IS_DEV && showAdminPanel && (
+          <div 
+            className="fixed bottom-24 left-1/2 -translate-x-1/2 z-100 flex flex-wrap gap-2 bg-[#020617]/95 backdrop-blur-md border border-white/20 rounded-2xl p-3 shadow-xl"
+            onClick={() => setShowAdminPanel(false)}
+          >
+            <NavButton active={showDevTools} onClick={(e) => { e.stopPropagation(); setShowDevTools(true); setShowAdminPanel(false); }} icon="🛠️" title="Редактор хотспотов" />
+            <NavButton active={showHotspotTool3D} onClick={(e) => { e.stopPropagation(); setShowHotspotTool3D(true); setShowAdminPanel(false); }} icon="🧊" title="3D Редактор хотспотов" />
+            <NavButton active={showRoadEditor} onClick={(e) => { e.stopPropagation(); setShowRoadEditor(true); setShowAdminPanel(false); }} icon="🛣️" title="Редактор дорог" />
+            <NavButton active={showBusinessProducts} onClick={(e) => { e.stopPropagation(); setShowBusinessProducts(true); setShowAdminPanel(false); }} icon="📦" title="Товары бизнеса" />
+            <NavButton active={showCategoryEditor} onClick={(e) => { e.stopPropagation(); setShowCategoryEditor(true); setShowAdminPanel(false); }} icon="📚" title="Категории" />
+            <NavButton active={showLocationIconEditor} onClick={(e) => { e.stopPropagation(); setShowLocationIconEditor(true); setShowAdminPanel(false); }} icon="📍" title="Иконки локаций" />
+          </div>
+        )}
+      </div>
   );
 }
 
-function NavButton({ active, onClick, icon, title }: { active: boolean; onClick: () => void; icon: string; title?: string }) {
+function NavButton({ active, onClick, icon, title }: { active: boolean; onClick: (e?: React.MouseEvent) => void; icon: string; title?: string }) {
   return (
     <button 
       onClick={onClick} 

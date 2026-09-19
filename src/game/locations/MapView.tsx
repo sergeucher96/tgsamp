@@ -327,7 +327,26 @@ export default function MapView({ }: MapViewProps) {
   const { cameras, loadCameras } = useLspdStore();
   const [showDeliveryCard, setShowDeliveryCard] = useState(true);
   
-  // Load cameras on mount
+const initialCenterDone = useRef(false);
+
+  // Центрировать камеру на игроке при первом открытии
+  useEffect(() => {
+    if (!player || initialCenterDone.current) return;
+    const centerOnPlayer = () => {
+      if (pinchRef.current) {
+        initialCenterDone.current = true;
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const targetScale = 1.0;
+        const newX = (vw / 2) - (player.pos_x * targetScale);
+        const newY = (vh / 2) - (player.pos_y * targetScale);
+        pinchRef.current.setTransform(newX, newY, targetScale, 600);
+      } else {
+        requestAnimationFrame(centerOnPlayer);
+      }
+    };
+    requestAnimationFrame(centerOnPlayer);
+  }, [player]);
   useEffect(() => {
     loadCameras();
   }, []);
@@ -779,7 +798,7 @@ export default function MapView({ }: MapViewProps) {
 
       {/* --- ДВИЖОК КАРТЫ --- */}
       <TransformWrapper
-        initialScale={0.15}
+        initialScale={1.0}
         minScale={MAP_CONFIG.minZoom}
         maxScale={MAP_CONFIG.maxZoom}
         minPositionX={Math.min(viewportSize.width - MAP_CONFIG.width, 0)}

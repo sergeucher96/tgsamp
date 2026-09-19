@@ -3,7 +3,7 @@
 @import "tailwindcss";
 
 body {
-  @apply bg-[#020617] text-white overflow-x-hidden;
+  @apply bg-[#020617] text-white;
   user-select: none;
   font-family: 'VT323', 'JetBrains Mono', system-ui, sans-serif;
   -webkit-tap-highlight-color: transparent;
@@ -11,7 +11,8 @@ body {
   padding: 0;
   width: 100vw;
   height: 100vh;
-  min-height: -webkit-fill-available;
+  height: 100dvh;
+  overflow: hidden;
 }
 
 #root {
