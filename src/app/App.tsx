@@ -212,7 +212,7 @@ function App() {
   if (needsRegistration) return <RegistrationView />;
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-[#020617] text-white select-none overflow-hidden font-sans">
+    <div className="fixed inset-0 flex flex-col w-screen h-screen min-h-screen bg-[#020617] text-white select-none overflow-hidden font-sans">
       
       {/* Bank Notifications */}
       <BankNotifications />
