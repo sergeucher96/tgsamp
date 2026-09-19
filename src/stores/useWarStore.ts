@@ -61,6 +61,7 @@ export interface WarEvent {
   attacker_gang_id: string;
   defender_gang_id: string;
   result?: EventResult | null;
+  ends_at?: string;
   created_at?: string;
   updated_at?: string;
 }

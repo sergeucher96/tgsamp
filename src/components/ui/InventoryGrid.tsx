@@ -1,19 +1,8 @@
 import React from 'react';
 import { ITEM_DATABASE } from '../../features/inventory/data/items';
-import { useItemCategoryStore } from '../../stores/useItemCategoryStore';
+import { useItemCategoryStore, type Item as CategoryItem } from '../../stores/useItemCategoryStore';
+import { useInventoryStore, type InventoryItem } from '../../stores/useInventoryStore';
 import { isImageIcon } from '../../utils/iconHelper';
-
-interface DBItem {
-  item_key: string;
-  item_name: string;
-  icon?: string;
-  type: string;
-}
-
-interface ItemInstance {
-  item_id: string;
-  amount?: number;
-}
 
 interface ItemInfo {
   name: string;
@@ -22,18 +11,24 @@ interface ItemInfo {
 }
 
 interface InventoryGridProps {
-  items?: ItemInstance[];
+  items?: InventoryItem[];
   slotsCount?: number;
-  onAction?: (item: ItemInstance) => void;
+  maxSlots?: number;
+  onAction?: (item: InventoryItem) => void;
+  onItemClick?: (item: InventoryItem) => void;
+  isHouse?: boolean;
+  label?: string | null;
 }
 
-export default function InventoryGrid({ items = [], slotsCount = 12, onAction }: InventoryGridProps) {
+export default function InventoryGrid({ items = [], slotsCount, maxSlots, onAction, onItemClick, label }: InventoryGridProps) {
+  const effectiveSlots = slotsCount ?? maxSlots ?? 12;
   const { items: dbItems } = useItemCategoryStore();
+  const handleClick = onAction ?? onItemClick;
 
   const getItemInfo = (itemId: string): ItemInfo | null => {
-    const dbItem = dbItems.find((i: DBItem) => i.item_key === itemId);
+    const dbItem = dbItems.find((i: CategoryItem) => i.key === itemId || i.id?.toString() === itemId);
     if (dbItem) {
-      return { name: dbItem.item_name, icon: dbItem.icon || '📦', type: dbItem.type };
+      return { name: dbItem.name, icon: dbItem.icon || '📦', type: dbItem.type || 'item' };
     }
     return ITEM_DATABASE[itemId] || null;
   };
@@ -47,7 +42,7 @@ export default function InventoryGrid({ items = [], slotsCount = 12, onAction }:
 
   const renderSlots = () => {
     const slots = [];
-    for (let i = 0; i < slotsCount; i++) {
+    for (let i = 0; i < effectiveSlots; i++) {
       const item = items[i] || null;
       const itemInfo = item ? getItemInfo(item.item_id) : null;
       const categoryColor = item ? getCategoryColor(itemInfo?.type ?? '') : '';
@@ -55,7 +50,7 @@ export default function InventoryGrid({ items = [], slotsCount = 12, onAction }:
       slots.push(
         <div
           key={i}
-          onClick={() => item && onAction?.(item)}
+          onClick={() => item && handleClick?.(item)}
           className={`
             aspect-square rounded-2xl flex items-center justify-center relative transition-all duration-200
             ${item

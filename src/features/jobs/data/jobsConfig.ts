@@ -54,6 +54,7 @@ export interface JobBase {
   energyCost: number;
   minEnergy: number;
   desc: string;
+  capacity?: number;
 }
 
 export interface RouteJob extends JobBase {

@@ -14,6 +14,7 @@ export interface SmsMessage {
 
 interface SmsState {
   messages: SmsMessage[];
+  unread: number;
   realtimeChannel: RealtimeChannel | null;
 
   fetchMessages: () => Promise<void>;
@@ -26,6 +27,7 @@ interface SmsState {
 
 export const useSmsStore = create<SmsState>((set, get) => ({
   messages: [],
+  unread: 0,
   realtimeChannel: null,
 
   fetchMessages: async () => {
@@ -39,7 +41,7 @@ export const useSmsStore = create<SmsState>((set, get) => ({
       .order('created_at', { ascending: false });
 
     if (!error && data) {
-      set({ messages: data });
+      set({ messages: data, unread: data.filter(m => !m.read).length });
     }
   },
 
@@ -71,7 +73,8 @@ export const useSmsStore = create<SmsState>((set, get) => ({
       .eq('id', id);
 
     if (!error) {
-      set({ messages: get().messages.map(m => m.id === id ? { ...m, read: true } : m) });
+      const updated = get().messages.map(m => m.id === id ? { ...m, read: true } : m);
+      set({ messages: updated, unread: updated.filter(m => !m.read).length });
     }
   },
 
@@ -90,7 +93,7 @@ export const useSmsStore = create<SmsState>((set, get) => ({
           filter: `to_phone=eq.${player.phone_number}`,
         },
         (payload) => {
-          set({ messages: [payload.new as SmsMessage, ...get().messages] });
+          set({ messages: [payload.new as SmsMessage, ...get().messages], unread: (payload.new.read ? 0 : 1) + get().getUnreadCount() });
         }
       )
       .subscribe();

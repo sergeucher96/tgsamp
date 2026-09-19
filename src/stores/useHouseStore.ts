@@ -10,6 +10,8 @@ export interface House {
   is_for_sale: boolean;
   class: HouseClass;
   name: string;
+  x?: number;
+  y?: number;
   garage_slots: number;
   wardrobe_slots: number;
   safe_balance: number;
