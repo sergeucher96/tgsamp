@@ -1,0 +1,208 @@
+================================================================================
+ТЕХНИЧЕСКОЕ ЗАДАНИЕ (ТЗ) ДЛЯ AI-АГЕНТА:
+КОМПЛЕКСНОЕ ИСПРАВЛЕНИЕ ОШИБОК И СТАБИЛИЗАЦИЯ ПРОЕКТА TG SAMP
+================================================================================
+Репозиторий:  https://github.com/sergeucher96/tgsamp
+Стек:         React 19, TypeScript, Vite, Zustand, Supabase, Tailwind CSS, Vercel
+Назначение:   Telegram Mini App (симулятор GTA San Andreas)
+
+--------------------------------------------------------------------------------
+1. ГЛОБАЛЬНЫЕ ПРАВИЛА И ОГРАНИЧЕНИЯ ДЛЯ АГЕНТА (CRITICAL GUARDRAILS)
+--------------------------------------------------------------------------------
+1.1. ПРАВИЛО ZERO-REGRESSION:
+     - Запрещено переписывать файлы с нуля или удалять существующий функционал.
+     - Вносить только точечные, изолированные правки в указанные функции и строки.
+     - Сохранять существующие интерфейсы (TypeScript interfaces), имена методов
+       и сигнатуры функций.
+
+1.2. ПРОВЕРКА ЦЕЛОСТНОСТИ ПОСЛЕ КАЖДОГО ЭТАПА:
+     - После внесения изменений агент ОБЯЗАН выполнить:
+       1) npm run typecheck  (tsc --noEmit) -> 0 errors
+       2) npm run lint       (oxlint)       -> 0 fatal errors
+       3) npm run build      (vite build)   -> сборка должна проходить успешно
+
+1.3. БЕЗОПАСНОСТЬ СЕКРЕТОВ:
+     - КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО хардкодить приватные токены, пароли, ключи
+       service_role в коде или коммитах.
+     - Все секреты должны читаться строго из переменных окружения process.env.
+
+1.4. РАБОТОСПОСОБНОСТЬ DEV-РЕЖИМА:
+     - Сохранить возможность локального тестирования в обычном браузере
+       при process.env.NODE_ENV === 'development' и initData === 'DEV_DEBUG'.
+
+--------------------------------------------------------------------------------
+2. ЭТАПЫ РАБОТ И ИСПРАВЛЕНИЙ
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+ЭТАП 1: Безопасность и серверная авторизация (api/auth.js)
+--------------------------------------------------------------------------------
+Проблемы:
+1) Строка 15: Захардкожен реальный секретный ключ SUPABASE_SERVICE_ROLE_KEY.
+2) Строка 42: Вызов несуществующей функции handleDebugLogin(res) вместо handleDevLogin(res).
+3) Строка 48: Отключена проверка подписи Telegram initData (HMAC verification SKIPPED).
+
+Инструкции для агента:
+1.1. Открыть api/auth.js.
+1.2. В функции getSupabaseAdmin():
+     - Заменить хардкод fallback ключа. Оставить только:
+       const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+       if (!key) {
+         console.error('[Auth API] CRITICAL: SUPABASE_SERVICE_ROLE_KEY is not set');
+         return null;
+       }
+       supabaseAdmin = createClient(url, key);
+     - Если getSupabaseAdmin() вернул null, возвращать статус 500 с сообщением
+       "Server configuration error".
+1.3. В обработчике handler():
+     - На строке 42 заменить вызов handleDebugLogin(res) на return handleDevLogin(res);
+1.4. Реализовать криптографическую валидацию Telegram HMAC-SHA256:
+     - Алгоритм:
+       const secretKey = crypto.createHmac('sha256', 'WebAppData')
+                               .update(BOT_TOKEN)
+                               .digest();
+       const dataCheckString = Array.from(params.entries())
+                                    .sort(([a], [b]) => a.localeCompare(b))
+                                    .map(([k, v]) => `${k}=${v}`)
+                                    .join('\n');
+       const calculatedHash = crypto.createHmac('sha256', secretKey)
+                                    .update(dataCheckString)
+                                    .digest('hex');
+       const isHashValid = crypto.timingSafeEqual(
+         Buffer.from(calculatedHash, 'hex'),
+         Buffer.from(hash, 'hex')
+       );
+       if (!isHashValid) {
+         return res.status(401).json({ error: 'Invalid authentication hash' });
+       }
+     - Удалить строчки временного пропуска (WARNING: HMAC verification SKIPPED).
+
+--------------------------------------------------------------------------------
+ЭТАП 2: Корректировка системы износа авто (src/stores/useTravelStore.ts)
+--------------------------------------------------------------------------------
+Проблема:
+В методе startRoute() переменная totalDistance вычисляется в пикселях карты
+(маршрут равен от 2000 до 6000 пикселей) и напрямую передается в applyWear().
+Базовый ресурс масла равен 5000 км. Из-за этого за 1–2 поездки износ подскакивает
+до 100%, и машина моментально приходит в негодность.
+
+Инструкции для агента:
+2.1. Открыть src/stores/useTravelStore.ts.
+2.2. Задать коэффициент масштабирования:
+     const PIXELS_PER_KM = 5000; // 5000 пикселей карты соответствуют 1 км пробега
+2.3. В месте вызова applyWear:
+     Рассчитать дистанцию в км:
+     const distanceKm = Math.max(0.05, Number((totalDistance / PIXELS_PER_KM).toFixed(2)));
+     const vehicleUpdates = applyWear(activeVehicle as Vehicle, distanceKm);
+2.4. Проверить в src/features/vehicles/utils/vehicleWear.ts, что функция
+     calculateOverallCondition корректно обрабатывает деление и не выдает NaN.
+
+--------------------------------------------------------------------------------
+ЭТАП 3: Предотвращение утечки памяти и спама запросами (src/app/App.tsx)
+--------------------------------------------------------------------------------
+Проблема:
+В строках 89-93 вызов usePlayerStore.subscribe не имеет cleanup функции отписки,
+а также триггерит loadLspdStatus при любом изменении игрока (координаты, голод,
+жажда), порождая сотни сетевых запросов в минуту.
+
+Инструкции для агента:
+3.1. Открыть src/app/App.tsx.
+3.2. Найти useEffect с подпиской на usePlayerStore:
+     useEffect(() => {
+       usePlayerStore.subscribe((state) => {
+         if (state.player?.id) useLspdStore.getState().loadLspdStatus(state.player.id);
+       });
+       ...
+     }, [...]);
+3.3. Заменить на безопасный вариант с запоминанием предыдущего ID и корректной отпиской:
+     useEffect(() => {
+       let lastLoadedPlayerId: string | null = null;
+       const unsubscribe = usePlayerStore.subscribe((state) => {
+         const currentId = state.player?.id || null;
+         if (currentId && currentId !== lastLoadedPlayerId) {
+           lastLoadedPlayerId = currentId;
+           useLspdStore.getState().loadLspdStatus(currentId);
+         }
+       });
+
+       startDecay(() => {});
+       startStabilization();
+       return () => {
+         unsubscribe();
+         stopDecay();
+         stopStabilization();
+       };
+     }, [startDecay, stopDecay, startStabilization, stopStabilization]);
+
+--------------------------------------------------------------------------------
+ЭТАП 4: Исправление RLS-политики LSPD (public/lspd_schema.sql)
+--------------------------------------------------------------------------------
+Проблема:
+Политика lspd_members проверяет auth.uid(), который всегда равен NULL, так как
+в проекте используется анонимный Supabase клиент без Supabase Auth.
+В результате участники LSPD не могут загрузить свои данные.
+
+Инструкции для агента:
+4.1. Открыть public/lspd_schema.sql.
+4.2. Найти строчку:
+     create policy "LSPD members can view own record"
+       on lspd_members for select
+       using (auth.uid()::text = (select telegram_id from profiles where profiles.id = lspd_members.player_id));
+4.3. Заменить условие using на (true):
+     drop policy if exists "LSPD members can view own record" on lspd_members;
+     create policy "LSPD members can view own record"
+       on lspd_members for select
+       using (true);
+4.4. Добавить для таблицы lspd_cameras недостающие политики вставки:
+     drop policy if exists "LSPD cameras insert" on lspd_cameras;
+     create policy "LSPD cameras insert"
+       on lspd_cameras for insert
+       with check (true);
+     drop policy if exists "LSPD cameras delete" on lspd_cameras;
+     create policy "LSPD cameras delete"
+       on lspd_cameras for delete
+       using (true);
+
+--------------------------------------------------------------------------------
+ЭТАП 5: Очистка репозитория и перемещение служебных файлов
+--------------------------------------------------------------------------------
+Проблема:
+1) В корне репозитория случайно закоммичен пустой файл l.includes('select
+2) В корне лежит отладочный файл react_zoom_bounds_search.txt
+3) Все файлы миграций .sql и ТЗ находятся в папке public/ и отдаются всем как веб-статика.
+
+Инструкции для агента:
+5.1. Удалить файл "l.includes('select" из корня проекта.
+5.2. Удалить файл react_zoom_bounds_search.txt.
+5.3. Создать директорию supabase/migrations/ в корне репозитория.
+5.4. Переместить все файлы *.sql из папки public/ в директорию supabase/migrations/.
+5.5. Переместить public/TZ_TELEGRAM_AUTH_VERIFICATION.txt в директорию docs/ или supabase/migrations/.
+5.6. Убедиться, что в исходном коде src/ нет вызовов fetch('/...sql').
+
+--------------------------------------------------------------------------------
+ЭТАП 6: Оптимизация Code Splitting (src/app/App.tsx)
+--------------------------------------------------------------------------------
+Проблема:
+Начальный бандл весит более 6 МБ из-за статического импорта тяжелых 3D-модулей
+Three.js в src/app/App.tsx.
+
+Инструкции для агента:
+6.1. В src/app/App.tsx перевести тяжелые второстепенные компоненты на lazy:
+     const FarmHarvestGame = lazy(() => import('../components/game/FarmHarvestGame'));
+     const AutoServiceMechanicGame = lazy(() => import('../components/game/AutoServiceMechanicGame'));
+     const CarViewer = lazy(() => import('../components/ui/CarViewer'));
+     const SceneViewer = lazy(() => import('../components/game/SceneViewer'));
+6.2. Обернуть места их отрисовки в <Suspense fallback={<div className="flex items-center justify-center p-8 text-white"><Loader2 className="animate-spin mr-2" /> Загрузка 3D сцены...</div>}>.
+
+--------------------------------------------------------------------------------
+3. КРИТЕРИИ ПРИЕМКИ (ACCEPTANCE CRITERIA)
+--------------------------------------------------------------------------------
+[ ] 1. npm run typecheck завершается без единой ошибки (0 errors).
+[ ] 2. npm run build завершается успешно, генерируя dist/.
+[ ] 3. Размер главного чанка dist/assets/index-*.js уменьшился.
+[ ] 4. В репозитории нет файла "l.includes('select".
+[ ] 5. В папке public/ нет файлов .sql.
+[ ] 6. В api/auth.js нет захардкоженного токена, работает проверка HMAC и исправлен вызов функции.
+[ ] 7. Пробег авто начисляется корректно (1 поездка = ~0.5 - 2 км, а не тысячи).
+[ ] 8. Подписка в App.tsx не спамит вызовами loadLspdStatus.
+================================================================================

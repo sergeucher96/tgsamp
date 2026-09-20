@@ -322,7 +322,13 @@ function CategoryDetail({ category, onBack, onEdit, onDelete, properties, effect
     setItemRarity(item.rarity || 'common');
     setItemBaseCost(item.base_cost || 0);
     setItemProperties(item.properties || {});
-    setItemEffects((item.effects || []) as unknown as Record<string, number>);
+    setItemEffects(
+      (item.effects || []).reduce((acc: Record<string, number>, e: any) => {
+        const effectKey = e?.effect_key || e?.key;
+        if (effectKey) acc[String(effectKey)] = Number(e?.value) || 0;
+        return acc;
+      }, {})
+    );
     setItemResources(item.production_resources || {});
     setItemTags(item.tags ? Array.isArray(item.tags) ? (item.tags as string[]).join(', ') : String((item.tags as any).tags || '') : '');
     setEditingItem(item);
@@ -341,7 +347,13 @@ function CategoryDetail({ category, onBack, onEdit, onDelete, properties, effect
     setItemRarity(item.rarity || 'common');
     setItemBaseCost(item.base_cost || 0);
     setItemProperties(item.properties || {});
-    setItemEffects((item.effects || []) as unknown as Record<string, number>);
+    setItemEffects(
+      (item.effects || []).reduce((acc: Record<string, number>, e: any) => {
+        const effectKey = e?.effect_key || e?.key;
+        if (effectKey) acc[String(effectKey)] = Number(e?.value) || 0;
+        return acc;
+      }, {})
+    );
     setItemResources(item.production_resources || {});
     setItemTags(item.tags ? Array.isArray(item.tags) ? (item.tags as string[]).join(', ') : String((item.tags as any).tags || '') : '');
     setEditingItem(null);
@@ -371,7 +383,7 @@ function CategoryDetail({ category, onBack, onEdit, onDelete, properties, effect
       max_stack: Math.max(0, itemMaxStack || 0),
       category_id: category.id,
       properties: itemProperties,
-      effects: itemEffects as any,
+      effects: Object.entries(itemEffects).map(([effect_key, value]) => ({ effect_key, value: Number(value) || 0 })),
       tags: tagsArr,
       rarity: itemRarity,
       base_cost: Math.max(0, itemBaseCost || 0),
@@ -404,7 +416,7 @@ function CategoryDetail({ category, onBack, onEdit, onDelete, properties, effect
       max_stack: Math.max(0, itemMaxStack || 0),
       category_id: category.id,
       properties: itemProperties,
-      effects: itemEffects as any,
+      effects: Object.entries(itemEffects).map(([effect_key, value]) => ({ effect_key, value: Number(value) || 0 })),
       tags: tagsArr,
       rarity: itemRarity,
       base_cost: Math.max(0, itemBaseCost || 0),
@@ -574,7 +586,7 @@ function CategoryDetail({ category, onBack, onEdit, onDelete, properties, effect
                     {inhEffects.allowed.map((e, i) => (
                       <div key={i} className="flex items-center justify-between bg-black/30 rounded-xl px-3 py-2">
                         <span className="text-xs">{e.name}</span>
-                        <input type="number" value={itemEffects[e.id] || 0} onChange={ev => setItemEffects(prev => ({ ...prev, [e.id]: Number(ev.target.value) }))} className="w-20 bg-black/50 border border-white/10 rounded-lg px-2 py-1 text-xs text-center" />
+                        <input type="number" value={itemEffects[e.key] || 0} onChange={ev => setItemEffects(prev => ({ ...prev, [e.key]: Number(ev.target.value) }))} className="w-20 bg-black/50 border border-white/10 rounded-lg px-2 py-1 text-xs text-center" />
                       </div>
                     ))}
                   </div>

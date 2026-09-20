@@ -20,6 +20,7 @@ const HotspotTool3D = IS_DEV ? lazy(() => import('../components/dev/HotspotTool3
 const RoadEditor = IS_DEV ? lazy(() => import('../game/locations/RoadEditor')) : null;
 const BusinessProductsEditor = IS_DEV ? lazy(() => import('../features/businesses/BusinessProductsEditor')) : null;
 const CategoryEditor = IS_DEV ? lazy(() => import('../features/market/CategoryEditor')) : null;
+const ItemCatalog = IS_DEV ? lazy(() => import('../features/market/ItemCatalog')) : null;
 const LocationIconEditor = IS_DEV ? lazy(() => import('../game/locations/LocationIconEditor')) : null;
 
 // Views
@@ -40,13 +41,12 @@ import BankNotifications from '../components/ui/BankNotifications';
 import VehicleInfoMenu from '../components/common/VehicleInfoMenu';
 import MyPropertyMenu from '../components/common/MyPropertyMenu';
 import MyVehiclesMenu from '../components/common/MyVehiclesMenu';
-import CarViewer from '../components/ui/CarViewer';
-import SceneViewer from '../components/game/SceneViewer';
 
-// 🌾 ИМПОРТ 3D ФЕРМЫ (СТРОКА 45)
-import FarmHarvestGame from '../components/game/FarmHarvestGame';
-// 🔧 ИМПОРТ 3D АВТОСЕРВИСА (СТО МЕХАНИК)
-import AutoServiceMechanicGame from '../components/game/AutoServiceMechanicGame';
+// Lazy-loaded heavy 3D components
+const CarViewer = lazy(() => import('../components/ui/CarViewer'));
+const SceneViewer = lazy(() => import('../components/game/SceneViewer'));
+const FarmHarvestGame = lazy(() => import('../components/game/FarmHarvestGame'));
+const AutoServiceMechanicGame = lazy(() => import('../components/game/AutoServiceMechanicGame'));
 
 import { Loader2, Maximize2, Minimize2 } from 'lucide-react';
 
@@ -66,6 +66,7 @@ function App() {
   const [showRoadEditor, setShowRoadEditor] = useState(false);
   const [showBusinessProducts, setShowBusinessProducts] = useState(false);
   const [showCategoryEditor, setShowCategoryEditor] = useState(false);
+  const [showAllItems, setShowAllItems] = useState(false);
   const [showLocationIconEditor, setShowLocationIconEditor] = useState(false);
   const [showVehicleInfo, setShowVehicleInfo] = useState(false);
   const [showMyProperty, setShowMyProperty] = useState(false);
@@ -95,12 +96,18 @@ function App() {
   }, []);
 
   useEffect(() => {
-    usePlayerStore.subscribe((state) => {
-      if (state.player?.id) useLspdStore.getState().loadLspdStatus(state.player.id);
+    let lastLoadedPlayerId: string | null = null;
+    const unsubscribe = usePlayerStore.subscribe((state) => {
+      const currentId = state.player?.id || null;
+      if (currentId && currentId !== lastLoadedPlayerId) {
+        lastLoadedPlayerId = currentId;
+        useLspdStore.getState().loadLspdStatus(currentId);
+      }
     });
     startDecay(() => {});
     startStabilization();
     return () => {
+      unsubscribe();
       stopDecay();
       stopStabilization();
     };
@@ -229,26 +236,38 @@ function App() {
       {showMyVehicles && <MyVehiclesMenu onClose={() => setShowMyVehicles(false)} />}
       {showTerritories && <TerritoriesView onClose={() => setShowTerritories(false)} />}
       {showWars && <WarsView onClose={() => setShowWars(false)} />}
-      {showCarViewer && <CarViewer onClose={() => setShowCarViewer(false)} />}
-      {showSceneViewer && <SceneViewer url="/models/myscene.glb" locationId="showroom_ls" onClose={() => setShowSceneViewer(false)} />}
+      {showCarViewer && (
+        <Suspense fallback={<div className="flex items-center justify-center p-8 text-white"><Loader2 className="animate-spin mr-2" /> Загрузка 3D сцены...</div>}>
+          <CarViewer onClose={() => setShowCarViewer(false)} />
+        </Suspense>
+      )}
+      {showSceneViewer && (
+        <Suspense fallback={<div className="flex items-center justify-center p-8 text-white"><Loader2 className="animate-spin mr-2" /> Загрузка 3D сцены...</div>}>
+          <SceneViewer url="/models/myscene.glb" locationId="showroom_ls" onClose={() => setShowSceneViewer(false)} />
+        </Suspense>
+      )}
 
-      {/* 🌾 Модальное окно 3D Фермы SA-MP (НА ВЕСЬ ЭКРАН БЕЗ ПОЛЕЙ И РАМОК) */}
+      {/* � Модальное окно 3D Фермы SA-MP (НА ВЕСЬ ЭКРАН БЕЗ ПОЛЕЙ И РАМОК) */}
       {showFarmGame && (
         <div className="fixed inset-0 z-[100] w-full h-full bg-black overflow-hidden">
-          <FarmHarvestGame
-            onHarvestFinish={handleFarmFinish}
-            onClose={() => setShowFarmGame(false)}
-          />
+          <Suspense fallback={<div className="flex items-center justify-center w-full h-full text-white"><Loader2 className="animate-spin mr-2" /> Загрузка 3D сцены...</div>}>
+            <FarmHarvestGame
+              onHarvestFinish={handleFarmFinish}
+              onClose={() => setShowFarmGame(false)}
+            />
+          </Suspense>
         </div>
       )}
 
       {/* 🔧 Модальное окно 3D Автосервиса (СТО Механик) */}
       {showMechanicGame && (
         <div className="fixed inset-0 z-[100] w-full h-full bg-black overflow-hidden">
-          <AutoServiceMechanicGame
-            onServiceFinish={handleMechanicFinish}
-            onClose={() => setShowMechanicGame(false)}
-          />
+          <Suspense fallback={<div className="flex items-center justify-center w-full h-full text-white"><Loader2 className="animate-spin mr-2" /> Загрузка 3D сцены...</div>}>
+            <AutoServiceMechanicGame
+              onServiceFinish={handleMechanicFinish}
+              onClose={() => setShowMechanicGame(false)}
+            />
+          </Suspense>
         </div>
       )}
       
@@ -276,6 +295,11 @@ function App() {
       {IS_DEV && CategoryEditor && showCategoryEditor && (
         <Suspense fallback={null}>
           <CategoryEditor onClose={() => setShowCategoryEditor(false)} />
+        </Suspense>
+      )}
+      {IS_DEV && ItemCatalog && showAllItems && (
+        <Suspense fallback={null}>
+          <ItemCatalog onClose={() => setShowAllItems(false)} />
         </Suspense>
       )}
       {IS_DEV && LocationIconEditor && showLocationIconEditor && (
@@ -443,6 +467,7 @@ function App() {
             <NavButton active={showRoadEditor} onClick={(e) => { e.stopPropagation(); setShowRoadEditor(true); setShowAdminPanel(false); }} icon="🛣️" title="Редактор дорог" />
             <NavButton active={showBusinessProducts} onClick={(e) => { e.stopPropagation(); setShowBusinessProducts(true); setShowAdminPanel(false); }} icon="📦" title="Товары бизнеса" />
             <NavButton active={showCategoryEditor} onClick={(e) => { e.stopPropagation(); setShowCategoryEditor(true); setShowAdminPanel(false); }} icon="📚" title="Категории" />
+            <NavButton active={showAllItems} onClick={(e) => { e.stopPropagation(); setShowAllItems(true); setShowAdminPanel(false); }} icon="📋" title="Все предметы" />
             <NavButton active={showLocationIconEditor} onClick={(e) => { e.stopPropagation(); setShowLocationIconEditor(true); setShowAdminPanel(false); }} icon="📍" title="Иконки локаций" />
           </div>
         )}

@@ -17,9 +17,10 @@ create index idx_lspd_members_player_id on lspd_members(player_id);
 -- RLS политики
 alter table lspd_members enable row level security;
 
+drop policy if exists "LSPD members can view own record" on lspd_members;
 create policy "LSPD members can view own record"
   on lspd_members for select
-  using (auth.uid()::text = (select telegram_id from profiles where profiles.id = lspd_members.player_id));
+  using (true);
 
 -- ==========================================
 -- Таблица камер наблюдения LSPD
@@ -42,4 +43,14 @@ alter table lspd_cameras enable row level security;
 
 create policy "LSPD cameras visible to all members"
   on lspd_cameras for select
+  using (true);
+
+drop policy if exists "LSPD cameras insert" on lspd_cameras;
+create policy "LSPD cameras insert"
+  on lspd_cameras for insert
+  with check (true);
+
+drop policy if exists "LSPD cameras delete" on lspd_cameras;
+create policy "LSPD cameras delete"
+  on lspd_cameras for delete
   using (true);

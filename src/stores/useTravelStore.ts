@@ -8,6 +8,8 @@ import { findShortestPath, type NodeId } from '../game/world/pathfinder';
 import { VEHICLE_DATABASE } from '../features/vehicles/data/vehicleConfig';
 import { applyWear, getPerformanceMultiplier } from '../features/vehicles/utils/vehicleWear';
 
+const PIXELS_PER_KM = 5000; // 5000 пикселей карты соответствуют 1 км пробега
+
 interface Waypoint {
   x: number;
   y: number;
@@ -108,7 +110,8 @@ export const useTravelStore = create<TravelState>((set, get) => ({
     let vehicleId: string | null = null;
     if (activeVehicle) {
       vehicleId = activeVehicle.id;
-      const vehicleUpdates = applyWear(activeVehicle as Vehicle, totalDistance);
+      const distanceKm = Math.max(0.05, Number((totalDistance / PIXELS_PER_KM).toFixed(2)));
+      const vehicleUpdates = applyWear(activeVehicle as Vehicle, distanceKm);
       const condition = vehicleUpdates.condition || 100;
       const perf = getPerformanceMultiplier(condition);
       effectiveSpeed = Math.round(moveSpeed * perf.speed);

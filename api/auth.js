@@ -8,9 +8,10 @@ function getSupabaseAdmin() {
     const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://rzxkajmrzxvnzbqhluoe.supabase.co';
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!key) {
-      console.error('[Auth API] CRITICAL: SUPABASE_SERVICE_ROLE_KEY is not set in Vercel environment!');
+      console.error('[Auth API] CRITICAL: SUPABASE_SERVICE_ROLE_KEY is not set');
+      return null;
     }
-    supabaseAdmin = createClient(url, key || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6eGtham1yenh2bnpicWhsdW9lIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NTQ0MzU1OSwiZXhwIjoyMTAxMDE5NTU5fQ.Ysh9kpbs2oeByPYm47arXMKPYg-jK4_4DZhQdV4y90k');
+    supabaseAdmin = createClient(url, key);
   }
   return supabaseAdmin;
 }
@@ -44,7 +45,7 @@ export default async function handler(req, res) {
 
   if (!initData) {
     console.log('[Auth API] No initData provided, returning debug profile for browser testing');
-    return handleDebugLogin(res);
+    return handleDevLogin(res);
   }
 
   try {
@@ -65,7 +66,21 @@ export default async function handler(req, res) {
     }
 
     // TEMPORARY: Skip HMAC verification for debugging
-    console.log('[Auth API] WARNING: HMAC verification SKIPPED (debug mode)');
+    const secretKey = crypto.createHmac('sha256', 'WebAppData').update(BOT_TOKEN).digest();
+    const dataCheckString = Array.from(params.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${k}=${v}`)
+      .join('\n');
+    const calculatedHash = crypto.createHmac('sha256', secretKey)
+      .update(dataCheckString)
+      .digest('hex');
+    const isHashValid = crypto.timingSafeEqual(
+      Buffer.from(calculatedHash, 'hex'),
+      Buffer.from(hash, 'hex')
+    );
+    if (!isHashValid) {
+      return res.status(401).json({ error: 'Invalid authentication hash' });
+    }
     console.log('[Auth API] initData preview:', initData.substring(0, 100));
 
     // 4. Извлекаем данные пользователя
@@ -81,14 +96,18 @@ export default async function handler(req, res) {
     }
 
     // 8. Поиск или создание профиля в Supabase
-    let { data: profile, error: profError } = await getSupabaseAdmin()
+    const admin = getSupabaseAdmin();
+    if (!admin) {
+      return res.status(500).json({ error: 'Server configuration error' });
+    }
+    let { data: profile, error: profError } = await admin
       .from('profiles')
       .select('*')
       .eq('telegram_id', tgId)
       .maybeSingle();
 
     if (!profile) {
-      const { data: newProfile, error: createError } = await getSupabaseAdmin()
+      const { data: newProfile, error: createError } = await admin
         .from('profiles')
         .insert([{
           telegram_id: tgId,
@@ -115,9 +134,9 @@ export default async function handler(req, res) {
 
     // 9. Загрузка сопутствующих данных
     const [skillsRes, licensesRes, vehicleRes] = await Promise.all([
-      getSupabaseAdmin().from('player_skills').select('*').eq('player_id', profile.id),
-      getSupabaseAdmin().from('player_licenses').select('*').eq('player_id', profile.id),
-      getSupabaseAdmin().from('vehicles').select('*').eq('owner_id', profile.id).eq('is_active', true).maybeSingle()
+      admin.from('player_skills').select('*').eq('player_id', profile.id),
+      admin.from('player_licenses').select('*').eq('player_id', profile.id),
+      admin.from('vehicles').select('*').eq('owner_id', profile.id).eq('is_active', true).maybeSingle()
     ]);
 
     return res.status(200).json({
@@ -135,14 +154,18 @@ export default async function handler(req, res) {
 }
 
 async function handleDevLogin(res) {
-  let { data: profile } = await getSupabaseAdmin()
+  const admin = getSupabaseAdmin();
+  if (!admin) {
+    return res.status(500).json({ error: 'Server configuration error' });
+  }
+  let { data: profile } = await admin
     .from('profiles')
     .select('*')
     .eq('telegram_id', 'DEBUG_PLAYER_1')
     .maybeSingle();
 
   if (!profile) {
-    const { data: newProfile } = await getSupabaseAdmin()
+    const { data: newProfile } = await admin
       .from('profiles')
       .insert([{
         telegram_id: 'DEBUG_PLAYER_1',

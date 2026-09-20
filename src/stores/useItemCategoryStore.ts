@@ -63,7 +63,7 @@ export interface Item {
   category_id?: string | number;
   category?: Category | null;
   properties?: Record<string, unknown>;
-  effects?: Record<string, unknown>;
+  effects?: Array<Record<string, unknown>>;
   actions?: string[];
   tags?: string[];
   type?: string;
@@ -641,7 +641,7 @@ function getCategoryAncestors(cat, allCats) {
 }
 
 function normalizeItemData(data: Partial<Item>): Partial<Item> {
-  const { rarity, base_cost, ...rest } = data;
+  const { rarity, base_cost, key, stack_size, stackable, item_key, ...rest } = data;
   const properties = { ...(rest.properties as Record<string, unknown> || {}) };
   if (rarity !== undefined) {
     properties.rarity = rarity;
@@ -649,5 +649,16 @@ function normalizeItemData(data: Partial<Item>): Partial<Item> {
   if (base_cost !== undefined) {
     properties.base_cost = base_cost;
   }
-  return { ...rest, properties: properties as Item['properties'] };
+  const normalized: Record<string, unknown> = { ...rest, properties };
+  if (item_key !== undefined) {
+    normalized.item_key = item_key;
+  } else if (key !== undefined) {
+    normalized.item_key = key;
+  }
+  if (stackable !== undefined) {
+    normalized.stackable = stackable;
+  } else if (stack_size !== undefined) {
+    normalized.stackable = Boolean(stack_size);
+  }
+  return normalized as Partial<Item>;
 }
