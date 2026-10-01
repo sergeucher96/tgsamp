@@ -192,6 +192,7 @@ interface ItemCategoryState {
   loadTags: () => Promise<void>;
   loadItems: () => Promise<void>;
   loadCategoryDetails: (categoryId: string | number) => Promise<void>;
+  loadCategoryLinksFor: (categoryId: string | number) => Promise<void>;
   createCategory: (data: Partial<Category>) => Promise<Category | null>;
   updateCategory: (id: string | number, data: Partial<Category>) => Promise<Category | null>;
   deleteCategory: (id: string | number) => Promise<boolean>;
@@ -317,6 +318,35 @@ export const useItemCategoryStore = create<ItemCategoryState>((set, get) => ({
       categoryActions: actionsRes.data || [],
       categoryTags: tagsRes.data || [],
     });
+  },
+
+  // Load links for the whole ancestor chain (needed for inheritance helpers)
+  loadCategoryLinksFor: async (categoryId) => {
+    const cat = get().categories.find(c => String(c.id) === String(categoryId));
+    if (!cat) return;
+    const ids = getCategoryAncestors(cat, get().categories).map(c => c.id);
+    if (ids.length === 0) return;
+    const [
+      propsRes,
+      effectsAllowedRes,
+      effectsDeniedRes,
+      actionsRes,
+      tagsRes,
+    ] = await Promise.all([
+      supabase.from('category_properties').select('*, property:property_id(*)').in('category_id', ids),
+      supabase.from('category_effects_allowed').select('*, effect:effect_id(*)').in('category_id', ids),
+      supabase.from('category_effects_denied').select('*, effect:effect_id(*)').in('category_id', ids),
+      supabase.from('category_actions_link').select('*, action:action_id(*)').in('category_id', ids),
+      supabase.from('category_tags_link').select('*, tag:tag_id(*)').in('category_id', ids),
+    ]);
+
+    set(state => ({
+      categoryProperties: mergeById(state.categoryProperties, propsRes.data),
+      categoryEffectsAllowed: mergeById(state.categoryEffectsAllowed, effectsAllowedRes.data),
+      categoryEffectsDenied: mergeById(state.categoryEffectsDenied, effectsDeniedRes.data),
+      categoryActions: mergeById(state.categoryActions, actionsRes.data),
+      categoryTags: mergeById(state.categoryTags, tagsRes.data),
+    }));
   },
 
   // ============ CATEGORY CRUD ============
@@ -629,9 +659,15 @@ export const useItemCategoryStore = create<ItemCategoryState>((set, get) => ({
   },
 }));
 
+function mergeById(current, incoming) {
+  if (!incoming || incoming.length === 0) return current;
+  const map = new Map(current.map(row => [String(row.id), row]));
+  for (const row of incoming) map.set(String(row.id), row);
+  return Array.from(map.values());
+}
+
 // Pure helper — build ancestor chain from root to self
-function getCategoryAncestors(cat, allCats) {
-  const ancestors = [];
+function getCategoryAncestors(cat, allCats) {  const ancestors = [];
   let current = cat;
   while (current) {
     ancestors.unshift(current);
@@ -641,7 +677,7 @@ function getCategoryAncestors(cat, allCats) {
 }
 
 function normalizeItemData(data: Partial<Item>): Partial<Item> {
-  const { rarity, base_cost, key, stack_size, stackable, item_key, ...rest } = data;
+  const { rarity, base_cost, key, stack_size, stackable, max_stack, item_key, ...rest } = data;
   const properties = { ...(rest.properties as Record<string, unknown> || {}) };
   if (rarity !== undefined) {
     properties.rarity = rarity;
@@ -657,8 +693,12 @@ function normalizeItemData(data: Partial<Item>): Partial<Item> {
   }
   if (stackable !== undefined) {
     normalized.stackable = stackable;
-  } else if (stack_size !== undefined) {
-    normalized.stackable = Boolean(stack_size);
   }
-  return normalized as Partial<Item>;
+  if (max_stack !== undefined) {
+    normalized.max_stack = max_stack;
+  } else if (stack_size !== undefined && stackable === undefined) {
+    normalized.max_stack = stack_size;
+  }
+  const result: Partial<Item> = normalized;
+  return result;
 }

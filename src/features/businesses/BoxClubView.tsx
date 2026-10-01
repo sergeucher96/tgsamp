@@ -183,7 +183,7 @@ interface BoxClubViewProps {
 }
 
 export default function BoxClubView({ onClose }: BoxClubViewProps) {
-  const { player, updateProfile, skills, addSkillProgress } = usePlayerStore();
+  const { player, updateProfile, skills, applySkillProgress } = usePlayerStore();
   const [stage, setStage] = useState<StageType>(STAGE.MENU);
   const [selectedOpponent, setSelectedOpponent] = useState<OpponentTemplate | null>(null);
   const [fightLog, setFightLog] = useState<string[]>([]);
@@ -410,7 +410,7 @@ export default function BoxClubView({ onClose }: BoxClubViewProps) {
     const currentHp = Math.max(1, (player?.hp || 100) - hpLoss);
     await updateProfile({ hp: currentHp });
     if (expReward > 0) {
-      await addSkillProgress('boxing', expReward);
+      await applySkillProgress('boxing', expReward);
     }
 
     const newRecord = addLeaderboardRecord(

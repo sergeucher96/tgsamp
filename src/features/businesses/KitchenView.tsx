@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { ArrowLeft, Flame, RotateCcw, Trash2, Settings2 } from 'lucide-react';
+import { ArrowLeft, Flame, RotateCcw, Trash2, X } from 'lucide-react';
 import { ITEM_DATABASE as DEFAULT_ITEMS } from '../inventory/data/items';
 import { useInventoryStore, type InventoryItem, type ItemData } from '../../stores/useInventoryStore';
-import RecipeEditor from '../../features/market/RecipeEditor';
 import { isImageIcon } from '../../utils/iconHelper';
 import { RECIPES, type Recipe } from '../businesses/data/kitchenConfig';
 import { supabase } from '../../services/supabase/client';
@@ -39,7 +38,6 @@ export default function KitchenView({ onClose, houseId }: KitchenViewProps) {
   const [message, setMessage] = useState('');
   const [showPlayerInv, setShowPlayerInv] = useState(false);
   const [showHouseInv, setShowHouseInv] = useState(false);
-  const [showRecipeEditor, setShowRecipeEditor] = useState(false);
 
   // Load custom recipes and merge with defaults
   const allRecipes = useCallback((): Recipe[] => {
@@ -229,11 +227,7 @@ export default function KitchenView({ onClose, houseId }: KitchenViewProps) {
 
   return (
     <div className="h-full w-full bg-[#050814] text-white overflow-hidden font-sans relative flex flex-col">
-      {showRecipeEditor ? (
-        <RecipeEditor onClose={() => setShowRecipeEditor(false)} />
-      ) : (
-        <>
-          {/* Header */}
+      {/* Header */}
           <div className="absolute top-0 left-0 right-0 z-20 shrink-0 p-6 flex justify-between items-center bg-gradient-to-b from-black/60 to-transparent">
             <div className="text-left">
               <button onClick={onClose} className="flex items-center gap-2 text-amber-400 text-[10px] font-black uppercase tracking-widest mb-1 active:opacity-70">
@@ -241,10 +235,10 @@ export default function KitchenView({ onClose, houseId }: KitchenViewProps) {
               </button>
               <p className="text-[10px] font-black text-amber-500 uppercase tracking-[0.3em]">Кухня</p>
             </div>
-            <button onClick={() => setShowRecipeEditor(true)}
-              className="p-2 bg-purple-500/20 border border-purple-500/30 rounded-xl text-purple-400 active:scale-90"
-              title="Редактор рецептов">
-              <Settings2 size={16} />
+            <button onClick={onClose}
+              className="p-2 bg-white/5 rounded-xl active:scale-90"
+            >
+              <X size={16} />
             </button>
           </div>
 
@@ -432,8 +426,6 @@ export default function KitchenView({ onClose, houseId }: KitchenViewProps) {
               </button>
             </div>
           )}
-        </>
-      )}
     </div>
   );
 }

@@ -41,7 +41,12 @@ const DEFAULT_LOCATIONS: Location[] = [
   },
   { id: 'lspd', x: 5350, y: 4650, name: 'LSPD HQ', icon: '🚔', color: 'bg-blue-700', type: 'lspd' },
   { id: 'hospital_1', x: 5420, y: 4620, name: 'Больница', icon: '🏥', color: 'bg-red-600', type: 'hospital' },
-  { id: 'mafia_hideout', x: 4500, y: 4800, name: 'Мафия "Коза Ностра"', icon: '🕴️', color: 'bg-red-900', type: 'mafia' },
+  // Хабы уличных банд. id = <gang_id>_hideout — по этой схеме MapView
+  // определяет, какую панель банда открыть, из type: 'gang'.
+  { id: 'grove_hideout', x: 5600, y: 5200, name: 'Grove Street', icon: '🌳', color: 'bg-emerald-700', type: 'gang' },
+  { id: 'ballas_hideout', x: 5400, y: 4600, name: 'Ballas', icon: '🟣', color: 'bg-purple-700', type: 'gang' },
+  { id: 'rifa_hideout', x: 5050, y: 5300, name: 'Varios Los Aztecas', icon: '💀', color: 'bg-yellow-600', type: 'gang' },
+  { id: 'aztec_hideout', x: 5150, y: 5800, name: 'Aztécas', icon: '⚔️', color: 'bg-cyan-700', type: 'gang' },
   { 
   id: 'port_ls', 
   x: 5200, 
@@ -51,6 +56,10 @@ const DEFAULT_LOCATIONS: Location[] = [
   color: 'bg-blue-900', 
   type: 'public' 
 },
+
+  // Военная база. Место для ночных вылазок уличных банд: хотспот
+  // «Воровать материалы» доступен только членам банды и только ночью.
+  { id: 'military_base', x: 5860, y: 5680, name: 'Военная база', desc: 'Охраняемый военный склад на окраине города. Показывают материалы только тем, кто готов к этому ночью.', icon: '🪖', color: 'bg-slate-700', type: 'military' },
 
   // ==========================================
   // 1.1 РАБОТЫ (профессии)

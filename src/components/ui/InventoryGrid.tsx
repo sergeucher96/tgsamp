@@ -26,9 +26,17 @@ export default function InventoryGrid({ items = [], slotsCount, maxSlots, onActi
   const handleClick = onAction ?? onItemClick;
 
   const getItemInfo = (itemId: string): ItemInfo | null => {
-    const dbItem = dbItems.find((i: CategoryItem) => i.key === itemId || i.id?.toString() === itemId);
+    // Ищем по item_key: в items_db колонка называется item_key, поля
+    // key в данных из базы нет. Поиск по key оставлял новые предметы
+    // без иконки — в ячейке появлялся знак вопроса.
+    const dbItem = dbItems.find(
+      (i: CategoryItem) => i.item_key === itemId || i.key === itemId || i.id?.toString() === itemId
+    );
     if (dbItem) {
-      return { name: dbItem.name, icon: dbItem.icon || '📦', type: dbItem.type || 'item' };
+      // Тип берём из категории: колонки type в items_db нет, а по
+      // ней выбирается цвет ячейки и фильтр «Ресурсы».
+      const type = dbItem.category?.key || dbItem.type || 'item';
+      return { name: dbItem.name, icon: dbItem.icon || '📦', type };
     }
     return ITEM_DATABASE[itemId] || null;
   };

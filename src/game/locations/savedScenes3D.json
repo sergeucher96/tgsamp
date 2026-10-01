@@ -1,0 +1,42 @@
+{
+  "mine": {
+    "modelUrl": "none",
+    "camera": {
+      "position": [
+        -14.62,
+        10.2,
+        -5.17
+      ],
+      "target": [
+        0,
+        2,
+        0
+      ],
+      "fov": 48,
+      "focusRadius": 8,
+      "motion": {
+        "desktop": {
+          "enabled": true,
+          "yawDegrees": 8,
+          "pitchDegrees": 4,
+          "positionShift": 0.05,
+          "smoothness": 0.08,
+          "zoomMin": 0.7,
+          "zoomMax": 1.3
+        },
+        "mobile": {
+          "enabled": true,
+          "yawDegrees": 22,
+          "pitchDegrees": 12,
+          "positionShift": 0.12,
+          "smoothness": 0.12,
+          "zoomMin": 0.6,
+          "zoomMax": 1.5
+        }
+      }
+    },
+    "hotspots": [],
+    "objects": [],
+    "updatedAt": "2026-09-29T18:24:44.670Z"
+  }
+}

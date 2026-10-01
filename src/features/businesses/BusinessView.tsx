@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, Package, BarChart2, ShoppingCart, ChevronDown, ChevronUp, Plus, Minus } from 'lucide-react';
+import { ArrowLeft, Package, BarChart2, ShoppingCart, ChevronDown, ChevronUp, Store, AlertTriangle, Plus, Minus } from 'lucide-react';
 import { usePlayerStore, type Profile } from '../../stores/usePlayerStore';
-import { useBusinessStore, type BusinessState, type BusinessOrder, type BusinessSale, type BusinessReport } from '../../stores/useBusinessStore';
+import { useBusinessStore, type BusinessState, type BusinessOrder, type BusinessSale, type BusinessReport, type BusinessProduct } from '../../stores/useBusinessStore';
 import { BUSINESS_TYPES, RESOURCE_TYPES, type BusinessTypeConfig, type ResourceTypeInfo } from '../businesses/data/businessConfig';
 import { FINAL_LOCATIONS, type Location } from '../../game/locations/locations';
+import { isImageIcon } from '../../utils/iconHelper';
 
 interface BusinessViewProps {
   businessId: string;
@@ -29,6 +30,8 @@ export default function BusinessView({ businessId, onClose }: BusinessViewProps)
     depositToBusiness,
     withdrawFromBusiness,
     orders,
+    fetchBusinessProducts,
+    setProductEnabled,
   } = useBusinessStore();
   
   const [refreshKey, setRefreshKey] = useState(0);
@@ -39,6 +42,31 @@ export default function BusinessView({ businessId, onClose }: BusinessViewProps)
   const [showOrderMenu, setShowOrderMenu] = useState(false);
   const [showBalanceMenu, setShowBalanceMenu] = useState(false);
   const [balanceAmount, setBalanceAmount] = useState('');
+  const [assortment, setAssortment] = useState<BusinessProduct[]>([]);
+  const [assortmentLoading, setAssortmentLoading] = useState(false);
+  const [togglingId, setTogglingId] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setAssortmentLoading(true);
+    fetchBusinessProducts(businessId)
+      .then(rows => { if (!cancelled) setAssortment(rows); })
+      .catch(() => { if (!cancelled) setAssortment([]); })
+      .finally(() => { if (!cancelled) setAssortmentLoading(false); });
+    return () => { cancelled = true; };
+  }, [businessId, fetchBusinessProducts]);
+
+  const handleToggleProduct = async (row: BusinessProduct) => {
+    setTogglingId(row.id);
+    const next = !row.enabled;
+    const ok = await setProductEnabled(row.id, next);
+    if (ok) {
+      setAssortment(prev => prev.map(p => (p.id === row.id ? { ...p, enabled: next } : p)));
+    } else {
+      alert('Не удалось изменить ассортимент');
+    }
+    setTogglingId(null);
+  };
 
   useEffect(() => {
     fetchBusinesses();
@@ -231,6 +259,14 @@ export default function BusinessView({ businessId, onClose }: BusinessViewProps)
                   <Package size={14} /> Склад
                 </button>
                 <button
+                  onClick={() => setTab('assortment')}
+                  className={`flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-black whitespace-nowrap transition-all ${
+                    tab === 'assortment' ? 'bg-[#7eff67]/20 text-[#7eff67]' : 'bg-white/5 text-slate-400'
+                  }`}
+                >
+                  <Store size={14} /> Ассортимент
+                </button>
+                <button
                   onClick={() => setTab('reports')}
                   className={`flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-black whitespace-nowrap transition-all ${
                     tab === 'reports' ? 'bg-[#7eff67]/20 text-[#7eff67]' : 'bg-white/5 text-slate-400'
@@ -239,6 +275,119 @@ export default function BusinessView({ businessId, onClose }: BusinessViewProps)
                   <BarChart2 size={14} /> Отчёты
                 </button>
               </div>
+
+              {/* Ассортимент: владелец выбирает, что продаётся */}
+              {tab === 'assortment' && (
+                <div className="space-y-3">
+                  <div className="rounded-3xl border border-[#7eff69]/10 bg-[#09170d]/80 p-4">
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-[#aef06c] font-black mb-1">
+                      Что продаётся
+                    </p>
+                    <p className="text-[10px] text-slate-500 mb-3">
+                      Включённые товары видны покупателям. Список и цены задаёт владелец бизнеса в редакторе.
+                    </p>
+                    <p className="text-xs font-black text-[#d6ff9f]">
+                      Продаётся {assortment.filter(p => p.enabled).length} из {assortment.length}
+                      {assortmentLoading && <span className="text-[10px] text-slate-500 ml-2">обновление...</span>}
+                    </p>
+                  </div>
+
+                  {assortment.length === 0 && !assortmentLoading && (
+                    <div className="rounded-3xl border border-[#7eff69]/10 bg-[#09170d]/80 p-4 text-center">
+                      <p className="text-xs text-slate-400">
+                        Бизнес пока не умеет производить ни одного товара.
+                      </p>
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        Список товаров настраивается в редакторе «Товары бизнеса».
+                      </p>
+                    </div>
+                  )}
+
+                  {assortment.map((row) => {
+                    const resourceEntries = Object.entries(row.resources || {}).filter(([, v]) => Number(v) > 0);
+                    const hasResources = resources;
+                    const stockOk = !hasResources || resourceEntries.every(([k, v]) => Number(resources[k] || 0) >= Number(v));
+                    const busy = togglingId === row.id;
+
+                    return (
+                      <div
+                        key={row.id}
+                        className={`rounded-3xl border p-4 transition-colors ${
+                          row.enabled ? 'border-[#7eff69]/30 bg-[#0b1b0d]/90' : 'border-white/5 bg-[#09170d]/60'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-11 h-11 rounded-2xl bg-white/5 flex items-center justify-center shrink-0 overflow-hidden">
+                            {isImageIcon(row.displayIcon) ? (
+                              <img src={row.displayIcon} className="w-8 h-8 object-contain" alt="" />
+                            ) : (
+                              <span className="text-2xl">{row.displayIcon || '\u{1F4E6}'}</span>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-sm font-black truncate ${row.enabled ? 'text-[#d6ff9f]' : 'text-slate-400'}`}>
+                              {row.name}
+                            </p>
+                            <p className="text-[10px] text-slate-500">
+                              ${Number(row.price).toLocaleString()}
+                              {resourceEntries.length > 0 && (
+                                <span className="text-slate-600"> • себестоимость по ресурсам</span>
+                              )}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => handleToggleProduct(row)}
+                            disabled={busy}
+                            aria-label={row.enabled ? 'Не продавать' : 'Продавать'}
+                            className={`relative w-14 h-8 rounded-full shrink-0 transition-colors disabled:opacity-50 ${
+                              row.enabled ? 'bg-[#7eff67]' : 'bg-white/10'
+                            }`}
+                          >
+                            <span
+                              className={`absolute top-1 w-6 h-6 rounded-full bg-white shadow transition-all ${
+                                row.enabled ? 'left-7' : 'left-1'
+                              }`}
+                            />
+                          </button>
+                        </div>
+
+                        {resourceEntries.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 mt-2.5">
+                            {resourceEntries.map(([res, qty]) => {
+                              const info = RESOURCE_TYPES[res];
+                              const have = Number(resources[res] || 0);
+                              const enough = have >= Number(qty);
+                              return (
+                                <span
+                                  key={res}
+                                  className={`text-[9px] px-1.5 py-0.5 rounded ${
+                                    enough ? 'bg-white/5 text-slate-400' : 'bg-red-950/40 text-red-400'
+                                  }`}
+                                >
+                                  {info?.icon || ''} {info?.name || res}: {Number(qty)}
+                                  {enough ? '' : ` (есть ${have})`}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {row.enabled && resourceEntries.length > 0 && !stockOk && (
+                          <p className="flex items-center gap-1 text-[9px] text-red-400 mt-2">
+                            <AlertTriangle size={11} /> Не хватает ресурсов — товар нельзя купить
+                          </p>
+                        )}
+
+                        {!row.inCatalog && row.enabled && (
+                          <p className="text-[9px] text-amber-400 mt-2">
+                            Товара нет в каталоге предметов — покупатель его не сможет получить.
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
               {/* Warehouse tab */}
               {tab === 'warehouse' && (

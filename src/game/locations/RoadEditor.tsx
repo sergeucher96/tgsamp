@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect, Fragment } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo, Fragment } from 'react';
 import { flushSync } from 'react-dom';
 import { X, Plus, Minus, Link, Save, Trash2, MapPin, RotateCcw, Check, AlertCircle, Building2, MousePointer2 } from 'lucide-react';
 import { WAYPOINTS, ROAD_NETWORK } from '../locations/roads';
@@ -8,6 +8,22 @@ import { LOCATION_IMAGES } from '../../features/businesses/data/locationStyles';
 import { HOUSE_PREVIEWS_MAP } from '../../features/houses/data/houseStyles';
 import { isImageIcon } from '../../utils/iconHelper';
 import { supabase } from '../../services/supabase/client';
+import {
+  boundsFromPoints,
+  dedupePoints,
+  polygonArea,
+  type MapPoint,
+} from '../world/polygon';
+import type { Territory } from '../../features/gangs/data/territoriesConfig';
+import { GANGS } from '../../features/gangs/data/organizationsConfig';
+import { FINAL_LOCATIONS } from '../locations/locations';
+import { countAssetsInPolygon } from '../world/territoryAssets';
+
+/** Шаги привязки к сетке, в единицах карты */
+const SNAP_STEPS = [0, 10, 25, 50, 100];
+
+/** Радиус захвата первой вершины, в экранных пикселях */
+const CLOSE_SNAP_PX = 22;
 
 interface RoadEditorProps { onClose: () => void; }
 
@@ -45,10 +61,219 @@ export default function RoadEditor({ onClose }: RoadEditorProps) {
   const [renderKey, setRenderKey] = useState(0);
   const [mode, setMode] = useState('point');
 
+  // === Территории (полигоны для войны банд) ===
+  const [zonePoints, setZonePoints] = useState<MapPoint[]>([]);
+  const [zoneHover, setZoneHover] = useState<MapPoint | null>(null);
+  /** Контур замкнут: новые вершины не ставятся, линия до курсора не рисуется */
+  const [zoneClosed, setZoneClosed] = useState(false);
+  const [snapStep, setSnapStep] = useState(25);
+  const [territoryName, setTerritoryName] = useState('');
+  const [territoryOwner, setTerritoryOwner] = useState('');
+  const [territoryIncome, setTerritoryIncome] = useState(1000);
+  const [territoryColor, setTerritoryColor] = useState('#22c55e');
+  const [territories, setTerritories] = useState<Territory[]>([]);
+  const [zoneEditingId, setZoneEditingId] = useState<number | null>(null);
+  const [zoneSaving, setZoneSaving] = useState(false);
+  /** Применена ли миграция с колонками points/color */
+  const [zoneColumnsReady, setZoneColumnsReady] = useState<boolean | null>(null);
+
+  const snapPoint = (p: MapPoint): MapPoint => (
+    snapStep > 0
+      ? { x: Math.round(p.x / snapStep) * snapStep, y: Math.round(p.y / snapStep) * snapStep }
+      : p
+  );
+
+  const draftArea = polygonArea(zonePoints);
+  const draftBounds = boundsFromPoints(zonePoints);
+  const zoneIsValid = zonePoints.length >= 3 && draftArea > 0;
+
+  // Сколько домов и бизнесов попадает в контур — сразу во время
+  // рисования, чтобы видеть результат до сохранения.
+  const draftAssets = useMemo(
+    () => countAssetsInPolygon(zonePoints, FINAL_LOCATIONS),
+    [zonePoints]
+  );
+
+  // То же самое для уже сохранённых зон.
+  const savedAssets = useMemo(
+    () => Object.fromEntries(
+      territories.map(t => [t.id, countAssetsInPolygon((t.points || []) as MapPoint[], FINAL_LOCATIONS)])
+    ),
+    [territories]
+  );
+  const loadTerritories = useCallback(async () => {
+    const { data, error } = await supabase.from('territories').select('*');
+    if (!error && data) setTerritories(data as Territory[]);
+
+    // Проверяем, применена ли миграция с колонкой points.
+    // Без неё полигон сохранить некуда, и запрос упал бы с 42703.
+    const probe = await supabase.from('territories').select('points').limit(1);
+    setZoneColumnsReady(!probe.error);
+  }, []);
+
+  useEffect(() => {
+    if (mode === 'territory') loadTerritories();
+  }, [mode, loadTerritories]);
+
+  const addPolygonPoint = (p: MapPoint) => {
+    if (zoneClosed) return;
+    setZonePoints(prev => dedupePoints([...prev, p]));
+  };
+
+  /**
+   * Клик по первой вершине замыкает контур.
+   * Порог задан в экранных пикселях и переводится в координаты карты,
+   * чтобы на любом зуме вершина «магнитилась» под курсор одинаково.
+   */
+  const nearFirstPoint = (p: MapPoint): boolean => {
+    if (zoneClosed || zonePoints.length < 3) return false;
+    const first = zonePoints[0];
+    return Math.hypot(p.x - first.x, p.y - first.y) <= closeRadius;
+  };
+
+  const closePolygon = () => {
+    if (zoneClosed) return;
+    if (zonePoints.length < 3) {
+      notify('Нужно минимум 3 точки', 'error');
+      return;
+    }
+    if (draftArea === 0) {
+      notify('Точки лежат на одной прямой — это не зона', 'error');
+      return;
+    }
+    // Замыкание завершает рисование: дальше вершины не ставятся,
+    // иначе линия продолжала бы тянуться за курсором.
+    setZoneClosed(true);
+    setZoneHover(null);
+    notify(`Контур замкнут: ${zonePoints.length} точек`);
+  };
+
+  /** Снять замкнутость и продолжить добавлять вершины */
+  const reopenPolygon = () => {
+    setZoneClosed(false);
+  };
+
+  const undoZonePoint = () => {
+    setZonePoints(prev => prev.slice(0, -1));
+  };
+
+  const clearDraft = () => {
+    setZonePoints([]);
+    setZoneHover(null);
+    setZoneClosed(false);
+    setZoneEditingId(null);
+    setTerritoryName('');
+  };
+
+  const loadZoneForEdit = (t: Territory) => {
+    const pts = (t.points || []) as MapPoint[];
+    if (pts.length < 3) {
+      notify('У этой зоны нет полигона — только прямоугольник', 'error');
+      return;
+    }
+    setZonePoints(pts.map(p => ({ x: Number(p.x), y: Number(p.y) })));
+    setTerritoryName(t.name);
+    setTerritoryOwner(t.owner_gang_id || '');
+    setTerritoryIncome(t.base_income || 0);
+    setTerritoryColor(t.color || '#22c55e');
+    setZoneEditingId(t.id);
+    // Загруженную зону оставляем открытой: сразу можно дорисовать
+    // вершины, а не обводить контур заново.
+    setZoneClosed(false);
+    setZoneHover(null);
+    notify(`Загружена зона «${t.name}»`);
+  };
+
+  const saveZone = async () => {
+    if (!zoneIsValid) {
+      notify('Зона не готова: нужно 3+ точки и ненулевая площадь', 'error');
+      return;
+    }
+    const name = territoryName.trim();
+    if (!name) {
+      notify('Введите название зоны', 'error');
+      return;
+    }
+
+    const canStorePolygon = zoneColumnsReady !== false;
+    if (!canStorePolygon) {
+      const goAnyway = confirm(
+        'Миграция territory_polygon_migration.sql не применена — колонки points и color отсутствуют.\n\n'
+        + 'Зона сохранится как прямоугольник, а выбранный контур будет потерян.\n\n'
+        + 'Продолжить без полигона?'
+      );
+      if (!goAnyway) return;
+    } else if (!confirm(`Сохранить зону «${name}» в territories?`)) {
+      return;
+    }
+
+    setZoneSaving(true);
+    try {
+      const payload: Record<string, unknown> = {
+        name,
+        owner_gang_id: territoryOwner || null,
+        status: 'NEUTRAL',
+        activity: 50,
+        base_income: Number(territoryIncome) || 0,
+        control: 0,
+        ...draftBounds,
+      };
+      if (canStorePolygon) {
+        payload.points = zonePoints;
+        payload.color = territoryColor;
+      }
+
+      let error;
+      if (zoneEditingId !== null) {
+        ({ error } = await supabase.from('territories').update(payload).eq('id', zoneEditingId));
+      } else {
+        ({ error } = await supabase.from('territories').insert([payload]));
+      }
+
+      if (error) {
+        notify(`Ошибка: ${error.message}`, 'error');
+        return;
+      }
+      notify(canStorePolygon
+        ? `Зона «${name}» сохранена с контуром`
+        : `Зона «${name}» сохранена как прямоугольник`);
+      clearDraft();
+      loadTerritories();
+    } catch (err) {
+      notify(`Не удалось сохранить зону: ${err instanceof Error ? err.message : 'сетевая ошибка'}`, 'error');
+    } finally {
+      setZoneSaving(false);
+    }
+  };
+
+  const deleteZone = async (t: Territory) => {
+    if (!confirm(`Удалить территорию «${t.name}»? Это необратимо.`)) return;
+    const { error } = await supabase.from('territories').delete().eq('id', t.id);
+    if (error) {
+      notify(`Ошибка: ${error.message}`, 'error');
+      return;
+    }
+    notify(`Территория «${t.name}» удалена`);
+    if (zoneEditingId === t.id) clearDraft();
+    loadTerritories();
+  };
+
   // Location drag state
   const [dragging, setDragging] = useState(false);
   const [dragTarget, setDragTarget] = useState(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+
+  // Горячие клавиши рисования контура
+  useEffect(() => {
+    if (mode !== 'territory') return;
+    const onKey = (e) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+      if (e.code === 'Space') { e.preventDefault(); closePolygon(); }
+      if (e.code === 'Backspace') { e.preventDefault(); undoZonePoint(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   // Save hotspots to localStorage whenever they change
   useEffect(() => {
@@ -95,7 +320,7 @@ export default function RoadEditor({ onClose }: RoadEditorProps) {
     gas: '⛽', parking: '🅿️', gym: '💪', warehouse: '📦',
     other: '📌', tuning: '🔧', clothes: '👕', bank: '🏦',
     mine: '⛏️', pizzeria: '🍕', showroom: '🚗', guns: '🔫',
-    driving: '🎓', export: '📤', strip: '💃',
+    driving: '🎓', export: '📤', strip: '💃', military: '🪖',
   };
   const typeNames = {
     house: 'Дом', shop: 'Магазин', bar: 'Бар', hotel: 'Отель',
@@ -103,6 +328,7 @@ export default function RoadEditor({ onClose }: RoadEditorProps) {
     other: 'Другое', tuning: 'Тюнинг', clothes: 'Одежда', bank: 'Банк',
     mine: 'Шахта', pizzeria: 'Пиццерия', showroom: 'Автосалон', guns: 'Стрелковый',
     driving: 'Автошкола', export: 'Экспорт', strip: 'Стрип-клуб',
+    military: 'Военная база',
   };
   const [selectedPoint, setSelectedPoint] = useState(null);
   const [hoveredPoint, setHoveredPoint] = useState(null);
@@ -176,6 +402,12 @@ export default function RoadEditor({ onClose }: RoadEditorProps) {
   });
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+
+  /** Радиус захвата первой вершины в координатах карты (задан в экранных пикселях) */
+  const closeRadius = CLOSE_SNAP_PX / scale;
+  /** Курсор близко к первой вершине — клик замкнёт контур */
+const zoneReadyToClose = !zoneClosed && !!zoneHover && zonePoints.length >= 3
+  && Math.hypot(zoneHover.x - zonePoints[0].x, zoneHover.y - zonePoints[0].y) <= closeRadius;
   const containerRef = useRef(null);
   const lastClickTime = useRef(0);
   const lastClickPos = useRef({ x: 0, y: 0 });
@@ -253,8 +485,15 @@ export default function RoadEditor({ onClose }: RoadEditorProps) {
           notify(`Точка патруля ${clickedPoint} добавлена (${newLen})`);
         }
       }
+    } else if (mode === 'territory') {
+      // Ветки выше работают только по waypoint-ам, здесь нужны сырые координаты карты
+      if (nearFirstPoint(coords)) {
+        closePolygon();
+        return;
+      }
+      addPolygonPoint(snapPoint(coords));
     }
-  }, [getMapCoords, scale, mode, selectedPoint, waypoints, roads, locations, locationName, locationType, findNearestPoint, notify, setWaypoints, setRoads, setLocations, setSelectedPoint, routeStops, patrolStops, routeTab, setRouteStops, setPatrolStops]);
+  }, [getMapCoords, scale, mode, selectedPoint, waypoints, roads, locations, locationName, locationType, findNearestPoint, notify, setWaypoints, setRoads, setLocations, setSelectedPoint, routeStops, patrolStops, routeTab, setRouteStops, setPatrolStops, zonePoints, zoneClosed, nearFirstPoint, closePolygon, addPolygonPoint, snapPoint]);
 
   const handleDoubleClick = (e) => {
     processDoubleClick(e);
@@ -307,6 +546,7 @@ export default function RoadEditor({ onClose }: RoadEditorProps) {
 
   const handleMouseDown = (e) => {
     if (mode === 'zone') return;
+
     if (e.button !== 0) return;
     
     // Check if this is a double-click (within 300ms and close position)
@@ -357,6 +597,10 @@ export default function RoadEditor({ onClose }: RoadEditorProps) {
     }
     const coords = getMapCoords(e);
     if (!coords) return;
+    if (mode === 'territory') {
+      setZoneHover(snapPoint(coords));
+      return;
+    }
     const nearest = findNearestPoint(coords.x, coords.y, 30 / scale);
     setHoveredPoint(nearest);
     if (mode === 'road' && selectedPoint) setPreviewLine({ from: waypoints[selectedPoint], to: nearest ? waypoints[nearest] : coords });
@@ -570,6 +814,7 @@ export default function RoadEditor({ onClose }: RoadEditorProps) {
             <ModeButton active={mode === 'move'} onClick={() => { setMode('move'); setSelectedPoint(null); }} icon={<MousePointer2 size={14} />} label="Перемещение" color="bg-pink-600" />
             <ModeButton active={mode === 'zone'} onClick={() => { setMode('zone'); setDrawingZone(false); }} icon={<MousePointer2 size={14} />} label="Зона" color="bg-orange-600" />
             <ModeButton active={mode === 'busroute'} onClick={() => { setMode('busroute'); setSelectedPoint(null); setPreviewLine(null); }} icon={<span className="text-sm">🗺️</span>} label="Маршрут" color="bg-yellow-600" />
+            <ModeButton active={mode === 'territory'} onClick={() => { setMode('territory'); setSelectedPoint(null); setPreviewLine(null); }} icon={<span className="text-sm">🏴</span>} label="Зона войны" color="bg-cyan-600" />
             <div className="flex-1" />
             <button onClick={handleSaveLocations} className="flex items-center gap-1 px-3 py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 rounded-xl text-[10px] font-black uppercase text-blue-400">
               <Save size={12} /> Сохранить
@@ -587,6 +832,9 @@ export default function RoadEditor({ onClose }: RoadEditorProps) {
           {mode === 'move' && '✋ Перетащите маркер локации на новое место'}
           {mode === 'zone' && (drawingZone ? '✅ Кликните ещё раз для завершения зоны' : '🖱️ Нажмите и потяните для рисования зоны входа')}
           {mode === 'busroute' && `🗺️ Двойной клик по waypoint — добавить точку маршрута (${activeStops.length} точек, ${routeTab === 'bus' ? Object.keys(routeBusStops).length + ' остановок' : ''})`}
+          {mode === 'territory' && zoneClosed
+          ? '🏴 Контур замкнут — новые вершины не ставятся · «Продолжить рисование» вернёт режим · Сохранить в БД'
+          : `🏴 Двойной клик — вершина контура (${zonePoints.length} шт)${zonePoints.length >= 3 ? ' · Двойной клик по первой вершине ✕ замыкает зону' : ''} · Перетаскивание — двигать карту · Backspace — убрать точку`}
         </div>
         {mode === 'move' && (() => {
           const moved = locations.filter(l => l.moved);
@@ -665,6 +913,137 @@ export default function RoadEditor({ onClose }: RoadEditorProps) {
               <option value="warehouse">📦 Склад</option>
               <option value="other">📌 Другое</option>
             </select>
+          </div>
+        )}
+        {mode === 'territory' && (
+          <div className="mt-2 flex flex-col gap-2">
+            <div className="flex gap-2 flex-wrap">
+              <input
+                value={territoryName}
+                onChange={e => setTerritoryName(e.target.value)}
+                placeholder="Название зоны (Д docks, И coaxial)"
+                className="flex-1 min-w-40 px-2 py-1 bg-white/5 border border-white/20 rounded-lg text-[10px] text-white placeholder-slate-500"
+              />
+              <select
+                value={territoryOwner}
+                onChange={e => {
+                  setTerritoryOwner(e.target.value);
+                  const g = GANGS.find(x => x.id === e.target.value);
+                  if (g) setTerritoryColor(g.mapColor);
+                }}
+                className="px-2 py-1 bg-white/5 border border-white/20 rounded-lg text-[10px] text-white"
+              >
+                <option value="">Без владельца (нейтральная)</option>
+                {GANGS.map(g => <option key={g.id} value={g.id}>{g.icon} {g.name}</option>)}
+              </select>
+              <input
+                type="number"
+                value={territoryIncome}
+                onChange={e => setTerritoryIncome(Number(e.target.value) || 0)}
+                title="Доход в день"
+                className="w-24 px-2 py-1 bg-white/5 border border-white/20 rounded-lg text-[10px] text-white"
+              />
+              <input
+                type="color"
+                value={territoryColor}
+                onChange={e => setTerritoryColor(e.target.value)}
+                title="Цвет зоны на карте"
+                className="w-10 h-7 bg-white/5 border border-white/20 rounded-lg"
+              />
+              <select
+                value={snapStep}
+                onChange={e => setSnapStep(Number(e.target.value))}
+                title="Привязка к сетке"
+                className="px-2 py-1 bg-white/5 border border-white/20 rounded-lg text-[10px] text-white"
+              >
+                {SNAP_STEPS.map(s => <option key={s} value={s}>{s === 0 ? 'Без сетки' : `Шаг ${s}`}</option>)}
+              </select>
+            </div>
+
+            <div className="flex gap-2 flex-wrap items-center">
+              <button
+                onClick={closePolygon}
+                disabled={!zoneIsValid || zoneClosed}
+                className="flex items-center gap-1 px-3 py-1.5 bg-cyan-600/20 border border-cyan-500/30 rounded-lg text-[10px] font-black uppercase text-cyan-300 disabled:opacity-30"
+              >
+                Замкнуть контур
+              </button>
+              {zoneClosed && (
+                <button
+                  onClick={reopenPolygon}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-amber-600/20 border border-amber-500/30 rounded-lg text-[10px] font-black uppercase text-amber-300"
+                >
+                  Продолжить рисование
+                </button>
+              )}
+              <button
+                onClick={undoZonePoint}
+                disabled={zonePoints.length === 0}
+                className="flex items-center gap-1 px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-[10px] font-black uppercase disabled:opacity-30"
+              >
+                Убрать точку
+              </button>
+              <button onClick={clearDraft} className="px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-[10px] font-black uppercase">Очистить</button>
+              <button
+                onClick={saveZone}
+                disabled={!zoneIsValid || zoneSaving}
+                className="flex items-center gap-1 px-3 py-1.5 bg-cyan-600/30 hover:bg-cyan-600/40 border border-cyan-500/40 rounded-lg text-[10px] font-black uppercase text-cyan-100 disabled:opacity-30"
+              >
+                <Save size={12} /> {zoneEditingId !== null ? 'Обновить' : 'Сохранить в БД'}
+              </button>
+              <span className={`text-[9px] ${zoneIsValid ? 'text-cyan-300' : 'text-slate-500'}`}>
+                точек: {zonePoints.length} · площадь: {Math.round(draftArea).toLocaleString('ru')}
+                {zonePoints.length >= 3 && (
+                  <> · bbox: {draftBounds.min_x}–{draftBounds.max_x} / {draftBounds.min_y}–{draftBounds.max_y}</>
+                )}
+              </span>
+              {zoneIsValid && (
+                <span className="text-[9px] text-emerald-300 font-black">
+                  🏠 домов: {draftAssets.houses} · 🏪 бизнесов: {draftAssets.businesses} · всего: {draftAssets.total}
+                  {zoneClosed ? ' · контур замкнут' : ''}
+                </span>
+              )}
+              {zoneIsValid && draftAssets.outside > 0 && (
+                <span className="text-[9px] text-slate-500">
+                  вне контура: {draftAssets.outside}
+                </span>
+              )}
+            </div>
+
+            {zoneColumnsReady === false && (
+              <div className="px-2 py-1.5 bg-red-900/30 border border-red-500/40 rounded-lg text-[9px] text-red-300">
+                ⚠ Не применена миграция <span className="font-mono">territory_polygon_migration.sql</span> — колонки
+                points и color отсутствуют. Зоны сохраняются прямоугольником, контур не сохраняется.
+              </div>
+            )}
+
+            <div className="text-[9px] text-slate-400 uppercase">Территории в базе ({territories.length})</div>
+            <div className="flex gap-1.5 flex-wrap max-h-28 overflow-y-auto">
+              {territories.length === 0 && <span className="text-[9px] text-slate-500">Пока пусто</span>}
+              {territories.map(t => {
+                const hasPoly = Array.isArray(t.points) && t.points.length >= 3;
+                const assets = savedAssets[t.id];
+                return (
+                  <div
+                    key={t.id}
+                    className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[9px] ${
+                      zoneEditingId === t.id ? 'border-cyan-400 bg-cyan-900/40' : 'border-white/10 bg-white/5'
+                    }`}
+                  >
+                    <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: t.color || '#22c55e' }} />
+                    <span className="text-slate-200">{t.name}</span>
+                    {hasPoly && assets && (
+                      <span className="text-emerald-400/90" title={`Домов: ${assets.houses}, бизнесов: ${assets.businesses}`}>
+                        🏠{assets.houses} 🏪{assets.businesses}
+                      </span>
+                    )}
+                    {!hasPoly && <span className="text-slate-500" title="Только прямоугольник, полигона нет">▭</span>}
+                    <button onClick={() => loadZoneForEdit(t)} disabled={!hasPoly} className="text-cyan-400 hover:text-cyan-300 disabled:text-slate-600 disabled:cursor-not-allowed" title="Загрузить контур в редактор">✎</button>
+                    <button onClick={() => deleteZone(t)} className="text-red-400 hover:text-red-300" title="Удалить">🗑</button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
         {mode === 'busroute' && (
@@ -900,6 +1279,116 @@ export default function RoadEditor({ onClose }: RoadEditorProps) {
               {ROAD_NETWORK.map((r, i) => { const f = waypoints[r.from], t = waypoints[r.to]; if (!f || !t) return null; return <line key={`r${i}`} x1={f.x} y1={f.y} x2={t.x} y2={t.y} stroke="#3b82f6" strokeWidth="3" opacity="0.5" />; })}
               {roads.map((r, i) => { if (ROAD_NETWORK.some(o => o.from === r.from && o.to === r.to)) return null; const f = waypoints[r.from], t = waypoints[r.to]; if (!f || !t) return null; return <line key={`nr${i}`} x1={f.x} y1={f.y} x2={t.x} y2={t.y} stroke="#7eff67" strokeWidth="4" opacity="0.8" strokeDasharray="8 4" />; })}
               {previewLine && <line x1={previewLine.from.x} y1={previewLine.from.y} x2={previewLine.to.x} y2={previewLine.to.y} stroke="#fbbf24" strokeWidth="3" opacity="0.7" strokeDasharray="6 3" />}
+
+              {/* Территории: сохранённые полигоны и их прямоугольники */}
+              {mode === 'territory' && territories.map(t => {
+                const pts = (t.points || []) as MapPoint[];
+                const hasPoly = pts.length >= 3;
+                const color = t.color || (t.owner_gang_id ? '#22c55e' : '#eab308');
+                return (
+                  <g key={`t${t.id}`} opacity={zoneEditingId === t.id ? 1 : 0.6}>
+                    {hasPoly ? (
+                      <polygon
+                        points={pts.map(p => `${p.x},${p.y}`).join(' ')}
+                        fill={color}
+                        fillOpacity="0.25"
+                        stroke={color}
+                        strokeWidth="5"
+                      />
+                    ) : (
+                      <rect
+                        x={t.min_x} y={t.min_y}
+                        width={Math.max(0, t.max_x - t.min_x)}
+                        height={Math.max(0, t.max_y - t.min_y)}
+                        fill={color} fillOpacity="0.2" stroke={color} strokeWidth="4" strokeDasharray="16 8"
+                      />
+                    )}
+                    <text
+                      x={(t.min_x + t.max_x) / 2}
+                      y={t.min_y - 12}
+                      textAnchor="middle"
+                      fill={color}
+                      fontSize="26"
+                      fontWeight="bold"
+                    >
+                      {t.name}
+                    </text>
+                  </g>
+                );
+              })}
+
+              {/* Черновик контура */}
+              {mode === 'territory' && zonePoints.length > 0 && (() => {
+                const color = territoryColor || '#22c55e';
+                // После замыкания курсор перестаёт быть вершиной:
+                // иначе за мышью продолжала бы тянуться пунктирная линия.
+                const preview = (!zoneClosed && zoneHover) ? [...zonePoints, zoneHover] : zonePoints;
+                return (
+                  <g>
+                    {preview.slice(1).map((p, i) => {
+                      const prev = preview[i];
+                      return <line key={`zp${i}`} x1={prev.x} y1={prev.y} x2={p.x} y2={p.y} stroke={color} strokeWidth="6" opacity="0.85" />;
+                    })}
+                    {zoneClosed && zonePoints.length >= 3 && (
+                      <line
+                        x1={zonePoints[zonePoints.length - 1].x} y1={zonePoints[zonePoints.length - 1].y}
+                        x2={zonePoints[0].x} y2={zonePoints[0].y}
+                        stroke={color} strokeWidth="6" opacity="0.85"
+                      />
+                    )}
+                    {zonePoints.length >= 3 && !zoneClosed && zoneHover && (
+                      <line
+                        x1={zonePoints[zonePoints.length - 1].x} y1={zonePoints[zonePoints.length - 1].y}
+                        x2={zoneHover.x} y2={zoneHover.y}
+                        stroke={color} strokeWidth="4" strokeDasharray="14 10" opacity="0.7"
+                      />
+                    )}
+
+                    {/* Подсказка: курсор близко к первой вершине — клик замкнёт контур */}
+                    {zoneReadyToClose && (
+                      <>
+                        <circle
+                          cx={zonePoints[0].x} cy={zonePoints[0].y}
+                          r={26} fill="none" stroke="#ffffff" strokeWidth="4" opacity="0.9"
+                        />
+                        <line
+                          x1={zonePoints[zonePoints.length - 1].x} y1={zonePoints[zonePoints.length - 1].y}
+                          x2={zonePoints[0].x} y2={zonePoints[0].y}
+                          stroke={color} strokeWidth="8" opacity="0.9"
+                        />
+                      </>
+                    )}
+
+                    {zonePoints.length >= 3 && (
+                      <polygon
+                        points={preview.map(p => `${p.x},${p.y}`).join(' ')}
+                        fill={color} fillOpacity="0.18" stroke="none"
+                      />
+                    )}
+                    {zonePoints.map((p, i) => {
+                      const isFirst = i === 0;
+                      const highlighted = isFirst && zoneReadyToClose;
+                      return (
+                        <g key={`zv${i}`}>
+                          {highlighted && (
+                            <circle cx={p.x} cy={p.y} r="20" fill="white" opacity="0.35" />
+                          )}
+                          <circle
+                            cx={p.x} cy={p.y}
+                            r={highlighted ? 16 : 12}
+                            fill={color}
+                            stroke={highlighted ? '#ffffff' : isFirst ? '#22d3ee' : 'white'}
+                            strokeWidth={isFirst ? 5 : 3}
+                          />
+                          <text x={p.x} y={p.y + 6} textAnchor="middle" fill="#020617" fontSize="14" fontWeight="bold">
+                            {isFirst ? '✕' : i + 1}
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </g>
+                );
+              })()}
               {/* Bus route preview */}
               {mode === 'busroute' && routeTab === 'bus' && routeStops.length > 1 && (() => {
                 const pts = routeStops.map(id => waypoints[id]).filter(Boolean);
@@ -1040,6 +1529,8 @@ export default function RoadEditor({ onClose }: RoadEditorProps) {
           <div className="flex items-center gap-2"><div className="w-2 h-3 bg-[#7eff67]/80" /><span>Новая дорога</span></div>
           {mode === 'busroute' && routeTab === 'bus' && <div className="flex items-center gap-2"><div className="w-4 h-0.5 bg-yellow-600" /><span>🚌 Автобусный маршрут</span></div>}
           {mode === 'busroute' && routeTab === 'patrol' && <div className="flex items-center gap-2"><div className="w-4 h-0.5 bg-blue-500" /><span>🚔 Патрульный маршрут</span></div>}
+          {mode === 'territory' && <div className="flex items-center gap-2"><div className="w-3 h-3 bg-cyan-500/40 border border-cyan-400" /><span>🏴 Зона войны (полигон)</span></div>}
+          {mode === 'territory' && <div className="flex items-center gap-2"><div className="w-3 h-3 bg-amber-500/30 border border-amber-400 border-dashed" /><span>Только прямоугольник</span></div>}
         </div>
       </div>
     </div>

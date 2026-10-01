@@ -53,10 +53,13 @@ export default function InventoryView() {
     if (dbItem) {
       return {
         id: dbItem.item_key,
-        name: dbItem.item_name,
+        // В items_db колонка называется name, полей item_name и type
+        // там нет. Тип выводим из категории — по нему фильтр
+        // «Мат. » решает, попадёт ли предмет в «Ресурсы».
+        name: dbItem.name,
         desc: dbItem.description || '',
         icon: dbItem.icon || '📦',
-        type: dbItem.type || 'item',
+        type: dbItem.category?.key || fallback?.type || 'item',
         action: dbItem.action || fallback?.action || null,
         value: dbItem.action_value || 0,
         sellPrice: dbItem.sell_price || 0,

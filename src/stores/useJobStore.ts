@@ -439,7 +439,7 @@ export const useJobStore = create<JobState>((set, get) => ({
     const shift = get().activeShift;
     if (!shift) return;
     const job = JOBS_DATABASE[shift.jobId] as RouteJob;
-    const { player, updateProfile, setLocalActiveVehicle, addSkillProgress } = usePlayerStore.getState();
+    const { player, updateProfile, setLocalActiveVehicle, applySkillProgress } = usePlayerStore.getState();
 
     const total = shift.earned + (job.bonusOnFinish || 0);
 
@@ -447,7 +447,7 @@ export const useJobStore = create<JobState>((set, get) => ({
       money: Number(player.money || 0) + total,
       energy: Math.max(0, (player.energy || 100) - job.energyCost),
     });
-    await addSkillProgress(job.skillId, 1);
+    await applySkillProgress(job.skillId, 1);
 
     setLocalActiveVehicle(shift.previousVehicle || null);
     set({
@@ -583,7 +583,7 @@ export const useJobStore = create<JobState>((set, get) => ({
     const currentShift = get().activeShift;
     const pay = unloadCapacity * job.payPerUnit;
     const exp = Math.floor(unloadCapacity / 50);
-    const { updateProfile, addSkillProgress } = usePlayerStore.getState();
+    const { updateProfile, applySkillProgress } = usePlayerStore.getState();
     const fresh = usePlayerStore.getState().player;
 
     try {
@@ -591,7 +591,7 @@ export const useJobStore = create<JobState>((set, get) => ({
         money: Number(fresh.money || 0) + pay,
         energy: Math.max(0, (fresh.energy || 100) - job.energyCost),
       });
-      await addSkillProgress(job.skillId, 1);
+      await applySkillProgress(job.skillId, 1);
     } catch (e) {
       // Ошибки БД не должны оставлять попап открытым
       console.error('Garbage unload DB error:', e);
@@ -615,7 +615,7 @@ export const useJobStore = create<JobState>((set, get) => ({
     const shift = get().activeShift as GarbageShift | null;
     if (!shift) return;
     const job = JOBS_DATABASE[shift.jobId] as GarbageJob;
-    const { player, updateProfile, setLocalActiveVehicle, addSkillProgress } = usePlayerStore.getState();
+    const { player, updateProfile, setLocalActiveVehicle, applySkillProgress } = usePlayerStore.getState();
 
     const pay = shift.capacity * job.payPerUnit;
     const exp = Math.floor(shift.capacity / 50);
@@ -625,7 +625,7 @@ export const useJobStore = create<JobState>((set, get) => ({
         money: Number(player.money || 0) + pay,
         energy: Math.max(0, (player.energy || 100) - job.energyCost),
       });
-      await addSkillProgress(job.skillId, 1);
+      await applySkillProgress(job.skillId, 1);
     }
 
     setLocalActiveVehicle(shift.previousVehicle || null);
@@ -667,13 +667,13 @@ export const useJobStore = create<JobState>((set, get) => ({
     const pay = Math.round(rand(task.pay) * (1 + skill / 200)); // навык дает до +50% к оплате
     const exp = task.exp;
 
-    const { updateProfile, addSkillProgress } = usePlayerStore.getState();
+    const { updateProfile, applySkillProgress } = usePlayerStore.getState();
     const fresh = usePlayerStore.getState().player;
     await updateProfile({
       money: Number(fresh.money || 0) + pay,
       energy: Math.max(0, (fresh.energy || 100) - job.energyCost),
     });
-    await addSkillProgress(job.skillId, 1);
+    await applySkillProgress(job.skillId, 1);
 
     const current = get().activeShift;
     set({

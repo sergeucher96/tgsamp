@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { TransformWrapper as TransformWrapperBase, TransformComponent, type ReactZoomPanPinchContentRef } from "react-zoom-pan-pinch";
-const TransformWrapper = TransformWrapperBase as any;
 import { supabase } from '../../services/supabase/client';
 
 // Конфигурации и Данные
@@ -28,7 +27,10 @@ import { isImageIcon } from '../../utils/iconHelper';
 // Компоненты (Интерфейсы локаций)
 import HouseMenu from '../../components/common/HouseMenu';
 import ShowroomMenu, { type Showroom } from '../../components/ui/ShowroomMenu';
-import CarShowroom from '../../features/vehicles/CarShowroom';
+// Автосалон рисует сцену на three.js через react-three-fiber. Статический
+// импорт тянул three, fiber и drei в стартовый бандл — то есть в бандл
+// попадали они всем, кто автосалон и не открывал.
+const CarShowroomLazy = React.lazy(() => import('../../features/vehicles/CarShowroom'));
 import ShopView from '../../features/market/ShopView';
 import PizzeriaView from '../../features/businesses/PizzeriaView';
 import MineView from '../../features/businesses/MineView';
@@ -49,18 +51,37 @@ import BoxClubView from '../../features/businesses/BoxClubView';
 import ATMView from '../../features/market/ATMView';
 import TuningShopView from '../../features/vehicles/TuningShopView';
 import LocationView from '../locations/LocationView';
+import { getScene3D, hasScene3D, subLocationKey } from './scene3d';
+import { handleLocationAction } from '../../features/businesses/data/locationActions';
+// 3D-сцена тянет three.js, поэтому грузится только когда интерьер реально 3D.
+const SceneViewerLazy = React.lazy(() => import('../../components/game/SceneViewer'));
 import HotelView from '../../features/businesses/HotelView';
 import BusinessView from '../../features/businesses/BusinessView';
 import BusDepotView from '../../features/jobs/BusDepotView';
 import LspdView from '../../features/gangs/LspdView';
-import MafiaView from '../../features/gangs/MafiaView';
+import MilitaryBaseView from '../../features/gangs/MilitaryBaseView';
+import GangView from '../../features/gangs/GangView';
 import AutoServiceView from '../../features/vehicles/AutoServiceView';
 import { OrganizationPanel } from '../../features/gangs/OrganizationView';
+import { GANG_IDS } from '../../features/gangs/data/organizationsConfig';
+
+/**
+ * Хабы банд названы по схеме <gang_id>_hideout,
+ * поэтому банда восстанавливается прямо из id локации.
+ */
+function gangIdFromLocationId(locationId: string): string | null {
+  const gangId = locationId.replace(/_hideout$/, '');
+  return GANG_IDS.includes(gangId) ? gangId : null;
+}
+
 // Иконки
 import { 
-  Loader2, Crosshair, Navigation, Compass, Target, Search, X, Home 
+  Loader2, Crosshair, Navigation, Compass, Target, Search, X, Home, MapPin
 } from 'lucide-react';
 import CarPreviewImage from '../../components/ui/CarPreviewImage';
+import ErrorBoundary from '../../components/common/ErrorBoundary';
+import { WarMapMarkers, WarMapOverlay } from '../../features/gangs/WarMapLayer';
+import TerritoryZonesLayer from '../../features/gangs/TerritoryZonesLayer';
 
 function TravelOverlay({ player, activeVehicle, isMoving, remainingPath, routeTarget, currentPosition, currentRotation }) {
   const animatedPosition = useTravelStore(state => state.animatedPosition);
@@ -181,6 +202,25 @@ export default function MapView({ }: MapViewProps) {
   const [isFollowing, setIsFollowing] = useState(true);
   const isFollowingRef = useRef(true);
   useEffect(() => { isFollowingRef.current = isFollowing; }, [isFollowing]);
+  // Таймер кнопки фокуса: слежение возвращается после анимации зума.
+  const focusResumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Положение карты, сообщённое последним onTransform. Цикл слежения
+  // читает его отсюда: ref.state у библиотеки обновляется не сразу.
+  const transformStateRef = useRef({ positionX: 0, positionY: 0 });
+  // Метка времени последнего кадра: сглаживание считается по секундам.
+  const lastFrameTimeRef = useRef(0);
+  // Идёт ли сейчас жест пользователя: слежение на это время выключено.
+  const gestureRef = useRef(false);
+  // Размер обёртки карты — то, относительно чего библиотека считает
+  // центрирование. Обновляется ResizeObserver'ом, а не чтением
+  // clientWidth в каждом кадре.
+  const wrapperSizeRef = useRef({
+    width: typeof window !== 'undefined' ? window.innerWidth : 0,
+    height: typeof window !== 'undefined' ? window.innerHeight : 0,
+  });
+  useEffect(() => () => {
+    if (focusResumeTimerRef.current) clearTimeout(focusResumeTimerRef.current);
+  }, []);
   const [viewportSize, setViewportSize] = useState({
     width: typeof window !== 'undefined' ? window.innerWidth : 0,
     height: typeof window !== 'undefined' ? window.innerHeight : 0,
@@ -214,6 +254,8 @@ export default function MapView({ }: MapViewProps) {
   const [cafeteriaBusinessId, setCafeteriaBusinessId] = useState(null);
   const [showExport, setShowExport] = useState(false); // Скупка
   const [showStripClub, setShowStripClub] = useState(false);
+  /** Показывать ли контуры зон банд на карте */
+  const [showZones, setShowZones] = useState(false);
   const [showDrivingSchool, setShowDrivingSchool] = useState(false);
   const [showGunRange, setShowGunRange] = useState(false);
   const [showBoxClub, setShowBoxClub] = useState(false);
@@ -222,10 +264,42 @@ export default function MapView({ }: MapViewProps) {
   const [activeJobId, setActiveJobId] = useState(null);
   const [showBusDepot, setShowBusDepot] = useState(false);
   const [showLspd, setShowLspd] = useState(false);
-  const [showMafia, setShowMafia] = useState(false);
+  const [showMilitaryBase, setShowMilitaryBase] = useState(false);
+  const [openGangId, setOpenGangId] = useState<string | null>(null);
   const [showHospital, setShowHospital] = useState(false);
   const [showAutoService, setShowAutoService] = useState(false);
-  const [locationView, setLocationView] = useState(null); // Локация для открытия 2D картинки
+  const [locationView, setLocationView] = useState(null); // Открытый интерьер локации
+  // Подлокация внутри открытого интерьера (null — сам интерьер).
+  // Самостоятельная локация: своя картинка, свои хотспоты и свой
+  // выбор 2D/3D, но в мирной карте её нет — войти можно только отсюда.
+  const [interiorSubLocation, setInteriorSubLocation] = useState(null);
+
+  // Ключ текущего интерьера в хранилище сцен. Подлокация ключуется
+  // тем же разделителем, что и в редакторах, иначе её данные не найдутся.
+  const interiorKey =
+    locationView && interiorSubLocation
+      ? subLocationKey(locationView.id, interiorSubLocation)
+      : locationView?.id;
+
+  // 3D или 2D — решает переключатель в редакторе, по обоим уровням:
+  // подлокация может быть 2D внутри 3D-интерьера и наоборот.
+  const interiorIs3D = hasScene3D(interiorKey);
+
+  const openInterior = (loc) => {
+    setInteriorSubLocation(null);
+    setLocationView(loc);
+  };
+
+  // Переход в подлокацию: интерьер остаётся открытым, меняется только
+  // уровень входа. Отдельного интерьера не создаём — это не вход на карту.
+  const enterSubLocation = (subName) => {
+    setInteriorSubLocation(subName);
+  };
+
+  const closeInterior = () => {
+    setInteriorSubLocation(null);
+    setLocationView(null);
+  };
   const [selectedHotel, setSelectedHotel] = useState(null); // Выбранный отель (hotel_3, hotel_4)
   const [selectedBusiness, setSelectedBusiness] = useState(null); // Выбранный бизнес
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -329,6 +403,21 @@ export default function MapView({ }: MapViewProps) {
   
 const initialCenterDone = useRef(false);
 
+  // Интерьеры и меню открываются поверх карты, а сама карта остаётся
+  // смонтированной. Без этой проверки цикл слежения продолжал бы
+  // перерисовывать все маркеры карты 60 раз в секунду под окном,
+  // которого никто не видит, — а это самый тяжёлый рендер в игре.
+  const mapCoveredRef = useRef(false);
+  mapCoveredRef.current = !!(
+    locationView || selectedHouse || selectedShowroom || currentShop || activeJobId ||
+    showBank || showPizzeria || showMine || showFishingPort || showFarm ||
+    showFactory || showOilRig || showWorkshop || showTrucker || showCafeteria ||
+    showExport || showStripClub || showDrivingSchool || showGunRange ||
+    showBoxClub || showATM || showTuningShop || showBusDepot || showLspd ||
+    showHospital || showAutoService || showEmptyTruck || showBusPopup ||
+    showPatrolPopup || activeDeliveryJob
+  );
+
   // Центрировать камеру на игроке при первом открытии
   useEffect(() => {
     if (!player || initialCenterDone.current) return;
@@ -357,7 +446,7 @@ const initialCenterDone = useRef(false);
     if (garbageShift?.kind === 'garbage' && garbageShift.status === 'at_base') {
       const loc = FINAL_LOCATIONS.find((l) => l.id === 'garbage_depot');
       setActiveJobId(null);
-      if (loc) setLocationView(loc);
+      if (loc) openInterior(loc);
       useJobStore.setState({ activeShift: { ...useJobStore.getState().activeShift, status: 'selecting' } as ActiveShift });
     }
   }, [garbageShift?.status]);
@@ -464,9 +553,10 @@ const initialCenterDone = useRef(false);
     setSelectedBusiness(null);
     setShowBusDepot(false);
     setShowLspd(false);
-    setShowMafia(false);
+    setOpenGangId(null);
     setShowHospital(false);
     setShowAutoService(false);
+    setShowMilitaryBase(false);
   };
   useEffect(() => {
     window.closeAllMapViewViews = closeAllViews;
@@ -521,6 +611,9 @@ const initialCenterDone = useRef(false);
 
   // --- CAMERA FOLLOW (60 FPS) ---
   // Continuous camera loop — always reads latest state via refs and store.getState()
+  // Скорость слежения в единицах в секунду: во сколько раз за секунду
+  // камера закрывает оставшийся путь до игрока.
+  const FOLLOW_SPEED = 6;
   useEffect(() => {
     // Keep positionRef in sync with player
     const unsubPosition = useTravelStore.subscribe((state) => {
@@ -530,29 +623,101 @@ const initialCenterDone = useRef(false);
       if (state.animatedRotation != null) rotationRef.current = state.animatedRotation;
     });
 
+    // Следим за реальным размером обёртки. Поворот телефона и скрытие
+    // панели браузера меняют её размер, а окно resize при этом может
+    // и не сработать — и камера оставалась бы с чужими границами.
+    let resizeObserver: ResizeObserver | null = null;
+    let observedNode: HTMLElement | null = null;
+    const attachObserver = () => {
+      const wrapper = pinchRef.current?.instance?.wrapperComponent;
+      if (!wrapper || wrapper === observedNode) return;
+      // Библиотека может пересоздать узел обёртки: тогда наблюдатель
+      // остался бы на старом элементе и размеры перестали бы приходить.
+      resizeObserver?.disconnect();
+      observedNode = wrapper;
+      wrapperSizeRef.current = { width: wrapper.clientWidth, height: wrapper.clientHeight };
+      resizeObserver = new ResizeObserver(() => {
+        wrapperSizeRef.current = { width: wrapper.clientWidth, height: wrapper.clientHeight };
+      });
+      resizeObserver.observe(wrapper);
+    };
+    // Обёртка появляется после первого рендера библиотеки, поэтому
+    // пробуем сразу и ещё через несколько кадров.
+    attachObserver();
+    let attempts = 0;
+    const attachTries = setInterval(() => {
+      attachObserver();
+      if (++attempts > 20) clearInterval(attachTries);
+    }, 100);
+
     let animFrameId;
     function cameraLoop() {
-      if (isFollowingRef.current && pinchRef.current) {
-        const travelState = useTravelStore.getState();
-        const busRunning = useBusStore.getState().routeRunning;
-        const busWaiting = useBusStore.getState().awaitingRepeat;
-        const patrolRunning = useLspdStore.getState().patrolRouteRunning;
-        const patrolWaiting = useLspdStore.getState().awaitingRepeat;
-
-        const isAnimating = travelState.isMoving || busRunning || patrolRunning;
-        const targetPos = (travelState.animatedPosition && isAnimating)
-          ? travelState.animatedPosition
-          : positionRef.current;
-        const targetScale = isAnimating ? 0.8 : 1.2;
-
-        const { setTransform } = pinchRef.current;
-        const vw = window.innerWidth;
-        const vh = window.innerHeight;
-        const newX = (vw / 2) - (targetPos.x * targetScale);
-        const newY = (vh / 2) - (targetPos.y * targetScale);
-        setTransform(newX, newY, targetScale, 0);
-      }
+      // Кадр планируется первым: любая ошибка в теле тогда не убьёт
+      // слежение насмерть, как было раньше.
       animFrameId = requestAnimationFrame(cameraLoop);
+      if (!isFollowingRef.current || !pinchRef.current) return;
+      // Вкладка скрыта или карта закрыта меню: её никто не видит,
+      // работать незачем. Браузер и сам режет кадры в фоне, но на
+      // переднем плане под окном цикл всё равно молотил.
+      if (document.hidden || mapCoveredRef.current) {
+        lastFrameTimeRef.current = performance.now();
+        return;
+      }
+      // Палец на карте — не мешаем: иначе жест и цикл тянут карту в разные стороны.
+      if (gestureRef.current) {
+        lastFrameTimeRef.current = performance.now();
+        return;
+      }
+
+      const travelState = useTravelStore.getState();
+      const busRunning = useBusStore.getState().routeRunning;
+      const patrolRunning = useLspdStore.getState().patrolRouteRunning;
+
+      const isAnimating = travelState.isMoving || busRunning || patrolRunning;
+      const targetPos = (travelState.animatedPosition && isAnimating)
+        ? travelState.animatedPosition
+        : positionRef.current;
+
+      // Масштаб остаётся пользовательским. Раньше цикл сам подставлял
+      // 0.8 на ходу и 1.2 на месте: зум, который игрок только что
+      // выставил, тут же затирался, а остановка дёргала камеру
+      // скачком между двумя значениями.
+      const scale = currentScaleRef.current;
+
+      // Размер берём у самой обёртки, а не у window. На телефоне они
+      // расходятся: панель браузера меняет window.innerHeight, а
+      // библиотека центрирует по своему элементу. Из-за расхождения
+      // камера целилась в одну точку, а библиотека вставала в другую,
+      // и карта уезжала в сторону.
+      const { width: vw, height: vh } = wrapperSizeRef.current;
+      const minX = Math.min(vw - MAP_CONFIG.width, 0);
+      const minY = Math.min(vh - MAP_CONFIG.height, 0);
+
+      // Цель зажимается границами карты. У TransformWrapper включён
+      // limitToBounds, и без зажима у самого края карты камера
+      // бесконечно пыталась бы доехать до недостижимой точки:
+      // setTransform дёргал рендер все 16 мс и ничего не двигал.
+      const targetX = Math.max(minX, Math.min(0, (vw / 2) - (targetPos.x * scale)));
+      const targetY = Math.max(minY, Math.min(0, (vh / 2) - (targetPos.y * scale)));
+
+      const { positionX, positionY } = transformStateRef.current;
+
+      // Сглаживание по времени, а не по кадрам. Доля «как далеко подтянуть
+      // за кадр» на телефоне съезжает вместе с частотой: при 30 кадрах
+      // камера отставала вдвое сильнее, чем при 60, и ощущение было
+      // ровно как в отчёте — ведёт вперёд, потом тормозит на месте.
+      const now = performance.now();
+      const dt = Math.min(0.1, (now - lastFrameTimeRef.current) / 1000);
+      lastFrameTimeRef.current = now;
+      const k = 1 - Math.exp(-FOLLOW_SPEED * dt);
+      const newX = positionX + (targetX - positionX) * k;
+      const newY = positionY + (targetY - positionY) * k;
+
+      // setTransform перерисовывает всё дерево, а вызывать его
+      // каждый кадр незачем: когда камера доехала, трогать нечего.
+      if (Math.abs(targetX - newX) > 0.5 || Math.abs(targetY - newY) > 0.5) {
+        pinchRef.current.setTransform(newX, newY, scale, 0);
+      }
     }
     animFrameId = requestAnimationFrame(cameraLoop);
 
@@ -560,6 +725,8 @@ const initialCenterDone = useRef(false);
       unsubPosition();
       unsubRotation();
       cancelAnimationFrame(animFrameId);
+      clearInterval(attachTries);
+      resizeObserver?.disconnect();
     };
   }, []);
 
@@ -571,6 +738,77 @@ const initialCenterDone = useRef(false);
     }
   }, [player?.pos_x, player?.pos_y, player?.rotation]);
 
+  // Единая маршрутизация игровых действий для интерьеров. Её используют
+  // и 2D-картинка, и 3D-сцена: различается только отрисовываемый
+  // компонент, набор открываемых экранов одинаковый.
+  //
+  // Сама маршрутизация живёт в locationActions. Здесь только связываем её
+  // с состояниями карты: своя копия роутера здесь разъехалась бы с общей
+  // при первой же правке, и 2D с 3D стали бы вести себя по-разному.
+  const handleInteriorAction = (action: string) => {
+    const loc: any = locationView;
+    if (!loc) return;
+
+    // Экраны, которые открываются поверх интерьера, а не внутри него.
+    if (action === 'buy_vehicle' || loc.id === 'sto_1') setLocationView(null);
+
+    handleLocationAction(action, loc, {
+      onUnloadGarbage: () => {
+        setLocationView(null);
+        const state = useJobStore.getState();
+        const shift = state.activeShift;
+        if (state.isProcessing) {
+          useJobStore.setState({ jobMessage: 'Подождите, действие уже выполняется...' });
+          return;
+        }
+        if (shift?.kind !== 'garbage' || shift.capacity <= 0) {
+          setShowEmptyTruck(true);
+          return;
+        }
+        void state.performUnload();
+      },
+
+      setShowATM,
+      setSelectedBusiness,
+      setSelectedHotel,
+      setShowBank,
+      setCurrentShop,
+      setShowPizzeria,
+      setShowMine,
+      setShowFishingPort,
+      setShowFarm,
+      setShowOilRig,
+      setShowFactory,
+      setShowWorkshop,
+      setShowTrucker,
+      setShowExport,
+      setShowStripClub,
+      setShowTuningShop,
+      setShowDrivingSchool,
+      setShowGunRange,
+      setShowBoxClub,
+      setShowBusDepot,
+      setShowLspd,
+      setOpenGangId,
+      setShowHospital,
+      setShowCafeteria,
+      setCafeteriaBusinessId,
+      setShowShowroom,
+      setShowAutoService,
+      alert,
+
+      // Ограбление военной базы. Сами проверки (членство в уличной
+      // банде и ночное время) считает militaryBase — карта только
+      // открывает панель с результатом.
+      onStealMaterials: () => setShowMilitaryBase(true),
+
+      // Хвост карты: локации-работы. Общий роутер про них не знает.
+      onUnrouted: (l) => {
+        const job = getJobByLocation(String(l.id));
+        if (job) setActiveJobId(job.id);
+      },
+    });
+  };
   return (
     <div className="relative w-full h-screen bg-[#050805] overflow-x-hidden select-none touch-auto text-white font-sans">
       
@@ -657,119 +895,44 @@ const initialCenterDone = useRef(false);
       {selectedBusiness && <BusinessView businessId={selectedBusiness} onClose={() => setSelectedBusiness(null)} />}
       {showBusDepot && <BusDepotView onClose={() => setShowBusDepot(false)} />}
       {showLspd && <LspdView onClose={() => setShowLspd(false)} />}
-      {showMafia && <MafiaView onClose={() => setShowMafia(false)} />}
+      {openGangId && <GangView orgId={openGangId} onClose={() => setOpenGangId(null)} />}
       {showHospital && <OrganizationPanel orgId='hospital' onClose={() => setShowHospital(false)} />}
       {showAutoService && <AutoServiceView onClose={() => setShowAutoService(false)} />}
-      {locationView && (
+      {showMilitaryBase && <MilitaryBaseView onClose={() => setShowMilitaryBase(false)} />}
+      {locationView && !interiorIs3D && (
         <LocationView
           location={locationView}
-          onClose={() => setLocationView(null)}
-            onAction={(action) => {
-              const loc = locationView;
-              if (action === 'unload_garbage') {
-                setLocationView(null);
-                const state = useJobStore.getState();
-                const shift = state.activeShift;
-                if (state.isProcessing) {
-                  useJobStore.setState({ jobMessage: 'Подождите, действие уже выполняется...' });
-                  return;
-                }
-                if (shift?.kind !== 'garbage' || shift.capacity <= 0) {
-                  setShowEmptyTruck(true);
-                  return;
-                }
-                (async () => {
-                  await state.performUnload();
-                })();
-                return;
-              }
-             // Действия поверх LocationView (не закрываем картинку локации)
-             if (action === 'atm' || action === 'open_atm') { setShowATM(true); return; }
-            if (action === 'buy_business') { setSelectedBusiness(loc.id); return; }
-            if (action === 'open_hotel') { setSelectedHotel(loc.id); return; }
-            if (action === 'buy_vehicle') { setLocationView(null); setShowShowroom(true); return; }
-            // Enter/Default — маршрутизация по типу локации
-            if (action === 'enter' || action === 'default' || action === 'refuel') {
-              if (loc.type === 'bank') { setShowBank(true); }
-              else if (loc.type === 'shop') { setCurrentShop(loc.id); }
-              else if (loc.id === 'pizzeria_1') { setShowPizzeria(true); }
-              else if (loc.id === 'mine') { setShowMine(true); }
-              else if (loc.id === 'fishing_port') { setShowFishingPort(true); }
-              else if (loc.type === 'farm') { setShowFarm(true); }
-              else if (loc.type === 'oil_rig') { setShowOilRig(true); }
-              else if (loc.type === 'factory') { setShowFactory(true); }
-              else if (loc.type === 'workshop') { setShowWorkshop(true); }
-              else if (loc.type === 'trucker') { setShowTrucker(true); }
-              else if (loc.id === 'port_ls') { setShowExport(true); }
-              else if (loc.type === 'nightclub') { setShowStripClub(true); }
-              else if (loc.type === 'clothes') { setCurrentShop(loc.id); }
-              else if (loc.type === 'tuning') { setShowTuningShop(true); }
-               else if (loc.id === 'driving_1' || loc.id === 'driving_school_1') { setShowDrivingSchool(true); }
-               else if (loc.id === 'guns_1' || loc.id === 'gun_range_1') { setShowGunRange(true); }
-               else if (loc.id === 'box_club') { setShowBoxClub(true); }
-              else if (loc.type === 'atm') { setShowATM(true); }
-              else if (loc.type === 'hotel') { setSelectedHotel(loc.id); }
-              else if (loc.type === 'bar') { setCurrentShop(loc.id); }
-              else if (loc.type === 'gas') { setCurrentShop(loc.id); }
-              else if (loc.type === 'parking') { alert('Парковка — скоро открытие'); }
-              else if (loc.type === 'gym') { alert('Спортзал — скоро открытие'); }
-               else if (loc.id === 'bus_depot') { setShowBusDepot(true); }
-               else if (loc.type === 'lspd') { setShowLspd(true); }
-               else if (loc.type === 'mafia') { setShowMafia(true); }
-               else if (loc.type === 'hospital') { setShowHospital(true); }
-               else if (loc.id === 'sto_1') { setLocationView(null); setShowAutoService(true); }
-               else if (loc.type === 'farm') { setShowFarm(true); }
-              else if (loc.type === 'cafeteria') { setShowCafeteria(true); setCafeteriaBusinessId(loc.id); }
-              else if (loc.type === 'showroom' || loc.id === 'showroom_ls') { setShowShowroom(true); }
-              else if (getJobByLocation(loc.id)) { setActiveJobId(getJobByLocation(loc.id).id); }
-              return;
-            }
-            // Fallback: try type-based routing for any other action
-            if (loc.id === 'bus_depot') { setShowBusDepot(true); return; }
-            if (loc.type === 'bank') { setShowBank(true); return; }
-            else if (loc.type === 'shop') { setCurrentShop(loc.id); return; }
-            else if (loc.id === 'pizzeria_1') { setShowPizzeria(true); return; }
-            else if (loc.id === 'mine') { setShowMine(true); return; }
-            else if (loc.id === 'fishing_port') { setShowFishingPort(true); return; }
-             else if (loc.type === 'farm') { setShowFarm(true); }
-             else if (loc.type === 'oil_rig') { setShowOilRig(true); }
-             else if (loc.type === 'factory') { setShowFactory(true); }
-             else if (loc.type === 'workshop') { setShowWorkshop(true); }
-            else if (loc.type === 'trucker') { setShowTrucker(true); }
-            else if (loc.id === 'port_ls') { setShowExport(true); return; }
-            else if (loc.type === 'nightclub') { setShowStripClub(true); return; }
-            else if (loc.type === 'clothes') { setCurrentShop(loc.id); return; }
-            else if (loc.type === 'tuning') { setShowTuningShop(true); return; }
-             else if (loc.id === 'driving_1' || loc.id === 'driving_school_1') { setShowDrivingSchool(true); return; }
-             else if (loc.id === 'guns_1' || loc.id === 'gun_range_1') { setShowGunRange(true); return; }
-             else if (loc.id === 'box_club') { setShowBoxClub(true); return; }
-            else if (loc.type === 'atm') { setShowATM(true); return; }
-            else if (loc.type === 'hotel') { setSelectedHotel(loc.id); return; }
-             else if (loc.type === 'lspd') { setShowLspd(true); return; }
-             else if (loc.type === 'mafia') { setShowMafia(true); return; }
-             else if (loc.type === 'hospital') { setShowHospital(true); return; }
-             else if (loc.id === 'sto_1') { setShowAutoService(true); return; } // СТО
-              else if (loc.type === 'farm') { setShowFarm(true); return; }
-             else if (loc.type === 'oil_rig') { setShowOilRig(true); return; }
-             else if (loc.type === 'factory') { setShowFactory(true); return; }
-            else if (loc.type === 'workshop') { setShowWorkshop(true); return; }
-            else if (loc.type === 'trucker') { setShowTrucker(true); return; }
-            else if (loc.type === 'cafeteria') { setShowCafeteria(true); setCafeteriaBusinessId(loc.id); return; }
-            else if (loc.type === 'showroom' || loc.id === 'showroom_ls') { setShowShowroom(true); return; }
-            else if (getJobByLocation(loc.id)) { setActiveJobId(getJobByLocation(loc.id).id); return; }
-          }}
+          onClose={closeInterior}
+          onAction={handleInteriorAction}
+          initialSubLocation={interiorSubLocation}
+          onExitSubLocation={interiorSubLocation ? () => setInteriorSubLocation(null) : undefined}
+          onEnterSubLocation={enterSubLocation}
         />
+      )}
+      {locationView && interiorIs3D && (
+        <React.Suspense fallback={<div className="fixed inset-0 z-[900] flex items-center justify-center bg-black/90 text-white/70 text-sm">Загрузка 3D-сцены…</div>}>
+          <SceneViewerLazy
+            locationId={interiorKey}
+            url={getScene3D(interiorKey)?.modelUrl}
+            onAction={handleInteriorAction}
+            onClose={closeInterior}
+            onEnterSubLocation={enterSubLocation}
+            onExitSubLocation={interiorSubLocation ? () => setInteriorSubLocation(null) : undefined}
+          />
+        </React.Suspense>
       )}
       {showATM && <ATMView onClose={() => setShowATM(false)} />}
       {currentShop && <ShopView shopType={currentShop} player={player} onClose={() => setCurrentShop(null)} />}
       {activeJobId && <JobView jobId={activeJobId} onClose={() => setActiveJobId(null)} />}
       {showShowroom && (
-        <CarShowroom 
-          playerHouses={dbHouses.filter(h => h.owner_id === player.id)} 
-          playerPos={currentPosition}
-          showroomPos={{x: 5870, y: 4500}} 
-          onClose={() => setShowShowroom(false)} 
-        />
+        <React.Suspense fallback={null}>
+          <CarShowroomLazy
+            playerHouses={dbHouses.filter(h => h.owner_id === player.id)}
+            playerPos={currentPosition}
+            showroomPos={{x: 5870, y: 4500}}
+            onClose={() => setShowShowroom(false)}
+          />
+        </React.Suspense>
       )}
       {selectedShowroom && (
         <ShowroomMenu 
@@ -780,12 +943,15 @@ const initialCenterDone = useRef(false);
         />
       )}
       {selectedHouse && (
-        <HouseMenu 
-          house={selectedHouse} player={player} 
-          onBuy={(h) => buyHouse({ id: h.id_name, class: h.class, name: h.name })} 
-          onGPS={(h) => { setIsFollowing(true); startRoute(h.id_name); setSelectedHouse(null); }}
-          onClose={() => setSelectedHouse(null)} 
-        />
+        <ErrorBoundary>
+          <HouseMenu 
+            house={selectedHouse} 
+            player={player} 
+            onBuy={(h) => buyHouse({ id: h.id_name || h.id!, class: h.class, name: h.name })} 
+            onGPS={(h) => { setIsFollowing(true); startRoute(h.id_name || h.id!); setSelectedHouse(null); }}
+            onClose={() => setSelectedHouse(null)} 
+          />
+        </ErrorBoundary>
       )}
 
       {/* ЛОАДЕР */}
@@ -797,7 +963,7 @@ const initialCenterDone = useRef(false);
       )}
 
       {/* --- ДВИЖОК КАРТЫ --- */}
-      <TransformWrapper
+      <TransformWrapperBase
         initialScale={1.0}
         minScale={MAP_CONFIG.minZoom}
         maxScale={MAP_CONFIG.maxZoom}
@@ -807,17 +973,44 @@ const initialCenterDone = useRef(false);
         maxPositionY={0}
         limitToBounds={true}
         centerOnInit={true}
-        onTransformed={(ref: any) => {
+        onInit={(ref: any) => {
           pinchRef.current = ref;
+          transformStateRef.current = {
+            positionX: ref.state.positionX,
+            positionY: ref.state.positionY,
+          };
           setCurrentScale(ref.state.scale);
           currentScaleRef.current = ref.state.scale;
         }}
-        onPinchingStart={() => {
-          if (!useBusStore.getState().routeRunning) setIsFollowing(false);
+        // Имена обработчиков — из четвёртой версии react-zoom-pan-pinch.
+        // Стояли onTransformed и onPinchingStart из третьей: их больше нет
+        // в API, поэтому обработчик не вызывался никогда, ref оставался
+        // пустым, и камера не двигалась за машиной. Типы этого не ловили:
+        // TransformWrapper здесь приведён к any.
+        onTransform={(ref: any, state: any) => {
+          pinchRef.current = ref;
+          transformStateRef.current = {
+            positionX: state.positionX,
+            positionY: state.positionY,
+          };
+          // Масштаб в ref обновляется всегда, а React-состояние — только
+          // при заметном изменении. Иначе каждый кадр слежения давал бы
+          // перерисовку всего дерева, и на телефоне камера начала бы
+          // подтормаживать.
+          currentScaleRef.current = state.scale;
+          if (Math.abs(state.scale - currentScale) > 0.005) setCurrentScale(state.scale);
         }}
+        // Пока игрок трогает карту, слежение молчит: иначе цикл и жест
+        // тянут трансформацию в разные стороны, и карту уносит.
+        onPinchStart={() => { gestureRef.current = true; }}
+        onPinchStop={() => { gestureRef.current = false; }}
         onPanningStart={() => {
+          gestureRef.current = true;
           if (!useBusStore.getState().routeRunning) setIsFollowing(false);
         }}
+        onPanningStop={() => { gestureRef.current = false; }}
+        onWheelStart={() => { gestureRef.current = true; }}
+        onWheelStop={() => { gestureRef.current = false; }}
         doubleClick={{ disabled: true }}
       >
         <TransformComponent wrapperStyle={{ width: "100%", height: "100%", touchAction: 'none' }}>
@@ -879,7 +1072,7 @@ const initialCenterDone = useRef(false);
                 if (isHouse && !showHouses) return null;
 
                 const dbData = dbHouses.find(h => h.id_name === loc.id);
-                const hWithD = { ...loc, owner_id: dbData?.owner_id, is_for_sale: dbData?.is_for_sale };
+                const hWithD = { ...loc, id_name: loc.id, owner_id: dbData?.owner_id, is_for_sale: dbData?.is_for_sale };
                 const style = isHouse ? getHouseStyle(hWithD, player) : { color: loc.color, border: 'border-white border-[3px]' };
                 const showText = currentScale > 0.8 || isNear;
                 const showLabel = showText;
@@ -918,7 +1111,7 @@ const initialCenterDone = useRef(false);
                           // Если мусорщик находится у контейнера или едет к нему — сбрасываем статус и едем куда надо
                           if (isNear) {
                             freeDrive(loc.id);
-                            setLocationView(loc);
+                            openInterior(loc);
                           } else {
                             freeDrive(loc.id);
                             setIsFollowing(true);
@@ -927,7 +1120,7 @@ const initialCenterDone = useRef(false);
                         }
                         else if (isNear) {
                           // Open LocationView for ALL non-house locations
-                          setLocationView(loc);
+                          openInterior(loc);
                         } else {
                           setIsFollowing(true); startRoute(loc.id);
                         }
@@ -987,11 +1180,30 @@ const initialCenterDone = useRef(false);
               </div>
             )}
           </div>
+
+          {/* ЗНАЧКИ ВОЙН ЗА ТЕРРИТОРИИ: внутри карты, чтобы попасть
+              под ту же трансформацию панорамы и зума, что и объекты */}
+          <WarMapMarkers />
+
+          {/* КОНТУРЫ ЗОН БАНД: под объектами, но над подложкой карты */}
+          {showZones && <TerritoryZonesLayer />}
         </TransformComponent>
-      </TransformWrapper>
+      </TransformWrapperBase>
       
       {/* SEARCH BUTTON - small magnifying glass */}
       <div className="absolute top-6 right-6 z-50 flex flex-col items-end gap-3">
+        <button
+          onClick={() => setShowZones((v) => !v)}
+          title={showZones ? 'Скрыть зоны' : 'Показать зоны'}
+          className={`w-12 h-12 flex items-center justify-center rounded-2xl border transition active:scale-90 ${
+            showZones
+              ? 'border-emerald-400/60 bg-emerald-900/60 text-emerald-200 shadow-[0_0_24px_rgba(52,211,153,0.28)]'
+              : 'border-[#7eff67]/30 bg-[#071006]/95 text-[#d6ff9f] shadow-[0_0_24px_rgba(130,255,100,0.16)] hover:bg-[#0b1208]'
+          }`}
+        >
+          <MapPin size={22} className={showZones ? 'text-emerald-300' : ''} />
+        </button>
+
         <button
           onClick={() => setIsSearchOpen((open) => !open)}
           className="w-12 h-12 flex items-center justify-center rounded-2xl border border-[#7eff67]/30 bg-[#071006]/95 text-[#d6ff9f] shadow-[0_0_24px_rgba(130,255,100,0.16)] transition hover:bg-[#0b1208] active:scale-90"
@@ -1046,8 +1258,14 @@ const initialCenterDone = useRef(false);
         )}
       </div>
 
-      {/* КНОПКА ФОКУСА */}
-      <button onClick={() => { setIsFollowing(true); pinchRef.current.zoomToElement("player-car-hub", 1.2, 600); }}
+      {/* КНОПКА ФОКУСА. Слежение включается после анимации зума:
+          иначе цикл камеры тут же перебивает её своим сглаживанием и
+          кнопка не даёт ничего, кроме короткого рывка. */}
+      <button onClick={() => {
+        setIsFollowing(false);
+        pinchRef.current?.zoomToElement("player-car-hub", 1.2, 600);
+        focusResumeTimerRef.current = setTimeout(() => setIsFollowing(true), 650);
+      }}
         className={`absolute bottom-10 right-6 z-50 p-5 rounded-3xl shadow-[0_0_30px_rgba(90,255,95,0.18)] border ${isFollowing ? 'bg-[#2b690d] border-[#8cff4a] text-[#e8ffc4]' : 'bg-[#0f1209] border-[#4b6b3f]/50 text-[#a0c68f]'}`}
       >
         {isFollowing ? <Target size={28} /> : <Crosshair size={28} />}
@@ -1282,6 +1500,9 @@ const initialCenterDone = useRef(false);
           </div>
         </div>
       )}
+
+      {/* ОКНО УЧАСТИЯ: поверх карты, вне её трансформации */}
+      <WarMapOverlay />
 
     </div>
   );

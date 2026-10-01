@@ -59,6 +59,36 @@ export interface ShopProduct {
   resources: Record<string, number>;
 }
 
+/**
+ * Строка business_products.
+ * Наличие строки = бизнес умеет производить товар (задаёт админ).
+ * enabled = владелец сейчас этот товар продаёт.
+ */
+export interface BusinessProductRow {
+  id: number;
+  business_id: string;
+  business_type: string;
+  product_id: string;
+  product_name: string;
+  icon: string | null;
+  price: number;
+  resources: Record<string, number>;
+  enabled: boolean;
+}
+
+/** Строка, обогащённая актуальными данными предмета из каталога items_db */
+export interface BusinessProduct extends BusinessProductRow {
+  /** Название из items_db, если предмет есть в каталоге, иначе снимок */
+  name: string;
+  /** Иконка из items_db, если предмет есть в каталоге, иначе снимок */
+  displayIcon: string;
+  /** false — product_id отсутствует в items_db (предмет удалён из каталога) */
+  inCatalog: boolean;
+  /** false — предмет есть в каталоге, но помечен неактивным */
+  itemActive: boolean;
+  description: string;
+}
+
 export interface BusinessStoreState {
   businesses: BusinessState[];
   isProcessing: boolean;
@@ -87,6 +117,9 @@ export interface BusinessStoreState {
   getReports: (businessId: string) => Record<string, BusinessReport>;
   getOrders: (businessId: string) => BusinessOrder[];
   getShopProducts: (shopId: string) => Promise<ShopProduct[]>;
+  fetchBusinessProducts: (businessId: string) => Promise<BusinessProduct[]>;
+  setProductEnabled: (rowId: number, enabled: boolean) => Promise<boolean>;
+  updateBusinessProduct: (rowId: number, data: { price?: number; resources?: Record<string, number> }) => Promise<boolean>;
   buyProduct: (shopId: string, productId: string) => Promise<boolean>;
   canProduceProduct: (shopId: string, productId: string) => Promise<boolean>;
 }
@@ -442,18 +475,82 @@ export const useBusinessStore = create<BusinessStoreState>((set, get) => ({
     return get().orders[businessId] || [];
   },
 
-  getShopProducts: async (shopId) => {
-    const { data } = await supabase
+  /**
+   * Загружает список товаров бизнеса и обогащает его данными из каталога items_db.
+   * Если товара в каталоге нет (например, предмет ещё живёт только в старом
+   * конфиге shops.ts / clothingConfig.ts) — берём сохранённые снимки и
+   * помечаем inCatalog = false, чтобы редактор это показал.
+   */
+  fetchBusinessProducts: async (businessId) => {
+    const { data, error } = await supabase
       .from('business_products')
       .select('*')
-      .eq('business_id', shopId);
-    return (data || []).map(d => ({
-      id: d.product_id,
-      name: d.product_name,
-      icon: d.icon || '📦',
-      price: Number(d.price),
-      resources: d.resources || {},
-    }));
+      .eq('business_id', businessId)
+      .order('id', { ascending: true });
+    if (error || !data || data.length === 0) {
+      if (error) console.error('fetchBusinessProducts error:', error);
+      return [];
+    }
+
+    const rows = data as BusinessProductRow[];
+    const keys = Array.from(new Set(rows.map(r => r.product_id)));
+
+    const { data: catalog } = await supabase
+      .from('items_db')
+      .select('item_key, name, icon, description, is_active')
+      .in('item_key', keys);
+
+    const catalogMap = new Map<string, any>((catalog || []).map(i => [i.item_key, i]));
+
+    return rows.map(r => {
+      const live = catalogMap.get(r.product_id);
+      return {
+        ...r,
+        resources: (r.resources && typeof r.resources === 'object' ? r.resources : {}) as Record<string, number>,
+        name: live?.name || r.product_name || r.product_id,
+        displayIcon: live?.icon || r.icon || '',
+        description: live?.description || '',
+        inCatalog: !!live,
+        itemActive: live ? live.is_active !== false : false,
+      };
+    });
+  },
+
+  /** Владелец включает/выключает продажу товара */
+  setProductEnabled: async (rowId, enabled) => {
+    const { error } = await supabase
+      .from('business_products')
+      .update({ enabled })
+      .eq('id', rowId);
+    return !error;
+  },
+
+  /** Админ правит цену и/или рецепт производства */
+  updateBusinessProduct: async (rowId, data) => {
+    const patch: Record<string, unknown> = {};
+    if (data.price !== undefined) patch.price = Math.max(0, Number(data.price) || 0);
+    if (data.resources !== undefined) patch.resources = data.resources;
+    if (Object.keys(patch).length === 0) return true;
+
+    const { error } = await supabase
+      .from('business_products')
+      .update(patch)
+      .eq('id', rowId);
+    return !error;
+  },
+
+  /** Товары, которые бизнес сейчас продаёт (для витрины магазина) */
+  getShopProducts: async (shopId) => {
+    const all = await get().fetchBusinessProducts(shopId);
+    return all
+      .filter(p => p.enabled)
+      .map(p => ({
+        id: p.product_id,
+        name: p.name,
+        icon: p.displayIcon,
+        price: Number(p.price),
+        resources: p.resources,
+      }));
   },
 
   buyProduct: async (shopId, productId) => {

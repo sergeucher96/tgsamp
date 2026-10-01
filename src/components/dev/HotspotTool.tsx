@@ -9,7 +9,7 @@ import {
 import { HOUSE_PREVIEWS_MAP } from '../../features/houses/data/houseStyles';
 import { LOCATION_IMAGES } from '../../features/businesses/data/locationStyles';
 import { LOCATIONS } from '../../game/locations/locations';
-import { getActionsForCategory, getLocationCategory } from '../../features/businesses/data/locationActions';
+import { getActionsForCategory, getLocationCategory, isGangLocationId } from '../../features/businesses/data/locationActions';
 import { LOCATION_AUDIO_TRACKS } from '../../features/phone/data/audioTracks';
 
 function safeLocalStorageSet(key, value) {
@@ -26,8 +26,33 @@ function safeLocalStorageSet(key, value) {
   }
 }
 
-function compressImageBase64(base64: string, maxDim = 1600, quality = 0.8): Promise<string> {
-  return new Promise((resolve) => {
+/**
+ * Заготовка хотспота для локаций, где его ещё не рисовали.
+ *
+ * Для хабов банд это «Открыть меню банды» по центру кадра: без
+ * неё редактор открывался бы на хабе совсем пустым, и до первого
+ * сохранения игрок не мог бы попасть в меню банды. Хотспот можно
+ * передвинуть и растянуть вручную, а сохранится он вместе с
+ * остальными.
+ */
+function defaultHotspotsFor(locId: string, w: number, h: number) {
+  if (!isGangLocationId(locId)) return [];
+  const boxW = Math.min(240, Math.round(w * 0.3));
+  const boxH = Math.min(130, Math.round(h * 0.25));
+  return [{
+    id: `hs_default_${locId}`,
+    label: 'Меню банды',
+    action: 'open_gang',
+    subLocation: '',
+    x: Math.round((w - boxW) / 2),
+    y: Math.round((h - boxH) / 2),
+    w: boxW,
+    h: boxH,
+    type: 'rect',
+  }];
+}
+
+function compressImageBase64(base64: string, maxDim = 1600, quality = 0.8): Promise<string> {  return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
       let w = img.width;
@@ -108,6 +133,8 @@ export default function HotspotTool({ onClose, onExport }: HotspotToolProps) {
   const [newActionLabel, setNewActionLabel] = useState('');
 
   const [activeImageSrc, setActiveImageSrc] = useState(null);
+  /** Фон интерьера не найден — рисуть не на чем, но хотспоты ставятся */
+  const [imageMissing, setImageMissing] = useState(false);
   const [naturalSize, setNaturalSize] = useState({ width: 1280, height: 720 });
   const [hotspots, setHotspots] = useState([]);
   const [selectedHotspotId, setSelectedHotspotId] = useState(null);
@@ -286,8 +313,14 @@ export default function HotspotTool({ onClose, onExport }: HotspotToolProps) {
       const nw = tester.naturalWidth || 1280;
       const nh = tester.naturalHeight || 720;
       setNaturalSize({ width: nw, height: nh });
+      setImageMissing(false);
 
-      const converted = loadedHotspots.map((h, index) => ({
+      // Ничего не нарисовано — подставляем заготовку для хабов.
+      const source = loadedHotspots.length > 0
+        ? loadedHotspots
+        : defaultHotspotsFor(selectedLocId, nw, nh);
+
+      const converted = source.map((h, index) => ({
         id: h.id || `hs_${Date.now()}_${index}`,
         label: h.label || 'Зона',
         action: h.action || 'enter',
@@ -303,8 +336,12 @@ export default function HotspotTool({ onClose, onExport }: HotspotToolProps) {
       setZoom(1);
     };
     tester.onerror = () => {
+      // Фона интерьера ещё нет. Сцена всё равно остаётся рабочей:
+      // хотспоты хранятся в процентах, поэтому их расстановка
+      // останется верной, когда картинку загрузят.
       setNaturalSize({ width: 1280, height: 720 });
-      setHotspots([]);
+      setImageMissing(true);
+      setHotspots(defaultHotspotsFor(selectedLocId, 1280, 720));
     };
     tester.src = img;
   }, [selectedLocId, editingSubLocation]);
@@ -867,7 +904,7 @@ export default function HotspotTool({ onClose, onExport }: HotspotToolProps) {
             }}
             className="relative shadow-2xl border border-slate-700/50 bg-slate-950/80 shrink-0"
           >
-            {activeImageSrc ? (
+            {activeImageSrc && !imageMissing ? (
               <img
                 src={activeImageSrc}
                 alt="Scene"
@@ -878,8 +915,19 @@ export default function HotspotTool({ onClose, onExport }: HotspotToolProps) {
             ) : (
               <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-500 gap-3">
                 <p className="text-sm font-bold uppercase tracking-wider text-slate-400">
-                  {editingSubLocation ? `Нет фото для подлокации «${editingSubLocation.subName}»` : 'Нет изображения'}
+                  {imageMissing
+                    ? 'Фон интерьера не найден'
+                    : editingSubLocation
+                      ? `Нет фото для подлокации «${editingSubLocation.subName}»`
+                      : 'Нет изображения'}
                 </p>
+                {imageMissing && (
+                  <p className="text-[11px] text-slate-500 max-w-[280px] text-center">
+                    Загрузите картинку кнопкой «Загрузить». Хотспоты уже расставлены
+                    и сохранятся в процентах, поэтому после загрузки фона их
+                    не придётся двигать заново.
+                  </p>
+                )}
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg"

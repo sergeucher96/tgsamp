@@ -22,8 +22,9 @@ export default function HouseMenu({ house, player, onBuy, onGPS, onClose }: Hous
 
   const houseClass = HOUSE_CLASSES[house.class] || HOUSE_CLASSES.economy;
   const isOwner = house.owner_id === player?.id;
-  const houseNumber = house.id_name.replace('h_', '');
-  const isAtHouse = player ? Math.abs(player.pos_x - house.x) < 35 && Math.abs(player.pos_y - house.y) < 35 : false;
+  const rawId = house.id_name || house.id || '';
+  const houseNumber = rawId ? rawId.replace('h_', '') : (house.name ? house.name.replace(/\D/g, '') : '—');
+  const isAtHouse = player ? Math.abs(player.pos_x - (house.x || 0)) < 35 && Math.abs(player.pos_y - (house.y || 0)) < 35 : false;
 
   const dailyTax = Math.round(houseClass.price * 0.001);
 
@@ -143,7 +144,7 @@ export default function HouseMenu({ house, player, onBuy, onGPS, onClose }: Hous
                     if (activeVehicle) {
                       usePlayerStore.getState().setLocalActiveVehicle(null);
                     }
-                    setInterior(house.id_name);
+                    setInterior(rawId);
                     onClose();
                   }} className="w-full bg-teal-600 hover:bg-teal-500 text-white py-4 rounded-2xl font-black uppercase italic text-base shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2">
                     <DoorOpen size={20} /> Войти в дом

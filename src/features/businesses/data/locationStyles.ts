@@ -9,6 +9,20 @@ import savedHotspots from '../../../game/locations/savedHotspots.json';
 // locationId — это ID локации из locations.js (bank_1, shop_1, tuning_1...)
 // Координаты x, y, w, h в процентах (0-100) от изображения
 export const LOCATION_HOTSPOTS = {
+  // === Хабы уличных банд: "Открыть меню банды" ===
+  // Заданы статически, а не только в редакторе хотспотов, чтобы хаб
+  // работал сразу во всех сборках: иначе до первого сохранения из
+  // редактора попасть в меню банды было бы нечем. Редактор может
+  // переопределить их — localStorage и savedHotspots.json имеют
+  // приоритет над этой статикой.
+  //
+  // action: 'open_gang' отрабатывает в MapView по типу локации:
+  // для любого type === 'gang' открывается меню именно этой банды.
+  grove_hideout: { 1: [{ id: 'open_gang', type: 'rect', x: 30, y: 32, w: 40, h: 30, action: 'open_gang', label: 'Открыть меню банды' }] },
+  ballas_hideout: { 1: [{ id: 'open_gang', type: 'rect', x: 30, y: 32, w: 40, h: 30, action: 'open_gang', label: 'Открыть меню банды' }] },
+  rifa_hideout: { 1: [{ id: 'open_gang', type: 'rect', x: 30, y: 32, w: 40, h: 30, action: 'open_gang', label: 'Открыть меню банды' }] },
+  aztec_hideout: { 1: [{ id: 'open_gang', type: 'rect', x: 30, y: 32, w: 40, h: 30, action: 'open_gang', label: 'Открыть меню банды' }] },
+
   // === Магазины: "Войти в магазин" + "Купить бизнес" ===
   shop_1: { 1: [{ id: 'enter_shop', type: 'rect', x: 25, y: 30, w: 50, h: 40, action: 'enter', label: 'Войти в магазин' }, { id: 'buy_business', type: 'rect', x: 25, y: 78, w: 50, h: 12, action: 'buy_business', label: 'Купить бизнес' }] },
   shop_24_7: { 1: [{ id: 'enter_shop', type: 'rect', x: 25, y: 30, w: 50, h: 40, action: 'enter', label: 'Войти в магазин' }, { id: 'buy_business', type: 'rect', x: 25, y: 78, w: 50, h: 12, action: 'buy_business', label: 'Купить бизнес' }] },
@@ -93,6 +107,21 @@ export const LOCATION_IMAGES = {
   gas_4: { label: '⛽ АЗС "HighWay"', images: [{ id: 1, src: '/locations/gas_1.webp' }], default: '/locations/gas_1.webp' },
   gas_5: { label: '⛽ АЗС "West Side"', images: [{ id: 1, src: '/locations/gas_1.webp' }], default: '/locations/gas_1.webp' },
   parking_1: { label: '🅿️ Парковка #1', images: [{ id: 1, src: '/locations/bus_depot.webp' }], default: '/locations/bus_depot.webp' },
+  // Запасная картинка военной базы. Основная лежит в savedHotspots.json
+  // (её рисуют в редакторе), а без записи здесь интерьер молча
+  // подставил бы картинку магазина.
+  military_base: { label: '🪖 Военная база', images: [{ id: 1, src: '/locations/military_base.jpg' }], default: '/locations/military_base.jpg' },
+};
+
+// Моделью сцены нельзя подменять картинку интерьера. Раньше 3D-редактор
+// писал путь к .glb в это же поле, и <img> получал не картинку.
+// Теперь такие значения считаются отсутствующими: лучше картинка по
+// умолчанию, чем сломанная 2D-локация.
+const isUsableInteriorImage = (value) => {
+  if (typeof value !== 'string' || value.length <= 5) return false;
+  if (/^data:image\//i.test(value)) return true;
+  if (/\.(glb|gltf)$/i.test(value.split(/[?#]/)[0])) return false;
+  return true;
 };
 
 // Получить картинку для локации по ID
@@ -102,20 +131,27 @@ export const getLocationImage = (locationId, imageIndex) => {
   if (saved) {
     try {
       const data = JSON.parse(saved);
-      if (data?.default) return data.default;
-      if (data?.images?.length > 0) return data.images[imageIndex - 1]?.src || data.default || null;
+      if (isUsableInteriorImage(data?.default)) return data.default;
+      if (data?.images?.length > 0) {
+        const src = data.images[imageIndex - 1]?.src || data.default;
+        if (isUsableInteriorImage(src)) return src;
+      }
     } catch (e) {}
   }
 
   // Check savedHotspots.json
   const fileData = savedHotspots?.[locationId];
-  if (fileData?.default && typeof fileData.default === 'string' && fileData.default.length > 5) return fileData.default;
-  if (fileData?.images?.length > 0) return fileData.images[imageIndex - 1]?.src || fileData.default || null;
+  if (isUsableInteriorImage(fileData?.default)) return fileData.default;
+  if (fileData?.images?.length > 0) {
+    const src = fileData.images[imageIndex - 1]?.src || fileData.default;
+    if (isUsableInteriorImage(src)) return src;
+  }
 
   const category = LOCATION_IMAGES[locationId];
   if (!category) return null;
   const img = category.images?.find(i => i.id === imageIndex);
-  return img?.src || category.default || null;
+  const fallback = img?.src || category.default || null;
+  return isUsableInteriorImage(fallback) ? fallback : null;
 };
 
 // Получить label для локации

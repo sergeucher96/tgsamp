@@ -186,7 +186,7 @@ export const useWeaponStore = create<WeaponStoreState>((set, get) => ({
         .eq('player_id', player.id)
         .eq('weapon_type', weaponType);
 
-      await usePlayerStore.getState().addSkillProgress(weaponConfig.skillId, 10);
+      await usePlayerStore.getState().applySkillProgress(weaponConfig.skillId, 10);
 
       set(state => ({
         weapons: {

@@ -12,6 +12,23 @@ interface LocationViewProps {
   location: any;
   onClose: () => void;
   onAction?: (action: string, label: string) => void;
+  /**
+   * Открыться сразу в подлокации, а не в интерьере локации.
+   * Нужно, когда игрок пришёл в 2D-подлокацию из 3D-сцены: подлокация
+   * самостоятельная локация, но вход в неё остаётся через родителя.
+   */
+  initialSubLocation?: string | null;
+  /**
+   * Выход из подлокации наружу. Пока переходы внутри LocationView
+   * ведёт сам компонент, а выход из последней подлокации — карта,
+   * потому что дальше может быть 3D-интерьер, а не 2D-картинка.
+   */
+  onExitSubLocation?: () => void;
+  /**
+   * Переход в подлокацию наружу. Передаётся всегда: у подлокации свой
+   * выбор 2D/3D, и без карты компонент не знает, чем её открывать.
+   */
+  onEnterSubLocation?: (subName: string) => void;
 }
 
 interface Hotspot {
@@ -46,7 +63,14 @@ const PHYSICS_CONFIG = {
   dragThreshold: 6,
 };
 
-export default function LocationView({ location, onClose, onAction }: LocationViewProps) {
+export default function LocationView({
+  location,
+  onClose,
+  onAction,
+  initialSubLocation = null,
+  onExitSubLocation,
+  onEnterSubLocation,
+}: LocationViewProps) {
   const [houseImage, setHouseImage] = useState<string | null>(null);
   const [hotspots, setHotspots] = useState<Hotspot[]>([]);
   const [hoveredHotspot, setHoveredHotspot] = useState<string | null>(null);
@@ -230,7 +254,19 @@ export default function LocationView({ location, onClose, onAction }: LocationVi
     stopInertia();
     cameraXRef.current = 0;
     setCameraX(0);
-  }, [location]);
+
+    // Вход сразу в подлокацию: подменяем картинку и хотспоты, но
+    // стек не трогаем — возвращаться из неё надо в родительский
+    // интерьер, а не по истории 2D-переходов.
+    if (initialSubLocation) {
+      const subData = getLocationSublocations(location.id)?.[initialSubLocation];
+      if (subData) {
+        setSubLocationImage(subData.image || '/locations/shop_1.webp');
+        setSubLocationHotspots(subData.hotspots || []);
+        setCurrentSubLocation({ id: initialSubLocation, label: initialSubLocation, subLocation: initialSubLocation } as Hotspot);
+      }
+    }
+  }, [location, initialSubLocation]);
 
   const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     const target = e.target as HTMLImageElement;
@@ -323,6 +359,13 @@ export default function LocationView({ location, onClose, onAction }: LocationVi
     if (hs.action === 'sublocation' && hs.subLocation) {
       const subData = getLocationSublocations(location?.id)?.[hs.subLocation];
       if (subData) {
+        // У подлокации свой выбор 2D/3D, как у любой локации. Решать,
+        // открывать её здесь или отдать наружу, должна карта: если у
+        // подлокации выбран 3D, её нельзя показать 2D-картинкой.
+        if (onEnterSubLocation) {
+          onEnterSubLocation(hs.subLocation);
+          return;
+        }
         stopInertia();
         setSubLocationStack((prev) => [
           ...prev,
@@ -345,7 +388,17 @@ export default function LocationView({ location, onClose, onAction }: LocationVi
   };
 
   const goBackFromSublocation = () => {
-    if (subLocationStack.length === 0) return;
+    // Пустой стек — это не «назад по 2D-истории», а выход из
+    // подлокации вообще: дальше может открыться 3D-интерьер, и
+    // собирать его должна карта, а не этот компонент.
+    if (subLocationStack.length === 0) {
+      if (onExitSubLocation) {
+        onExitSubLocation();
+        return;
+      }
+      onClose();
+      return;
+    }
     stopInertia();
 
     const prev = subLocationStack[subLocationStack.length - 1];

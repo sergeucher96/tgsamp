@@ -8,6 +8,8 @@
  * MapView.jsx использует handleLocationAction() для маршрутизации.
  */
 
+import { GANG_IDS } from '../../gangs/data/organizationsConfig';
+
 export type LocationCategory =
   | 'house'
   | 'bank'
@@ -30,6 +32,8 @@ export type LocationCategory =
   | 'farm'
   | 'oil_rig'
   | 'factory'
+  | 'gang'
+  | 'military'
   | 'default';
 
 export interface LocationAction {
@@ -71,11 +75,22 @@ export interface LocationCallbacks {
   alert?: (message: string) => unknown;
   setShowBusDepot?: (value: boolean) => unknown;
   setShowLspd?: (value: boolean) => unknown;
-  setShowMafia?: (value: boolean) => unknown;
+  setOpenGangId?: (value: string | null) => unknown;
   setShowHospital?: (value: boolean) => unknown;
   setShowCafeteria?: (value: boolean) => unknown;
   setCafeteriaBusinessId?: (id: LocationId) => unknown;
   setShowShowroom?: (value: boolean) => unknown;
+  setShowAutoService?: (value: boolean) => unknown;
+  /**
+   * Локация не попала ни в одну ветку. Нужен для хвостов, которые
+   * знает только сама карта: работа по локациям, например.
+   */
+  onUnrouted?: (loc: LocationActionTarget) => unknown;
+  /**
+   * Попытка ограбления военной базы. Проверки (членство в банде,
+   * время суток) карта делает сама — роутер только передаёт действие.
+   */
+  onStealMaterials?: (loc: LocationActionTarget) => unknown;
 }
 
 export const LOCATION_ACTIONS: LocationActionsMap = {
@@ -223,6 +238,23 @@ export const LOCATION_ACTIONS: LocationActionsMap = {
     { value: 'sublocation',   label: '📍 Часть локации' },
   ],
 
+  // --- Хабы уличных банд ---
+  // Отдельная категория нужна, чтобы в HotspotTool для хабов не
+  // предлагались действия из default вроде «использовать банкомат».
+  gang: [
+    { value: 'open_gang',      label: '🎖️ Открыть меню банды' },
+    { value: 'enter',         label: '🎖️ Войти в хаб (то же меню)' },
+  ],
+
+  // --- Военная база ---
+  // Ограбление — только ночью и только для своих, проверки живут
+  // в features/gangs/militaryBase.
+  military: [
+    { value: 'steal_materials', label: '📦 Воровать материалы' },
+    { value: 'enter',           label: '🚪 Войти на базу' },
+    { value: 'sublocation',     label: '📍 Часть локации' },
+  ],
+
   // --- Fallback для неизвестных типов ---
   default: [
     { value: 'enter',         label: '🚪 Войти в здание / интерьер' },
@@ -259,7 +291,30 @@ export function getLocationCategory(locId: string | undefined): LocationCategory
   if (locId.startsWith('farm')) return 'farm';
   if (locId.startsWith('oil_rig')) return 'oil_rig';
   if (locId.startsWith('factory')) return 'factory';
+  if (isGangLocationId(locId)) return 'gang';
+  if (locId.startsWith('military')) return 'military';
   return 'default';
+}
+
+/**
+ * Локация ли это уличной банды.
+ *
+ * Схема id хаба — <gang_id>_hideout (grove_hideout, ballas_hideout...),
+ * именно на неё завязано и определение категории, и маршрутизация
+ * в MapView. Голый gang_id тоже принимаем: в конфиге организаций
+ * локация хаба хранится как location_id без суффикса.
+ */
+export function isGangLocationId(locId: string | undefined): boolean {
+  if (!locId) return false;
+  const base = locId.replace(/_hideout$/, '');
+  return GANG_IDS.includes(base);
+}
+
+/** Банда по id локации. Пустая строка, если это не хаб. */
+export function gangIdFromLocationId(locId: string | undefined): string {
+  if (!locId) return '';
+  const base = locId.replace(/_hideout$/, '');
+  return GANG_IDS.includes(base) ? base : '';
 }
 
 // ═══════════════════════════════════════════════════
@@ -283,9 +338,19 @@ export function handleLocationAction(
   const loc = location;
 
   if (action === 'unload_garbage') return callbacks.onUnloadGarbage?.();
+  if (action === 'steal_materials') return callbacks.onStealMaterials?.(loc);
   if (action === 'atm' || action === 'open_atm') return callbacks.setShowATM?.(true);
   if (action === 'buy_business') return callbacks.setSelectedBusiness?.(loc.id);
   if (action === 'open_hotel') return callbacks.setSelectedHotel?.(loc.id);
+  // Автосалон открывается кнопкой в интерьере любой локации.
+  if (action === 'buy_vehicle') return callbacks.setShowShowroom?.(true);
+
+  // Меню банды: идёт и по 'enter', и по 'open_gang', но проверяем
+  // тип локации, а не само значение — тогда хотспот, нарисованный
+  // с другим действием, тоже откроет нужную панель.
+  if (isGangLocationId(String(loc.id))) {
+    return callbacks.setOpenGangId?.(gangIdFromLocationId(String(loc.id)) || null);
+  }
 
   if (action === 'enter' || action === 'default' || action === 'refuel') {
     return routeByType(loc, callbacks);
@@ -323,8 +388,14 @@ function routeByType(loc: LocationActionTarget, cb: LocationCallbacks): unknown 
   if (t === 'gym') return cb.alert?.('Спортзал — скоро открытие');
   if (id === 'bus_depot') return cb.setShowBusDepot?.(true);
   if (t === 'lspd') return cb.setShowLspd?.(true);
-  if (t === 'mafia') return cb.setShowMafia?.(true);
+  if (t === 'gang') {
+    const gangId = String(id).replace(/_hideout$/, '');
+    return cb.setOpenGangId?.(GANG_IDS.includes(gangId) ? gangId : null);
+  }
   if (t === 'hospital') return cb.setShowHospital?.(true);
   if (t === 'cafeteria') { cb.setShowCafeteria?.(true); return cb.setCafeteriaBusinessId?.(id); }
   if (t === 'showroom' || id === 'showroom_ls') return cb.setShowShowroom?.(true);
+  if (id === 'sto_1') return cb.setShowAutoService?.(true);
+  // Ни одна ветка не знает про эту локацию — отдаём карте.
+  return cb.onUnrouted?.(loc);
 }

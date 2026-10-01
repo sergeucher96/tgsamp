@@ -168,7 +168,7 @@ export const useBusStore = create<BusState>((set, get) => ({
     const pay = route.pay || 500; const total = pay + BONUS_PER_ROUTE;
     const ps = usePlayerStore.getState();
     ps.updateProfile({ money: Number(ps.player.money) + total });
-    if (ps.addSkillProgress) ps.addSkillProgress('bus', 1);
+    if (ps.applySkillProgress) ps.applySkillProgress('bus', 1);
     set({ routeRunning: false, awaitingRepeat: true, showRoutePopup: true, routeTimer: null, currentStopIndex: 0, totalStops: 0, currentStopName: '', nextStopName: '', sessionEarned: get().sessionEarned + total, sessionRoutesCompleted: get().sessionRoutesCompleted + 1, message: `Маршрут "${route.name}" завершён! +${pay}$ + ${BONUS_PER_ROUTE}$ бонус.` });
   },
 

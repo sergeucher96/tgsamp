@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { X, Star, Shield, Zap, Clock, HardDrive, Flame, Heart, Battery, Utensils, Wallet, PiggyBank } from 'lucide-react';
+import { X, Star, Shield, Zap, Clock, HardDrive, Flame, Heart, Battery, Utensils, Droplets, Wallet, PiggyBank } from 'lucide-react';
 import { useEquipmentStore, type EquipmentSlot } from '../../stores/useEquipmentStore';
 import { useInventoryStore, type InventoryItem } from '../../stores/useInventoryStore';
 import { usePlayerStore, type Profile, type Buff } from '../../stores/usePlayerStore';
 import { EQUIPMENT_SLOTS, CLOTHING_DATABASE, type ClothingItem } from '../character/data/clothingConfig';
 import { CHARACTER_STATS, CHARACTER_STATS_MAP, BUFF_STAT_KEYS, type CharacterStat } from '../character/data/characterStats';
+import { getEffectDef } from '../items/data/itemEffects';
 
 const BUFF_LABELS = CHARACTER_STATS.filter((s) => BUFF_STAT_KEYS.includes(s.key)).reduce((acc, stat) => {
   acc[`buff_${stat.key}`] = { name: stat.name, icon: stat.icon, color: stat.color };
@@ -111,6 +112,19 @@ export default function CharacterView({ onClose }: CharacterViewProps) {
               <div className={`h-full rounded-full transition-all ${getStatBg(player?.hunger || 0, 100)}`} style={{ width: `${player?.hunger || 0}%` }} />
             </div>
           </div>
+
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-3">
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2">
+                <Droplets size={14} className="text-sky-400" />
+                <span className="text-[10px] font-black uppercase text-slate-400">Жажда</span>
+              </div>
+              <span className={`text-sm font-black ${getStatColor(player?.thirst || 0, 100)}`}>{player?.thirst || 0}%</span>
+            </div>
+            <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+              <div className={`h-full rounded-full transition-all ${getStatBg(player?.thirst || 0, 100)}`} style={{ width: `${player?.thirst || 0}%` }} />
+            </div>
+          </div>
         </div>
       </div>
 
@@ -172,13 +186,18 @@ export default function CharacterView({ onClose }: CharacterViewProps) {
           </h3>
           <div className="grid grid-cols-2 gap-2">
             {activeBuffsList.map((buff: Buff) => {
-              const info = BUFF_LABELS[buff.type] || { name: buff.type, icon: '✨', color: 'text-white' };
+              const def = getEffectDef(buff.effect);
+              const legacy = BUFF_LABELS[buff.effect];
+              const info = legacy
+                ? { name: legacy.name, icon: legacy.icon, color: legacy.color }
+                : { name: buff.name || def.name, icon: def.icon, color: def.percent ? 'text-emerald-300' : 'text-orange-300' };
+              const isPercent = def.percent;
               const remaining = buff.expiresAt - now;
               return (
                 <div key={buff.id} className="bg-white/5 border border-white/10 rounded-2xl p-3 text-center">
                   <div className="text-xl mb-1">{info.icon}</div>
                   <div className={`text-xs font-black ${info.color}`}>{info.name}</div>
-                  <div className="text-[10px] text-slate-400">+{buff.amount}</div>
+                  <div className="text-[10px] text-slate-400">{isPercent ? `+${buff.amount}%` : `+${buff.amount}`}</div>
                   <div className="text-[10px] text-slate-500 mt-1">{formatTime(remaining)}</div>
                 </div>
               );

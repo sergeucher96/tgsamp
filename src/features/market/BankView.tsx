@@ -342,7 +342,7 @@ export default function BankView({ onClose }: BankViewProps) {
                               <div key={idx} className="bg-white/[0.03] border border-white/6 p-4 rounded-2xl">
                                 <div className="flex items-center justify-between mb-3">
                                   <div>
-                                    <div className="text-xs font-black">{house.name || `Дом #${house.id_name.replace('h_', '')}`}</div>
+                                    <div className="text-xs font-black">{house.name || `Дом #${(house.id_name || '').replace('h_', '')}`}</div>
                                     <div className="text-[9px] text-slate-400">{houseClass.name}</div>
                                   </div>
                                   <div className={`text-xs font-black ${isTaxPaid ? 'text-green-400' : 'text-red-400'}`}>

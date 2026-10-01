@@ -6,6 +6,7 @@ import { HOUSE_CLASSES, HouseClass } from '../features/houses/data/houseConfig';
 
 export interface House {
   id_name: string;
+  id?: string;
   owner_id: string | null;
   is_for_sale: boolean;
   class: HouseClass;

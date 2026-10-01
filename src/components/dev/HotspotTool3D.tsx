@@ -47,8 +47,29 @@ import {
   HelpCircle,
 } from 'lucide-react';
 import { LOCATIONS } from '../../game/locations/locations';
+import {
+  getInteriorMode,
+  hasScene3D,
+  setInteriorMode,
+  type InteriorMode,
+} from '../../game/locations/scene3d';
 import { LOCATION_ACTIONS, getActionsForCategory, getLocationCategory } from '../../features/businesses/data/locationActions';
 import { PROP_PRESET_OPTIONS, buildProceduralProp } from '../../game/rendering/proceduralProps';
+// Камера: опорный кадр и движение игрока. Типы и значения по
+// умолчанию живут в sceneCamera, общие с игрой: раньше редактор
+// объявлял свои структуры, а игра читала только position/target/fov,
+// из-за чего параллакс из редактора до игроков не доходил.
+import {
+  DEFAULT_CAMERA,
+  withCameraDefaults,
+  fitCameraForAspect,
+  isMobileAspect,
+  fitsFocusOnScreen,
+  REFERENCE_ASPECT,
+  PHONE_ASPECT,
+  type CameraConfig,
+  type ParallaxProfile,
+} from '../../game/locations/sceneCamera';
 
 // Иконки хотспотов
 export const HOTSPOT_ICONS = [
@@ -87,83 +108,47 @@ const COLOR_HEX_MAP = {
   red: 0xef4444,
 };
 
-// Пресеты моделей сцен
-const SCENE_MODEL_PRESETS = [
-  { id: 'myscene', name: '🏙️ Экстерьер (myscene.glb)', url: '/models/myscene.glb' },
-  { id: 'garage', name: '🅿️ 3D Гараж (garage.glb)', url: '/models/3dlocation/garage.glb' },
-  { id: 'procedural_grid', name: '🌐 Сетка полигона (Без модели)', url: 'procedural' },
-];
-
 const STORAGE_KEY = 'tgsamp_3d_hotspots_v1';
 const DEFAULT_MODEL_URL = '/models/myscene.glb';
 const CUSTOM_SCENE_MODEL_URL = 'custom_scene_model';
+
+/**
+ * Интерьер без модели сцены: видны только сетка и расставленные объекты.
+ *
+ * Отдельное значение вместо прежнего 'procedural'. Тот вариант не
+ * проходил normalizeModelUrl и молча превращался в модель по
+ * умолчанию — выбирали «без модели» и получали автосалон. К тому же
+ * 'procedural' ничего не говорил о том, что сцены действительно нет.
+ */
+const NO_SCENE_MODEL = 'none';
+
+// Пресеты моделей сцен
+const SCENE_MODEL_PRESETS = [
+  { id: 'myscene', name: '🏙️ Экстерьер (myscene.glb)', url: DEFAULT_MODEL_URL },
+  { id: 'none', name: '🌐 Без модели (только сетка и объекты)', url: NO_SCENE_MODEL },
+];
+
 const PRESET_MODEL_URLS = new Set(SCENE_MODEL_PRESETS.map((preset) => preset.url));
 
-// IndexedDB helpers for storing binary model buffers (localStorage can't handle ArrayBuffer)
-const DB_NAME = 'tgsamp_3d_models';
-const DB_STORE = 'buffers';
-const CUSTOM_OBJECT_PREFIX = 'obj_';
-const SCENE_MODEL_KEY = 'scene_model';
-
-function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
-    request.onupgradeneeded = () => {
-      request.result.createObjectStore(DB_STORE);
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function saveBufferToDB(key: string, buffer: ArrayBuffer) {
-  try {
-    const db = await openDB();
-    return new Promise<boolean>((resolve, reject) => {
-      const tx: IDBTransaction = db.transaction(DB_STORE, 'readwrite');
-      tx.objectStore(DB_STORE).put(buffer, key);
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => reject(tx.error);
-    });
-  } catch (e) {
-    console.error('[3D Buffer DB] Save error:', e);
-    return false;
-  }
-}
-
-async function loadBufferFromDB(key: string) {
-  try {
-    const db = await openDB();
-    return new Promise<ArrayBuffer | null>((resolve) => {
-      const tx: IDBTransaction = db.transaction(DB_STORE, 'readonly');
-      const req = tx.objectStore(DB_STORE).get(key);
-      req.onsuccess = () => resolve((req.result as ArrayBuffer) || null);
-      req.onerror = () => resolve(null);
-    });
-  } catch (e) {
-    console.error('[3D Buffer DB] Load error:', e);
-    return null;
-  }
-}
-
-async function deleteBufferFromDB(key: string) {
-  try {
-    const db = await openDB();
-    return new Promise<boolean>((resolve) => {
-      const tx: IDBTransaction = db.transaction(DB_STORE, 'readwrite');
-      tx.objectStore(DB_STORE).delete(key);
-      tx.oncomplete = () => resolve(true);
-    });
-  } catch {
-    return false;
-  }
-}
+// Бинарные модели сцен и объектов живут в IndexedDB — общий модуль
+// с игрой, иначе игра не найдёт модель, загруженную здесь.
+import {
+  saveBufferToDB,
+  loadBufferFromDB,
+  deleteBufferFromDB,
+  sceneModelKey,
+  CUSTOM_OBJECT_PREFIX,
+} from '../../game/locations/sceneModels';
 
 const normalizeModelUrl = (url) => {
   if (typeof url !== 'string') return null;
 
   const trimmed = url.trim();
   if (!trimmed) return null;
+
+  // «Без модели» — полноценный выбор, его нельзя отбрасывать
+  // вместе с мусором, иначе интерьер получит модель по умолчанию.
+  if (trimmed === NO_SCENE_MODEL) return NO_SCENE_MODEL;
 
   const lowerUrl = trimmed.toLowerCase();
   if (
@@ -210,7 +195,7 @@ export default function HotspotTool3D({ onClose }: HotspotTool3DProps) {
   // Выбор локации и подлокации
   const [selectedLocId, setSelectedLocId] = useState('showroom_ls');
   const [editingSubLocation, setEditingSubLocation] = useState(null); // { parentId, subName }
-  const [activeModelUrl, setActiveModelUrl] = useState('/models/myscene.glb');
+  const [activeModelUrl, setActiveModelUrl] = useState(NO_SCENE_MODEL);
   const [customSceneModel, setCustomSceneModel] = useState(null);
 
   // Режим редактора: 'editor' | 'player'
@@ -228,40 +213,134 @@ export default function HotspotTool3D({ onClose }: HotspotTool3DProps) {
   const [objects, setObjects] = useState([]);
   const [selectedObjectId, setSelectedObjectId] = useState(null);
 
-  // Типы для конфигурации камеры
-interface ParallaxConfig {
-  enabled: boolean;
-  yawDegrees: number;
-  pitchDegrees: number;
-  positionShift: number;
-  smoothness: number;
-  maxAngleYaw: number;
-  maxAnglePitch: number;
+/**
+ * Поставить камеру в опорный кадр и повернуть по указателю.
+ *
+ * Считает ровно то же, что и SceneViewer в игре: та же подгонка под
+ * соотношение сторон, тот же отъезд на узких экранах и тот же
+ * профиль движения. Общая формула — единственный способ увидеть в
+ * редакторе настоящую картинку игрока.
+ *
+ * `aspect` — соотношение сторон устройства, по которому считается
+ * кадр. `viewportAspect` — реальное соотношение сторон области
+ * отрисовки; в двойном превью они различаются, потому что телефон
+ * показан в широкой половине окна.
+ */
+function applyPreviewFrame(
+  camera: any,
+  config: CameraConfig,
+  aspect: number,
+  px: number,
+  py: number,
+  viewportAspect = aspect
+) {
+  const fitted = fitCameraForAspect(config, aspect);
+  const profile = isMobileAspect(aspect) ? config.motion.mobile : config.motion.desktop;
+
+  const target = config.target;
+  const base = config.position;
+  const basePos = new THREE.Vector3(
+    target[0] + (base[0] - target[0]) * fitted.distanceScale,
+    target[1] + (base[1] - target[1]) * fitted.distanceScale,
+    target[2] + (base[2] - target[2]) * fitted.distanceScale
+  );
+
+  if (camera.fov !== fitted.fov) {
+    camera.fov = fitted.fov;
+    camera.updateProjectionMatrix();
+  }
+  if (camera.aspect !== viewportAspect) {
+    camera.aspect = viewportAspect;
+    camera.updateProjectionMatrix();
+  }
+
+  const look = new THREE.Object3D();
+  look.position.copy(basePos);
+  look.up.set(0, 1, 0);
+  look.lookAt(target[0], target[1], target[2]);
+
+  if (!profile.enabled) {
+    camera.position.copy(basePos);
+    camera.quaternion.copy(look.quaternion);
+    return;
+  }
+
+  const yaw = ((profile.yawDegrees * Math.PI) / 180) * -px;
+  const pitch = ((profile.pitchDegrees * Math.PI) / 180) * py;
+  const roll = -px * 0.015;
+
+  const euler = new THREE.Euler(pitch, yaw, roll, 'YXZ');
+  const delta = new THREE.Quaternion().setFromEuler(euler);
+  const targetQuat = look.quaternion.clone().multiply(delta);
+
+  const right = new THREE.Vector3(1, 0, 0).applyQuaternion(look.quaternion);
+  const up = new THREE.Vector3(0, 1, 0).applyQuaternion(look.quaternion);
+  const desired = basePos
+    .clone()
+    .addScaledVector(right, px * profile.positionShift)
+    .addScaledVector(up, py * profile.positionShift * 0.5);
+
+  const smooth = Math.max(0.01, Math.min(1, profile.smoothness));
+  camera.position.lerp(desired, smooth);
+  camera.quaternion.slerp(targetQuat, smooth);
 }
 
-interface CameraConfig {
-  position: [number, number, number];
-  target: [number, number, number];
-  fov: number;
-  parallax: ParallaxConfig;
+/**
+ * Строка проверки: помещается ли обязательный круг в кадр на этом
+ * экране. Показываем это автору сразу, иначе неудачный кадр
+ * обнаружится только у игроков.
+ */
+function FocusCheckRow({
+  aspect,
+  label,
+  config,
+}: {
+  aspect: number;
+  label: string;
+  config: CameraConfig;
+}) {
+  const fits = fitsFocusOnScreen(config, aspect);
+  const fitted = fitCameraForAspect(config, aspect);
+  return (
+    <div
+      className={`flex items-center justify-between text-[10px] px-2 py-1.5 rounded-lg border ${
+        fits
+          ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+          : 'bg-amber-500/10 border-amber-500/40 text-amber-300'
+      }`}
+    >
+      <span className="font-bold">{label}</span>
+      <span className="font-mono">
+        {fits
+          ? `помещается · FOV ${Math.round(fitted.fov)}°${fitted.distanceScale > 1 ? ` · отход ×${fitted.distanceScale.toFixed(2)}` : ''}`
+          : 'не помещается — уменьшите радиус или отъедьте камеру'}
+      </span>
+    </div>
+  );
 }
 
 // Камера и настройки
-  const [cameraConfig, setCameraConfig] = useState<CameraConfig>({
-    position: [15, 10, 15],
-    target: [0, 2, 0],
-    fov: 48,
-    parallax: {
-      enabled: true,
-      yawDegrees: 10,
-      pitchDegrees: 5,
-      positionShift: 0.05,
-      smoothness: 0.08,
-      maxAngleYaw: 10,
-      maxAnglePitch: 5,
-    },
-  });
+  const [cameraConfig, setCameraConfig] = useState<CameraConfig>(DEFAULT_CAMERA);
+  // Какой из двух профилей движения правится сейчас. В игре выбор
+  // профиля делается по соотношению сторон экрана автоматически.
+  const [editingDevice, setEditingDevice] = useState<'desktop' | 'mobile'>('desktop');
+
+  const editingProfile: ParallaxProfile = cameraConfig.motion[editingDevice];
+
+  const updateProfile = (patch: Partial<ParallaxProfile>) => {
+    setCameraConfig((prev) => ({
+      ...prev,
+      motion: {
+        ...prev.motion,
+        [editingDevice]: { ...prev.motion[editingDevice], ...patch },
+      },
+    }));
+  };
   const [showGrid, setShowGrid] = useState(true);
+  const [showFocusCircle, setShowFocusCircle] = useState(true);
+  const [comparePreview, setComparePreview] = useState(false);
+  const comparePreviewRef = useRef(false);
+  comparePreviewRef.current = comparePreview;
   const [showCameraView, setShowCameraView] = useState(false);
   const [liveAngleOffset, setLiveAngleOffset] = useState({ yaw: 0, pitch: 0 });
 
@@ -300,6 +379,12 @@ interface CameraConfig {
   const cameraConfigRef = useRef(cameraConfig);
   const isGizmoDraggingRef = useRef(false);
   const gridRef = useRef(null);
+  const focusGroupRef = useRef(null);
+  const phoneCameraRef = useRef(null);
+  // Ссылки на объекты сцены для цикла кадра: поиск по группе
+  // перебором давал квадрат на каждом кадре анимации.
+  const hotspotObjectMapRef = useRef(new Map());
+  const diamondSpinListRef = useRef([]);
   const cameraHelperRef = useRef(null);
   const dummyCameraRef = useRef(null);
 
@@ -327,6 +412,21 @@ interface CameraConfig {
   const currentCategory = useMemo(() => {
     return getLocationCategory(selectedLocId) || 'house';
   }, [selectedLocId]);
+
+  // Переключатель интерьера 2D/3D. Подлокация — самостоятельная
+  // локация со своим интерьером, поэтому переключатель привязан к
+  // эффективному ключу, а не к родителю: у туалета бара свой выбор.
+  const [interiorMode, setInteriorModeState] = useState<InteriorMode | 'auto'>('auto');
+
+  useEffect(() => {
+    setInteriorModeState(getInteriorMode(effectiveLocId));
+  }, [effectiveLocId]);
+
+  const applyInteriorMode = (next: InteriorMode | 'auto') => {
+    setInteriorModeState(next);
+    setInteriorMode(effectiveLocId, next);
+    showToast(next === 'auto' ? 'Авто' : next === '3d' ? '✅ Интерьер будет 3D' : '✅ Интерьер будет 2D');
+  };
 
   // Доступные действия
   const availableActions = useMemo(() => {
@@ -381,26 +481,24 @@ interface CameraConfig {
           }
           setObjects(loadedObjects);
           
-          if (locData.camera) setCameraConfig(locData.camera);
+          if (locData.camera) setCameraConfig(withCameraDefaults(locData.camera));
           const savedModelUrl = normalizeModelUrl(locData.modelUrl);
-          setActiveModelUrl(savedModelUrl || DEFAULT_MODEL_URL);
+          // Нет сохранённой модели — значит автор её не выбирал. Раньше
+          // здесь подставлялся экстерьер по умолчанию, и каждая
+          // локация, которую открыли в редакторе, получала чужую сцену.
+          setActiveModelUrl(savedModelUrl || NO_SCENE_MODEL);
           console.log('[3D Hotspot] Загружены 3D данные для', locKey);
           
-          // Проверяем custom scene model
+          // Кастомная модель сцены. Ключ включает локацию: раньше был
+          // один общий буфер, и шахта подхватывала модель автосалона.
           if (locData.customModelName) {
-            const sceneBuffer = await loadBufferFromDB(SCENE_MODEL_KEY + '_' + locKey);
+            const sceneBuffer = await loadBufferFromDB(sceneModelKey(locKey));
             if (sceneBuffer) {
               console.log('[3D Hotspot] Восстановлен buffer модели сцены:', locData.customModelName);
               setCustomSceneModel({ name: locData.customModelName, buffer: sceneBuffer });
               setActiveModelUrl(CUSTOM_SCENE_MODEL_URL);
-            }
-          } else {
-            // Also try loading from global SCENE_MODEL_KEY
-            const sceneBuffer = await loadBufferFromDB(SCENE_MODEL_KEY);
-            if (sceneBuffer) {
-              console.log('[3D Hotspot] Восстановлен глобальный buffer модели сцены:', locData.customModelName);
-              setCustomSceneModel({ name: locData.customModelName || 'custom_scene', buffer: sceneBuffer });
-              setActiveModelUrl(CUSTOM_SCENE_MODEL_URL);
+            } else {
+              console.warn('[3D Hotspot] Модель', locData.customModelName, 'потеряна: буфера нет в IndexedDB');
             }
           }
           return true;
@@ -410,42 +508,11 @@ interface CameraConfig {
       console.error('Error loading 3D hotspots:', e);
     }
 
-    // 2. Пытаемся загрузить данные из 2D формата (hotspot_tool_${locKey})
-    // Это обеспечивает совместимость: если пользователь редактировал 2D,
-    // а потом перешёл в 3D, мы подхватим хотспоты
-    try {
-      const saved2d = localStorage.getItem(`hotspot_tool_${locKey}`);
-      if (saved2d) {
-        const parsed = JSON.parse(saved2d);
-        if (Array.isArray(parsed?.hotspots) && parsed.hotspots.length > 0) {
-          console.log('[3D Hotspot] Найдены 2D хотспоты для', locKey, '- конвертация в 3D...');
-          // Конвертируем 2D хотспоты в 3D формат
-          const converted = parsed.hotspots.map((hs) => ({
-            id: hs.id,
-            title: hs.label || 'Зона',
-            action: hs.action || 'enter',
-            icon: 'door',
-            color: 'emerald',
-            position: [
-              Number(((hs.x / 100) * 30 - 15).toFixed(2)),
-              Number((hs.y ?? 1).toFixed(2)),
-              Number(((hs.y / 100) * 30 - 15).toFixed(2)),
-            ],
-            size: [1.2, 1.4, 1.2],
-          }));
-          setHotspots(converted);
-          if (parsed.default) {
-            const modelUrl = normalizeModelUrl(parsed.default);
-            if (modelUrl) setActiveModelUrl(modelUrl);
-          }
-          console.log('[3D Hotspot] Конвертировано хотспотов:', converted.length);
-          return true;
-        }
-      }
-    } catch (e) {
-      console.error('Error loading 2D hotspots for 3D fallback:', e);
-    }
-
+    // 2D-интерьер сюда намеренно не подтягивается. Раньше зоны из
+    // 2D молча конвертировались в 3D: координаты в процентах
+    // превращались в позиции по формуле, и результат выглядел как
+    // расставленные автором зоны, хотя их никто не ставил. Теперь
+    // интерьер либо 3D, либо 2D — по переключателю.
     return false;
   }, []);
 
@@ -454,9 +521,12 @@ interface CameraConfig {
       const raw = localStorage.getItem(STORAGE_KEY);
       const allData = raw ? JSON.parse(raw) : {};
 
-      const savedModelUrl = normalizeModelUrl(activeModelUrl) || DEFAULT_MODEL_URL;
+      const savedModelUrl = normalizeModelUrl(activeModelUrl) || NO_SCENE_MODEL;
 
       allData[effectiveLocId] = {
+        // Запись пересобирается целиком, поэтому interiorMode из неё надо
+        // перенести: иначе автосохранение сбрасывало бы переключатель 2D/3D.
+        ...(allData[effectiveLocId] || {}),
         modelUrl: savedModelUrl,
         customModelName: activeModelUrl === CUSTOM_SCENE_MODEL_URL ? customSceneModel?.name : undefined,
         camera: cameraConfig,
@@ -467,47 +537,36 @@ interface CameraConfig {
 
       localStorage.setItem(STORAGE_KEY, JSON.stringify(allData));
 
-      // Сохраняем в тот же ключ формата, что и 2D редактор, чтобы данные
-      // были доступны через savedHotspots.json workflow и locationStyles.js
-      const payload = {
-        default: savedModelUrl,
-        bgMusic: '',
-        musicVolume: 0.5,
-        hotspots: hotspots.map((hs) => ({
-          id: hs.id,
-          type: 'rect',
-          label: hs.label,
-          action: hs.action,
-          ...(hs.subLocation ? { subLocation: hs.subLocation } : {}),
-          // Для 3D хотспотов координаты — абсолютные позиции в сцене
-          x: Number((hs.position?.[0] ?? 0).toFixed(3)),
-          y: Number((hs.position?.[1] ?? 0).toFixed(3)),
-          w: 1,
-          h: 1,
-        })),
+      // Сцену сохраняем на диск отдельным файлом. Раньше она писалась
+      // в hotspot_tool_* и savedHotspots.json — общие с 2D-редактором
+      // ключи, где лежат картинка и хотспоты в процентах. Запись
+      // сцены затирала 2D-интерьер, а наоборот — 2D затирал сцену.
+      const scenePayload = {
+        modelUrl: savedModelUrl,
+        ...(activeModelUrl === CUSTOM_SCENE_MODEL_URL && customSceneModel?.name
+          ? { customModelName: customSceneModel.name }
+          : {}),
+        camera: cameraConfig,
+        hotspots,
+        objects,
         updatedAt: new Date().toISOString(),
       };
 
-      // Сохраняем в localStorage под ключомARENT локации (как 2D редактор)
-      const parentKey = editingSubLocation ? editingSubLocation.parentId : selectedLocId;
-      safeLocalStorageSet(`hotspot_tool_${parentKey}`, JSON.stringify(payload));
-
-      // Пытаемся сохранить на диск через API (работает локально в dev)
       try {
-        const res = await fetch('/api/save-hotspots', {
+        const res = await fetch('/api/save-3d-scenes', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: parentKey, payload }),
+          body: JSON.stringify({ id: effectiveLocId, payload: scenePayload }),
         });
         if (res.ok) {
-          showToast('💾 3D данные сохранены на диск в savedHotspots.json!');
+          showToast('💾 Сцена сохранена на диск в savedScenes3D.json!');
           return true;
         }
       } catch (e) {
         // API недоступен (например, на проде) — сохраняем только в localStorage
       }
 
-      showToast('✅ 3D данные сцены сохранены в LocalStorage!');
+      showToast('✅ Сцена сохранена в браузере (localStorage)');
       return true;
     } catch (e) {
       console.error(e);
@@ -526,16 +585,12 @@ interface CameraConfig {
         setObjects([]);
         setSelectedHotspotId(null);
         setSelectedObjectId(null);
-        
-        // Try to load custom scene model from IndexedDB
-        const sceneBuffer = await loadBufferFromDB(SCENE_MODEL_KEY);
-        if (sceneBuffer) {
-          const raw = localStorage.getItem(STORAGE_KEY);
-          const allData = raw ? JSON.parse(raw) : {};
-          const savedName = allData[effectiveLocId]?.customModelName || 'custom_scene';
-          setCustomSceneModel({ name: savedName, buffer: sceneBuffer });
-          setActiveModelUrl(CUSTOM_SCENE_MODEL_URL);
-        }
+        // Новой локации показываем модель по умолчанию. Подставлять
+        // тут чужой буфер нельзя: локация без своих данных получила
+        // бы сцену, нарисованную для другой, и правки сохранялись бы
+        // уже поверх неё.
+        setCustomSceneModel(null);
+        setActiveModelUrl(NO_SCENE_MODEL);
       }
     })();
   }, [effectiveLocId, loadLocationData]);
@@ -552,16 +607,17 @@ interface CameraConfig {
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
         const allData = raw ? JSON.parse(raw) : {};
-        const savedModelUrl = normalizeModelUrl(activeModelUrl) || DEFAULT_MODEL_URL;
-        allData[effectiveLocId] = {
-          modelUrl: savedModelUrl,
-          customModelName: activeModelUrl === CUSTOM_SCENE_MODEL_URL ? customSceneModel?.name : undefined,
-          camera: cameraConfig,
-          hotspots,
-          objects,
-          updatedAt: new Date().toISOString(),
-        };
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(allData));
+        const savedModelUrl = normalizeModelUrl(activeModelUrl) || NO_SCENE_MODEL;
+      allData[effectiveLocId] = {
+        ...(allData[effectiveLocId] || {}),
+        modelUrl: savedModelUrl,
+        customModelName: activeModelUrl === CUSTOM_SCENE_MODEL_URL ? customSceneModel?.name : undefined,
+        camera: cameraConfig,
+        hotspots,
+        objects,
+        updatedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(allData));
       } catch (e) {
         console.error('[3D Hotspot] Autosave error:', e);
       }
@@ -594,6 +650,11 @@ interface CameraConfig {
     const camera = new THREE.PerspectiveCamera(cameraConfig.fov || 48, width / height, 0.1, 800);
     camera.position.set(cameraConfig.position[0], cameraConfig.position[1], cameraConfig.position[2]);
     cameraRef.current = camera;
+
+    // Вторая камера нужна только для двойного превью: показывает
+    // ту же сцену с узким экраном, в соседнем вьюпорте.
+    const phoneCamera = new THREE.PerspectiveCamera(cameraConfig.fov || 48, PHONE_ASPECT, 0.1, 800);
+    phoneCameraRef.current = phoneCamera;
 
     // Камера joueur (для visualizer области видимости)
     const dummyCam = new THREE.PerspectiveCamera(
@@ -655,6 +716,34 @@ interface CameraConfig {
     grid.visible = mode === 'editor';
     scene.add(grid);
     gridRef.current = grid;
+
+    // Круг обязательной видимости вокруг цели: что игрок обязан
+    // увидеть сразу, не двигая камеру. Раньше про этот радиус
+    // сообщал только текст в панели, а в самой сцене не было видно,
+    // вписывается ли важный объект.
+    const focusGroup = new THREE.Group();
+    const focusFill = new THREE.Mesh(
+      new THREE.CircleGeometry(1, 64),
+      new THREE.MeshBasicMaterial({
+        color: 0x10b981,
+        transparent: true,
+        opacity: 0.12,
+        side: THREE.DoubleSide,
+      })
+    );
+    focusFill.rotation.x = -Math.PI / 2;
+    const focusRing = new THREE.LineLoop(
+      new THREE.BufferGeometry().setFromPoints(
+        new THREE.EllipseCurve(0, 0, 1, 1, 0, Math.PI * 2, false, 0).getPoints(64).map((p) =>
+          new THREE.Vector3(p.x, 0, p.y)
+        )
+      ),
+      new THREE.LineBasicMaterial({ color: 0x34d399, transparent: true, opacity: 0.85 })
+    );
+    focusGroup.add(focusFill, focusRing);
+    focusGroup.visible = mode === 'editor';
+    scene.add(focusGroup);
+    focusGroupRef.current = focusGroup;
 
     // OrbitControls
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -761,17 +850,8 @@ interface CameraConfig {
       setLiveTransformInfo(null);
     });
 
-    // Векторы для расчета параллакса и ориентации камеры
-    const parallaxCam = new THREE.PerspectiveCamera();
-    const baseCamPos = new THREE.Vector3();
-    const baseTargetPos = new THREE.Vector3();
-    const baseQuat = new THREE.Quaternion();
-    const targetQuat = new THREE.Quaternion();
-    const deltaQuat = new THREE.Quaternion();
-    const euler = new THREE.Euler();
-    const rightVec = new THREE.Vector3();
-    const upVec = new THREE.Vector3();
-    const desiredPosVec = new THREE.Vector3();
+    // Расчёт кадра предпросмотра вынесен в applyPreviewFrame, ему
+    // нужны собственные векторы на каждый вызов.
 
     // Анимационный цикл
     let animId;
@@ -781,73 +861,41 @@ interface CameraConfig {
       animId = requestAnimationFrame(animate);
 
       if (!cameraRef.current || !rendererRef.current || !sceneRef.current) return;
+      // Скрытая вкладка: сцену никто не видит, а рендер идёт.
+      if (document.hidden) return;
 
       const currentMode = modeRef.current;
       const currentCameraConfig = cameraConfigRef.current;
 
       if (currentMode === 'player') {
-        if (controlsRef.current) {
-          controlsRef.current.enabled = false;
-        }
-        const pConfig: ParallaxConfig = currentCameraConfig.parallax || {
-          enabled: true,
-          yawDegrees: 10,
-          pitchDegrees: 5,
-          positionShift: 0.05,
-          smoothness: 0.08,
-          maxAngleYaw: 10,
-          maxAnglePitch: 5,
-        };
-        const basePos = currentCameraConfig.position || [15, 10, 15];
-        const baseTarget = currentCameraConfig.target || [0, 2, 0];
+        if (controlsRef.current) controlsRef.current.enabled = false;
+        if (!comparePreviewRef.current) {
+          // Предпросмотр считается ровно так же, как в игре: та же
+          // подгонка под соотношение сторон и тот же профиль движения.
+          // Раньше здесь крутились собственные ручки редактора, и
+          // предпросмотр показывал не то, что увидит игрок.
+          const aspect = containerRef.current
+            ? containerRef.current.clientWidth / containerRef.current.clientHeight
+            : 16 / 9;
 
-        baseCamPos.set(basePos[0], basePos[1], basePos[2]);
-        baseTargetPos.set(baseTarget[0], baseTarget[1], baseTarget[2]);
-
-        parallaxCam.position.copy(baseCamPos);
-        parallaxCam.up.set(0, 1, 0);
-        parallaxCam.lookAt(baseTargetPos);
-        baseQuat.copy(parallaxCam.quaternion);
-
-        if (pConfig.enabled !== false) {
-          const yawDeg = pConfig.yawDegrees ?? pConfig.maxAngleYaw ?? 10;
-          const pitchDeg = pConfig.pitchDegrees ?? pConfig.maxAnglePitch ?? 5;
-          const yawLimitRad = (yawDeg * Math.PI) / 180;
-          const pitchLimitRad = (pitchDeg * Math.PI) / 180;
-
-          const currentYaw = -pointerRef.current.x * yawLimitRad;
-          const currentPitch = pointerRef.current.y * pitchLimitRad;
-          const currentRoll = -pointerRef.current.x * 0.015;
-
-          euler.set(currentPitch, currentYaw, currentRoll, 'YXZ');
-          deltaQuat.setFromEuler(euler);
-          targetQuat.copy(baseQuat).multiply(deltaQuat);
-
-          const posShift = pConfig.positionShift ?? 0.05;
-          rightVec.set(1, 0, 0).applyQuaternion(baseQuat);
-          upVec.set(0, 1, 0).applyQuaternion(baseQuat);
-
-          desiredPosVec.copy(baseCamPos)
-            .addScaledVector(rightVec, pointerRef.current.x * posShift)
-            .addScaledVector(upVec, pointerRef.current.y * posShift * 0.5);
-
-          const smooth = Math.max(0.01, Math.min(1, pConfig.smoothness ?? 0.08));
-          cameraRef.current.position.lerp(desiredPosVec, smooth);
-          cameraRef.current.quaternion.slerp(targetQuat, smooth);
-        } else {
-          cameraRef.current.position.copy(baseCamPos);
-          cameraRef.current.quaternion.copy(baseQuat);
+          applyPreviewFrame(
+            cameraRef.current,
+            currentCameraConfig,
+            aspect,
+            pointerRef.current.x,
+            pointerRef.current.y
+          );
         }
       } else if (!isGizmoDraggingRef.current && controlsRef.current) {
-        controlsRef.current.enabled = true;
-        controlsRef.current.update();
+        controls.enabled = true;
+        controls.update();
       }
       if (hotspotsGroupRef.current) {
-        hotspotsGroupRef.current.children.forEach((wrapper) => {
-          const diamond = wrapper.getObjectByName('diamond_crystal');
-          if (diamond) {
-            diamond.rotation.y += 0.02;
-          }
+        // Кристаллы вращаем по сохранённым ссылкам: поиск по имени
+        // внутри цикла кадра обходил всё дерево хотспота 60 раз
+        // в секунду.
+        diamondSpinListRef.current.forEach((diamond) => {
+          diamond.rotation.y += 0.02;
         });
       }
 
@@ -857,7 +905,7 @@ interface CameraConfig {
         const h = containerRef.current.clientHeight;
 
         hotspotDomRefs.current.forEach((domEl, hsId) => {
-          const obj = hotspotsGroupRef.current.children.find((c) => c.userData?.hotspotId === hsId);
+          const obj = hotspotObjectMapRef.current.get(hsId);
           if (!obj) {
             domEl.style.display = 'none';
             return;
@@ -867,7 +915,7 @@ interface CameraConfig {
           tempVec.project(cameraRef.current);
 
           const isBehind = tempVec.z > 1;
-          if (isBehind) {
+          if (isBehind || comparePreviewRef.current) {
             domEl.style.display = 'none';
           } else {
             domEl.style.display = 'flex';
@@ -878,6 +926,40 @@ interface CameraConfig {
             domEl.style.transform = `translate(-50%, -100%) translate3d(${screenX}px, ${screenY}px, 0) scale(${scaleFactor})`;
           }
         });
+      }
+
+      if (currentMode === 'player' && comparePreviewRef.current && phoneCameraRef.current) {
+        // Двойное превью: слева кадр на ПК, справа на телефоне.
+        // Один и тот же кадр рисуется дважды с разными камерами,
+        // поэтому сравнение честное — обе половины считаются по
+        // той же формуле, что и настоящая игра.
+        const w = containerRef.current.clientWidth;
+        const h = containerRef.current.clientHeight;
+        const px = pointerRef.current.x;
+        const py = pointerRef.current.y;
+
+        const r = rendererRef.current;
+        const gap = 2;
+        const halfW = Math.floor((w - gap) / 2);
+        const paneAspect = halfW / h;
+        r.setScissorTest(true);
+
+        applyPreviewFrame(cameraRef.current, currentCameraConfig, REFERENCE_ASPECT, px, py, paneAspect);
+        applyPreviewFrame(phoneCameraRef.current, currentCameraConfig, PHONE_ASPECT, px, py, paneAspect);
+
+        // Левая половина — ПК.
+        r.setViewport(0, 0, halfW, h);
+        r.setScissor(0, 0, halfW, h);
+        r.render(sceneRef.current, cameraRef.current);
+
+        // Правая половина — телефон.
+        r.setViewport(halfW + gap, 0, halfW, h);
+        r.setScissor(halfW + gap, 0, halfW, h);
+        r.render(sceneRef.current, phoneCameraRef.current);
+
+        r.setScissorTest(false);
+        r.setViewport(0, 0, w, h);
+        return;
       }
 
       rendererRef.current.render(sceneRef.current, cameraRef.current);
@@ -958,15 +1040,19 @@ interface CameraConfig {
     }
 
     const isCustomModel = activeModelUrl === CUSTOM_SCENE_MODEL_URL;
-    const modelUrl = isCustomModel
-      ? CUSTOM_SCENE_MODEL_URL
-      : normalizeModelUrl(activeModelUrl) || DEFAULT_MODEL_URL;
+    const isNoModel = activeModelUrl === NO_SCENE_MODEL;
 
-    if (modelUrl === 'procedural' || !modelUrl) {
+    // Без модели сцены загружать нечего: остаются сетка и объекты.
+    if (isNoModel) {
+      showToast('🌐 Интерьер без модели сцены');
       return () => {
         cancelled = true;
       };
     }
+
+    const modelUrl = isCustomModel
+      ? CUSTOM_SCENE_MODEL_URL
+      : normalizeModelUrl(activeModelUrl) || NO_SCENE_MODEL;
 
     if (isCustomModel && !customSceneModel?.buffer) {
       return () => {
@@ -1078,6 +1164,10 @@ interface CameraConfig {
     while (group.children.length > 0) {
       group.remove(group.children[0]);
     }
+    // Ссылки для цикла кадра собираем заново вместе с группой,
+    // иначе они бы указывали на удалённые объекты.
+    diamondSpinListRef.current = [];
+    hotspotObjectMapRef.current.clear();
 
     hotspots.forEach((hs) => {
       const isSelected = hs.id === selectedHotspotId;
@@ -1141,6 +1231,10 @@ interface CameraConfig {
       diamond.name = 'diamond_crystal';
       diamond.userData = { hotspotId: hs.id };
       hsWrapper.add(diamond);
+      // Ссылки на объекты для цикла кадра: и кристалл для вращения,
+      // и обёртка для проекции бейджа.
+      diamondSpinListRef.current.push(diamond);
+      hotspotObjectMapRef.current.set(hs.id, hsWrapper);
 
       group.add(hsWrapper);
     });
@@ -1323,11 +1417,23 @@ interface CameraConfig {
     if (gridRef.current) {
       gridRef.current.visible = showGrid && mode === 'editor';
     }
+    // Круг фокуса — подсказка автора, игроку она не нужна.
+    if (focusGroupRef.current) {
+      focusGroupRef.current.visible = showFocusCircle && mode === 'editor';
+    }
     if (ghostMarkerRef.current && mode === 'player') {
       ghostMarkerRef.current.visible = false;
     }
     if (transformControlsRef.current && mode === 'player') {
       transformControlsRef.current.detach();
+    }
+
+    // Радиус и центр круга обязательной видимости идут из настроек
+    // камеры: круг всегда соответствует тому, что увидит игрок.
+    if (focusGroupRef.current) {
+      const [fx, fy, fz] = cameraConfig.target;
+      focusGroupRef.current.position.set(fx, fy - 0.02, fz);
+      focusGroupRef.current.scale.set(cameraConfig.focusRadius, 1, cameraConfig.focusRadius);
     }
 
     if (mode === 'player') {
@@ -1421,8 +1527,11 @@ interface CameraConfig {
       const clampedY = Math.max(-1, Math.min(1, normY));
       pointerRef.current = { x: clampedX, y: clampedY };
 
-      const yawLimit = cameraConfig.parallax?.yawDegrees ?? 10;
-      const pitchLimit = cameraConfig.parallax?.pitchDegrees ?? 5;
+      // Индикатор показывает профиль, который правится сейчас, иначе
+      // радар врал бы относительно выбранного устройства.
+      const profile = cameraConfig.motion[editingDevice];
+      const yawLimit = profile.yawDegrees;
+      const pitchLimit = profile.pitchDegrees;
       const now = Date.now();
       if (now - lastUpdate > 30) {
         lastUpdate = now;
@@ -1439,7 +1548,7 @@ interface CameraConfig {
       window.removeEventListener('mousemove', handlePointerMove);
       window.removeEventListener('touchmove', handlePointerMove);
     };
-  }, [mode, cameraConfig.parallax]);
+  }, [mode, cameraConfig.motion, editingDevice]);
 
   // =========================================================
   // 7. КЛИКИ ПО 3D ХОЛСТУ (ВЫДЕЛЕНИЕ, РАССТАНОВКА, ВЗАИМОДЕЙСТВИЕ)
@@ -1472,6 +1581,10 @@ interface CameraConfig {
   const handleCanvasClick = (e) => {
     if (!cameraRef.current || !canvasRef.current) return;
     if (isGizmoDragging) return;
+    // В режиме сравнения сцена нарисована дважды, и координаты клика
+    // не соответствуют ни одной из камер, поэтому выбор объектов
+    // временно недоступен.
+    if (comparePreview && mode === 'player') return;
     if (transformControlsRef.current && transformControlsRef.current.axis) return;
 
     // Проверка на смещение мыши (чтобы клик не срабатывал при вращении камеры)
@@ -1609,8 +1722,11 @@ interface CameraConfig {
   const handleExportJSON = () => {
     const exportPayload = {
       locationId: effectiveLocId,
-      modelUrl: normalizeModelUrl(activeModelUrl) || DEFAULT_MODEL_URL,
+      modelUrl: normalizeModelUrl(activeModelUrl) || NO_SCENE_MODEL,
       customModelName: activeModelUrl === CUSTOM_SCENE_MODEL_URL ? customSceneModel?.name : undefined,
+      // Переключатель 2D/3D без этого поля терялся при импорте, и
+      // интерьер молча возвращался в режим «Авто».
+      interiorMode,
       camera: cameraConfig,
       hotspots,
       objects: objects.map((o) => ({
@@ -1633,6 +1749,9 @@ interface CameraConfig {
   const handleCopyJSON = () => {
     const payload = {
       locationId: effectiveLocId,
+      modelUrl: normalizeModelUrl(activeModelUrl) || NO_SCENE_MODEL,
+      customModelName: activeModelUrl === CUSTOM_SCENE_MODEL_URL ? customSceneModel?.name : undefined,
+      interiorMode,
       camera: cameraConfig,
       hotspots,
       objects: objects.map((o) => ({ ...o, modelBuffer: undefined })),
@@ -1645,20 +1764,61 @@ interface CameraConfig {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       try {
         const parsed = JSON.parse(ev.target.result as string);
-        if (parsed.hotspots) setHotspots(parsed.hotspots);
-        if (parsed.objects) setObjects(parsed.objects);
-        if (parsed.camera) setCameraConfig(parsed.camera);
-        const savedModelUrl = normalizeModelUrl(parsed.modelUrl);
-        if (savedModelUrl) {
-          setActiveModelUrl(savedModelUrl);
+
+        // Файл может быть сделан для другой локации. Молча применять
+        // его здесь опасно: интерьер шахты переедет в автосалон, и
+        // это обнаружится только при входе в игру.
+        if (parsed.locationId && parsed.locationId !== effectiveLocId) {
+          const apply = window.confirm(
+            `Файл сделан для локации «${parsed.locationId}».\n` +
+            `Сейчас выбран интерьер «${effectiveLocId}».\n\n` +
+            'Загрузить сцену сюда?'
+          );
+          if (!apply) {
+            e.target.value = '';
+            return;
+          }
         }
-        showToast('📤 Данные успешно импортированы!');
+
+        if (Array.isArray(parsed.hotspots)) setHotspots(parsed.hotspots);
+        if (Array.isArray(parsed.objects)) setObjects(parsed.objects);
+        if (parsed.camera) setCameraConfig(withCameraDefaults(parsed.camera));
+
+        // Модель из файла сюда не попадает: байты в JSON не пишутся.
+        // Если в файле была своя модель, её нужно загрузить заново,
+        // иначе интерьер молча останется на модели по умолчанию.
+        if (parsed.customModelName) {
+          setCustomSceneModel(null);
+          setActiveModelUrl(normalizeModelUrl(parsed.modelUrl) || NO_SCENE_MODEL);
+        } else {
+          const savedModelUrl = normalizeModelUrl(parsed.modelUrl);
+          if (savedModelUrl) setActiveModelUrl(savedModelUrl);
+        }
+
+        // Переключатель восстанавливаем явно: без него интерьер
+        // вернулся бы в «Авто» и мог уехать в 2D.
+        if (parsed.interiorMode === '2d' || parsed.interiorMode === '3d' || parsed.interiorMode === 'auto') {
+          setInteriorModeState(parsed.interiorMode);
+          setInteriorMode(effectiveLocId, parsed.interiorMode);
+        }
+
+        const notes = [];
+        if (parsed.customModelName) {
+          notes.push(`загрузите модель «${parsed.customModelName}» заново`);
+        }
+        if (parsed.objects?.some((o) => o.modelType === 'custom_glb')) {
+          notes.push('объекты с загруженными моделями заменены заглушками');
+        }
+        showToast(
+          notes.length ? `📤 Импортировано, но ${notes.join('; ')}` : '📤 Данные успешно импортированы!'
+        );
       } catch (err) {
         showToast('⚠️ Ошибка чтения файла JSON!');
       }
+      e.target.value = '';
     };
     reader.readAsText(file);
   };
@@ -1685,9 +1845,15 @@ interface CameraConfig {
 
       setCustomSceneModel({ name: file.name, buffer });
       setActiveModelUrl(CUSTOM_SCENE_MODEL_URL);
-      // Save buffer to IndexedDB so it persists after page refresh
-      await saveBufferToDB(SCENE_MODEL_KEY, buffer);
-      showToast(`✅ Модель сцены "${file.name}" загружена!`);
+      // Буфер пишем сразу и по ключу локации: пока пользователь
+      // не нажмёт «Сохранить», перезагрузит страницу или уйдёт в игру,
+      // игра уже должна суметь найти эту модель.
+      const saved = await saveBufferToDB(sceneModelKey(effectiveLocId), buffer);
+      showToast(
+        saved
+          ? `✅ Модель сцены "${file.name}" загружена!`
+          : `⚠️ Модель "${file.name}" загружена, но не сохранена — IndexedDB недоступен`
+      );
       e.target.value = '';
     };
     reader.onerror = () => {
@@ -1746,6 +1912,32 @@ interface CameraConfig {
                 </option>
               ))}
             </select>
+
+            {/* Какой интерьер откроется в игре для этой локации */}
+            <div
+              className="flex items-center bg-slate-800 p-1 rounded-xl border border-slate-700"
+              title={`В игре этот интерьер откроется как: ${
+                hasScene3D(effectiveLocId) ? '3D-сцена' : '2D-картинка'
+              }. Сохраняется вместе со сценой.`}
+            >
+              {([
+                { value: '2d', label: '2D', icon: '🖼️' },
+                { value: '3d', label: '3D', icon: '🧊' },
+                { value: 'auto', label: 'Авто', icon: '✨' },
+              ] as const).map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => applyInteriorMode(opt.value)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
+                    interiorMode === opt.value
+                      ? 'bg-emerald-500 text-slate-950'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {opt.icon} {opt.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Хлебные крошки для подлокаций */}
@@ -2069,7 +2261,7 @@ interface CameraConfig {
                   <div
                     className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)] transition-transform duration-75"
                     style={{
-                      transform: `translate(${-(liveAngleOffset.yaw / (cameraConfig.parallax?.yawDegrees || 10)) * 12}px, ${-(liveAngleOffset.pitch / (cameraConfig.parallax?.pitchDegrees || 5)) * 12}px)`,
+                      transform: `translate(${-(liveAngleOffset.yaw / (editingProfile.yawDegrees || 10)) * 12}px, ${-(liveAngleOffset.pitch / (editingProfile.pitchDegrees || 5)) * 12}px)`,
                     }}
                   />
                 </div>
@@ -2078,13 +2270,13 @@ interface CameraConfig {
                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                     <span className="font-bold text-white text-[11px]">Наклон камеры (Tilt)</span>
                     <span className="bg-emerald-500/20 text-emerald-300 text-[10px] px-1.5 py-0.5 rounded font-mono font-bold">
-                      ±{cameraConfig.parallax?.yawDegrees ?? 10}° / ±{cameraConfig.parallax?.pitchDegrees ?? 5}°
+                      ±{editingProfile.yawDegrees}° / ±{editingProfile.pitchDegrees}°
                     </span>
                   </div>
                   <div className="flex items-center gap-2.5 text-[10px] font-mono text-emerald-400/90 mt-0.5">
                     <span>Yaw: <b className="text-white">{liveAngleOffset.yaw > 0 ? `+${liveAngleOffset.yaw}` : liveAngleOffset.yaw}°</b></span>
                     <span>Pitch: <b className="text-white">{liveAngleOffset.pitch > 0 ? `+${liveAngleOffset.pitch}` : liveAngleOffset.pitch}°</b></span>
-                    <span className="text-slate-400">LERP: {cameraConfig.parallax?.smoothness ?? 0.08}</span>
+                    <span className="text-slate-400">LERP: {editingProfile.smoothness}</span>
                   </div>
                 </div>
               </div>
@@ -2108,6 +2300,22 @@ interface CameraConfig {
                   : 'cursor-default'
               }`}
             />
+
+            {/* Разделитель двойного превью: слева кадр на ПК, справа
+                на телефоне. Подписи нужны, иначе половины неразличимы. */}
+            {mode === 'player' && comparePreview && (
+              <div className="absolute inset-0 z-20 pointer-events-none">
+                <div className="absolute top-0 bottom-0 left-1/2 w-px bg-emerald-500/50" />
+                <div className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-2">
+                  <span className="bg-slate-950/90 border border-emerald-500/40 text-emerald-300 text-[10px] font-mono font-bold px-2 py-0.5 rounded">
+                    ПК 16:9
+                  </span>
+                  <span className="bg-slate-950/90 border border-sky-500/40 text-sky-300 text-[10px] font-mono font-bold px-2 py-0.5 rounded">
+                    Телефон
+                  </span>
+                </div>
+              </div>
+            )}
 
             {/* 2D Слой HTML бейджей хотспотов, проецируемых из 3D мира */}
             <div className="absolute inset-0 pointer-events-none z-20 overflow-hidden">
@@ -2601,6 +2809,52 @@ interface CameraConfig {
                               ))}
                             </select>
                           </div>
+
+                          {/* Подлокация. У обычного хотспота это поле
+                              есть, а у объекта-хотспота раньше было
+                              недоступно: переход в подлокацию работал
+                              только для зон, хотя в игре проверяется
+                              одинаково для обоих. */}
+                          <div>
+                            <label className="text-[10px] text-slate-400 block mb-1">
+                              Переход в подлокацию (имя):
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="Пусто — без перехода"
+                              value={selectedObject.hotspotConfig?.subLocation || ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setObjects((prev) =>
+                                  prev.map((o) =>
+                                    o.id === selectedObject.id
+                                      ? {
+                                          ...o,
+                                          hotspotConfig: {
+                                            ...o.hotspotConfig,
+                                            subLocation: val,
+                                          },
+                                        }
+                                      : o
+                                  )
+                                );
+                              }}
+                              className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white text-xs outline-none focus:border-cyan-400"
+                            />
+                            {selectedObject.hotspotConfig?.subLocation && (
+                              <button
+                                onClick={() => {
+                                  setEditingSubLocation({
+                                    parentId: selectedLocId,
+                                    subName: selectedObject.hotspotConfig.subLocation,
+                                  });
+                                }}
+                                className="w-full mt-1.5 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded text-[11px] flex items-center justify-center gap-1"
+                              >
+                                <Sparkles size={12} /> Редактировать эту комнату
+                              </button>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -2708,7 +2962,7 @@ interface CameraConfig {
                     <button
                       onClick={() => {
                         setCustomSceneModel(null);
-                        setActiveModelUrl('/models/myscene.glb');
+                        setActiveModelUrl(NO_SCENE_MODEL);
                       }}
                       className="text-emerald-200 hover:text-white flex items-center gap-1 shrink-0"
                     >
@@ -2736,190 +2990,123 @@ interface CameraConfig {
                   </div>
                 </div>
 
-                {/* Ограничение поворота (Вид игрока) - со всеми настройками со скриншота */}
+                {/* Движение игрока. Два профиля: на телефоне наведения
+                    курсором нет, поэтому камеру приходится двигать
+                    сильнее, иначе часть интерьера просто не открыть. */}
                 <div className="p-3.5 bg-slate-950/60 border border-slate-800 rounded-xl space-y-3.5">
                   <div className="flex items-center gap-2 text-slate-200 font-bold text-xs">
                     <Sliders size={15} className="text-emerald-400" />
-                    <span>Ограничение поворота (Вид игрока)</span>
+                    <span>Движение камеры у игрока</span>
+                  </div>
+
+                  <div className="flex items-center bg-slate-800 p-1 rounded-xl border border-slate-700">
+                    {([
+                      { key: 'desktop', label: '🖥️ ПК', hint: 'Мышь, лёгкий параллакс' },
+                      { key: 'mobile', label: '📱 Телефон', hint: 'Без наведения, шире размах' },
+                    ] as const).map((t) => (
+                      <button
+                        key={t.key}
+                        onClick={() => setEditingDevice(t.key)}
+                        title={t.hint}
+                        className={`flex-1 px-2 py-1.5 rounded-lg text-[11px] font-bold transition ${
+                          editingDevice === t.key
+                            ? 'bg-emerald-500 text-slate-950'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
                   </div>
 
                   <label className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={cameraConfig.parallax?.enabled ?? true}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        setCameraConfig((prev) => ({
-                          ...prev,
-                          parallax: {
-                            ...(prev.parallax || {
-                              enabled: true,
-                              yawDegrees: 10,
-                              pitchDegrees: 5,
-                              positionShift: 0.05,
-                              smoothness: 0.08,
-                              maxAngleYaw: 10,
-                              maxAnglePitch: 5,
-                            }),
-                            enabled: checked,
-                          },
-                        }));
-                      }}
+                      checked={comparePreview}
+                      onChange={(e) => setComparePreview(e.target.checked)}
                       className="accent-emerald-500"
                     />
-                    <span>Включить микро-параллакс</span>
+                    <span>Сравнить ПК и телефон сразу</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editingProfile.enabled}
+                      onChange={(e) => updateProfile({ enabled: e.target.checked })}
+                      className="accent-emerald-500"
+                    />
+                    <span>Камера следует за указателем</span>
                   </label>
 
                   <div className="space-y-3">
-                    {/* Поворот влево/вправо (Yaw) */}
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[11px] text-slate-400">
-                        <span>Поворот влево/вправо (Yaw):</span>
-                        <span className="font-mono text-emerald-400 font-bold">
-                          ±{cameraConfig.parallax?.yawDegrees ?? 10}°
-                        </span>
+                    {[
+                      { key: 'yawDegrees', label: 'Поворот влево/вправо (Yaw)', min: 0, max: 35, step: 1, unit: '°' },
+                      { key: 'pitchDegrees', label: 'Поворот вверх/вниз (Pitch)', min: 0, max: 25, step: 1, unit: '°' },
+                      { key: 'positionShift', label: 'Смещение позиции', min: 0, max: 0.3, step: 0.01, unit: 'м' },
+                      { key: 'smoothness', label: 'Плавность слежения', min: 0.01, max: 0.3, step: 0.01, unit: '' },
+                      { key: 'zoomMin', label: 'Максимальное приближение', min: 0.3, max: 1, step: 0.05, unit: '×' },
+                      { key: 'zoomMax', label: 'Максимальное отдаление', min: 1, max: 2.5, step: 0.05, unit: '×' },
+                    ].map((row) => (
+                      <div key={row.key} className="space-y-1">
+                        <div className="flex justify-between text-[11px] text-slate-400">
+                          <span>{row.label}</span>
+                          <span className="font-mono text-emerald-400 font-bold">
+                            {editingProfile[row.key]}
+                            {row.unit}
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={row.min}
+                          max={row.max}
+                          step={row.step}
+                          value={editingProfile[row.key] as number}
+                          onChange={(e) => updateProfile({ [row.key]: parseFloat(e.target.value) })}
+                          className="w-full accent-emerald-500 cursor-pointer"
+                        />
                       </div>
-                      <input
-                        type="range"
-                        min="1"
-                        max="30"
-                        step="1"
-                        value={cameraConfig.parallax?.yawDegrees ?? 10}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value, 10);
-                          setCameraConfig((prev) => ({
-                            ...prev,
-                            parallax: {
-                              ...(prev.parallax || {
-                                enabled: true,
-                                yawDegrees: 10,
-                                pitchDegrees: 5,
-                                positionShift: 0.05,
-                                smoothness: 0.08,
-                                maxAngleYaw: 10,
-                                maxAnglePitch: 5,
-                              }),
-                              yawDegrees: val,
-                              maxAngleYaw: val,
-                            },
-                          }));
-                        }}
-                        className="w-full accent-emerald-500 cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Поворот вверх/вниз (Pitch) */}
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[11px] text-slate-400">
-                        <span>Поворот вверх/вниз (Pitch):</span>
-                        <span className="font-mono text-emerald-400 font-bold">
-                          ±{cameraConfig.parallax?.pitchDegrees ?? 5}°
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min="1"
-                        max="20"
-                        step="1"
-                        value={cameraConfig.parallax?.pitchDegrees ?? 5}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value, 10);
-                          setCameraConfig((prev) => ({
-                            ...prev,
-                            parallax: {
-                              ...(prev.parallax || {
-                                enabled: true,
-                                yawDegrees: 10,
-                                pitchDegrees: 5,
-                                positionShift: 0.05,
-                                smoothness: 0.08,
-                                maxAngleYaw: 10,
-                                maxAnglePitch: 5,
-                              }),
-                              pitchDegrees: val,
-                              maxAnglePitch: val,
-                            },
-                          }));
-                        }}
-                        className="w-full accent-emerald-500 cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Микро-смещение позиции */}
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[11px] text-slate-400">
-                        <span>Микро-смещение позиции:</span>
-                        <span className="font-mono text-emerald-400 font-bold">
-                          {((cameraConfig.parallax?.positionShift ?? 0.05)).toFixed(2)}м
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0.00"
-                        max="0.15"
-                        step="0.01"
-                        value={cameraConfig.parallax?.positionShift ?? 0.05}
-                        onChange={(e) => {
-                          const val = parseFloat(e.target.value);
-                          setCameraConfig((prev) => ({
-                            ...prev,
-                            parallax: {
-                              ...(prev.parallax || {
-                                enabled: true,
-                                yawDegrees: 10,
-                                pitchDegrees: 5,
-                                positionShift: 0.05,
-                                smoothness: 0.08,
-                                maxAngleYaw: 10,
-                                maxAnglePitch: 5,
-                              }),
-                              positionShift: val,
-                            },
-                          }));
-                        }}
-                        className="w-full accent-emerald-500 cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Плавность сглаживания (LERP) */}
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[11px] text-slate-400">
-                        <span>Плавность сглаживания (LERP):</span>
-                        <span className="font-mono text-emerald-400 font-bold">
-                          {cameraConfig.parallax?.smoothness ?? 0.08}
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0.01"
-                        max="0.20"
-                        step="0.01"
-                        value={cameraConfig.parallax?.smoothness ?? 0.08}
-                        onChange={(e) => {
-                          const val = parseFloat(e.target.value);
-                          setCameraConfig((prev) => ({
-                            ...prev,
-                            parallax: {
-                              ...(prev.parallax || {
-                                enabled: true,
-                                yawDegrees: 10,
-                                pitchDegrees: 5,
-                                positionShift: 0.05,
-                                smoothness: 0.08,
-                                maxAngleYaw: 10,
-                                maxAnglePitch: 5,
-                              }),
-                              smoothness: val,
-                            },
-                          }));
-                        }}
-                        className="w-full accent-emerald-500 cursor-pointer"
-                      />
-                    </div>
+                    ))}
                   </div>
 
+                  {/* Радиус обязательной видимости: что игрок обязан увидеть
+                      сразу, не двигая камеру. Проверяем на обоих экранах. */}
+                  <div className="pt-3 border-t border-slate-800 space-y-2">
+                    <div className="flex justify-between text-[11px] text-slate-400">
+                      <span>Обязательно видно сразу (радиус):</span>
+                      <span className="font-mono text-emerald-400 font-bold">{cameraConfig.focusRadius}м</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="1"
+                      max="25"
+                      step="0.5"
+                      value={cameraConfig.focusRadius}
+                      onChange={(e) =>
+                        setCameraConfig((prev) => ({ ...prev, focusRadius: parseFloat(e.target.value) }))
+                      }
+                      className="w-full accent-emerald-500 cursor-pointer"
+                    />
+                    <FocusCheckRow aspect={REFERENCE_ASPECT} label="ПК 16:9" config={cameraConfig} />
+                    <FocusCheckRow aspect={PHONE_ASPECT} label="Телефон 390×780" config={cameraConfig} />
+                    <button
+                      type="button"
+                      onClick={() => setShowFocusCircle((prev) => !prev)}
+                      className={`w-full py-1.5 rounded-lg border text-[10px] font-bold transition flex items-center justify-center gap-1.5 ${
+                        showFocusCircle
+                          ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                          : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <Crosshair size={12} />
+                      {showFocusCircle ? 'Скрыть круг в сцене' : 'Показать круг в сцене'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-3.5 bg-slate-950/60 border border-slate-800 rounded-xl space-y-3">
                   {/* Кнопки Сетка пола, Вид камеры и Рамка TG */}
-                  <div className="pt-3 border-t border-slate-800/80 space-y-2.5">
+                  <div className="pt-1 space-y-2.5">
                     <div className="flex items-center justify-between gap-2.5">
                       <button
                         type="button"

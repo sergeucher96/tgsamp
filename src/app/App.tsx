@@ -10,6 +10,8 @@ import { useSmsStore } from '../stores/useSmsStore';
 import { useLspdStore } from '../stores/useLspdStore';
 import { useTerritoryStore } from '../stores/useTerritoryStore';
 import { useWarStore } from '../stores/useWarStore';
+import { useTimeStore } from '../stores/useTimeStore';
+import TimeIndicator from '../components/ui/TimeIndicator';
 import { useItemCategoryStore } from '../stores/useItemCategoryStore';
 import { useTelegram } from '../services/telegram/useTelegram';
 
@@ -20,7 +22,9 @@ const HotspotTool3D = IS_DEV ? lazy(() => import('../components/dev/HotspotTool3
 const RoadEditor = IS_DEV ? lazy(() => import('../game/locations/RoadEditor')) : null;
 const BusinessProductsEditor = IS_DEV ? lazy(() => import('../features/businesses/BusinessProductsEditor')) : null;
 const CategoryEditor = IS_DEV ? lazy(() => import('../features/market/CategoryEditor')) : null;
+const GangRanksEditor = IS_DEV ? lazy(() => import('../features/gangs/GangRanksEditor')) : null;
 const ItemCatalog = IS_DEV ? lazy(() => import('../features/market/ItemCatalog')) : null;
+const RecipeEditorHub = IS_DEV ? lazy(() => import('../features/market/RecipeEditorHub')) : null;
 const LocationIconEditor = IS_DEV ? lazy(() => import('../game/locations/LocationIconEditor')) : null;
 
 // Views
@@ -33,8 +37,8 @@ import GarageView from '../features/vehicles/GarageView';
 import QuestView from '../features/market/QuestView';
 import PhoneView from '../features/phone/PhoneView';
 import CharacterView from '../features/character/CharacterView';
-import TerritoriesView from '../features/gangs/TerritoriesView';
 import WarsView from '../features/gangs/WarsView';
+import GangsView from '../features/gangs/GangsView';
 
 // Components
 import BankNotifications from '../components/ui/BankNotifications';
@@ -56,8 +60,8 @@ function App() {
   const { fetchDbHouses, dbHouses } = useHouseStore();
   const { fetchVehicles, myVehicles } = useVehicleStore();
   const { isTelegram, isDesktop, isFullscreen, toggleFullscreen } = useTelegram();
-  const { startDecay, stopDecay, startStabilization, stopStabilization } = useTerritoryStore();
-  const { completeExpiredWars, fetchWars } = useWarStore();
+  const { startDecay, stopDecay, startStabilization, stopStabilization, fetchTerritories } = useTerritoryStore();
+  const { completeExpiredWars, fetchWars, startTicker: startWarTicker, stopTicker: stopWarTicker } = useWarStore();
   
   const [showQuests, setShowQuests] = useState(false);
   const [showCharacter, setShowCharacter] = useState(false);
@@ -66,13 +70,15 @@ function App() {
   const [showRoadEditor, setShowRoadEditor] = useState(false);
   const [showBusinessProducts, setShowBusinessProducts] = useState(false);
   const [showCategoryEditor, setShowCategoryEditor] = useState(false);
+  const [showGangRanksEditor, setShowGangRanksEditor] = useState(false);
   const [showAllItems, setShowAllItems] = useState(false);
+  const [showRecipeEditor, setShowRecipeEditor] = useState(false);
   const [showLocationIconEditor, setShowLocationIconEditor] = useState(false);
   const [showVehicleInfo, setShowVehicleInfo] = useState(false);
   const [showMyProperty, setShowMyProperty] = useState(false);
   const [showMyVehicles, setShowMyVehicles] = useState(false);
-  const [showTerritories, setShowTerritories] = useState(false);
   const [showWars, setShowWars] = useState(false);
+  const [showGangs, setShowGangs] = useState(false);
   const [showCarViewer, setShowCarViewer] = useState(false);
   const [showSceneViewer, setShowSceneViewer] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
@@ -106,19 +112,41 @@ function App() {
     });
     startDecay(() => {});
     startStabilization();
+    // Зоны нужны сразу: переключатель на карте показывает контуры,
+    // а WarMapLayer ставит по ним значки войн. Раньше их грузил
+    // TerritoriesView, который убрали вместе с экраном карты.
+    fetchTerritories();
     return () => {
       unsubscribe();
       stopDecay();
       stopStabilization();
     };
-  }, [startDecay, stopDecay, startStabilization, stopStabilization]);
+  }, [startDecay, stopDecay, startStabilization, stopStabilization, fetchTerritories]);
 
   useEffect(() => {
-    const interval = setInterval(async () => {
+    // Игровые часы: сверка с временем базы и тик. Запускаем сразу,
+    // не дожидаясь входа, чтобы затемнение по суточкам не мигало
+    // ночью, пока идёт авторизация.
+    const { start, stop } = useTimeStore.getState();
+    start();
+    return () => stop();
+  }, []);
+
+  useEffect(() => {
+    // Войны считаются быстрее, чем раз в минуту: очки зависят
+    // от времени участия, и счёт должен обновляться на глазах.
+    startWarTicker();
+    return () => stopWarTicker();
+  }, [startWarTicker, stopWarTicker]);
+
+  useEffect(() => {
+    // Первый вход в игру: подводим итоги тому, что истекло, пока
+    // сервер был закрыт, и подгружаем текущие войны.
+    const load = async () => {
       await completeExpiredWars();
       await fetchWars();
-    }, 60 * 1000);
-    return () => clearInterval(interval);
+    };
+    void load();
   }, [completeExpiredWars, fetchWars]);
 
   useEffect(() => { 
@@ -234,8 +262,8 @@ function App() {
       {showVehicleInfo && activeVehicle && <VehicleInfoMenu vehicle={activeVehicle} onClose={() => setShowVehicleInfo(false)} />}
       {showMyProperty && <MyPropertyMenu onClose={() => setShowMyProperty(false)} />}
       {showMyVehicles && <MyVehiclesMenu onClose={() => setShowMyVehicles(false)} />}
-      {showTerritories && <TerritoriesView onClose={() => setShowTerritories(false)} />}
       {showWars && <WarsView onClose={() => setShowWars(false)} />}
+      {showGangs && <GangsView onClose={() => setShowGangs(false)} />}
       {showCarViewer && (
         <Suspense fallback={<div className="flex items-center justify-center p-8 text-white"><Loader2 className="animate-spin mr-2" /> Загрузка 3D сцены...</div>}>
           <CarViewer onClose={() => setShowCarViewer(false)} />
@@ -297,9 +325,22 @@ function App() {
           <CategoryEditor onClose={() => setShowCategoryEditor(false)} />
         </Suspense>
       )}
+      {IS_DEV && GangRanksEditor && showGangRanksEditor && (
+        <Suspense fallback={null}>
+          <GangRanksEditor onClose={() => setShowGangRanksEditor(false)} />
+        </Suspense>
+      )}
       {IS_DEV && ItemCatalog && showAllItems && (
         <Suspense fallback={null}>
           <ItemCatalog onClose={() => setShowAllItems(false)} />
+        </Suspense>
+      )}
+      {/* Редактор рецептов: кухня, оружие и всё, что добавим позже.
+          Живёт здесь, а не в игровых экранах, — это авторский
+          инструмент, игрокам он не нужен. */}
+      {IS_DEV && RecipeEditorHub && showRecipeEditor && (
+        <Suspense fallback={null}>
+          <RecipeEditorHub onClose={() => setShowRecipeEditor(false)} />
         </Suspense>
       )}
       {IS_DEV && LocationIconEditor && showLocationIconEditor && (
@@ -347,15 +388,31 @@ function App() {
               </button>
             )}
 
-            <div className="text-right">
+            <div className="flex items-center gap-3">
+              <TimeIndicator />
+              <div className="text-right">
                   <div className="text-[#9eff52] font-black italic text-2xl leading-none">
                     ${Number(player?.money || 0).toLocaleString()}
                   </div>
                   <div className="text-[8px] text-[#b8ff84] font-black uppercase mt-1 tracking-[0.45em]">{player?.energy}% Энергия</div>
+                  <div className="text-[8px] font-black uppercase mt-1 tracking-[0.45em] flex items-center justify-end gap-2">
+                    <span className={Number(player?.hunger || 0) <= 20 ? 'text-red-400' : 'text-orange-300'}>🍽 {Math.round(Number(player?.hunger || 0))}%</span>
+                    <span className={Number(player?.thirst || 0) <= 20 ? 'text-red-400' : 'text-sky-300'}>💧 {Math.round(Number(player?.thirst || 0))}%</span>
+                  </div>
               </div>
+            </div>
           </header>
 
           <main className="relative flex-grow overflow-hidden">
+            {/* Слой ночной заливки пока отключён: синий оттенок на 46%
+                поверх всей карты читался как выделение интерфейса, а не
+                как темнота. Сам компонент и цвета в gameClock остаются —
+                ночью по-прежнему меняется освещение 3D-сцен, а заливку
+                можно вернуть одной строкой, когда подберём более
+                мягкий вариант: не на всю карту, а точечно. Компонент цел:
+                components/ui/DayNightOverlay.tsx, цвета — PHASE_TINT
+                в game/time/gameClock.ts. */}
+            {/* <DayNightOverlay /> */}
             <div className="absolute inset-0 overflow-y-auto no-scrollbar">
                 {activeTab === 'map' && <MapView />}
                 {activeTab === 'profile' && <ProfileView player={player} skills={skills} licenses={licenses} onOpenCharacter={() => setShowCharacter(true)} />}
@@ -431,16 +488,17 @@ function App() {
                 );
               })()}
               <button
-                onClick={() => setShowTerritories(true)}
-                className="w-14 h-14 rounded-2xl flex items-center justify-center text-xl transition-all duration-300 gta-button border border-[#7eff63]/40 text-[#e8ffc4] shadow-[0_0_20px_rgba(130,255,100,0.22)] active:scale-105 shrink-0"
-              >
-                🏙️
-              </button>
-              <button
                 onClick={() => setShowWars(true)}
                 className="w-14 h-14 rounded-2xl flex items-center justify-center text-xl transition-all duration-300 gta-button border border-[#7eff63]/40 text-[#e8ffc4] shadow-[0_0_20px_rgba(130,255,100,0.22)] active:scale-95 shrink-0"
               >
                 ⚔️
+              </button>
+
+              <button
+                onClick={() => setShowGangs(true)}
+                className="w-14 h-14 rounded-2xl flex items-center justify-center text-xl transition-all duration-300 gta-button border border-[#7eff63]/40 text-[#e8ffc4] shadow-[0_0_20px_rgba(130,255,100,0.22)] active:scale-95 shrink-0"
+              >
+                🌳
               </button>
 
               {/* 🏔️ КНОПКА 3D СЦЕНЫ */}
@@ -466,8 +524,10 @@ function App() {
             <NavButton active={showHotspotTool3D} onClick={(e) => { e.stopPropagation(); setShowHotspotTool3D(true); setShowAdminPanel(false); }} icon="🧊" title="3D Редактор хотспотов" />
             <NavButton active={showRoadEditor} onClick={(e) => { e.stopPropagation(); setShowRoadEditor(true); setShowAdminPanel(false); }} icon="🛣️" title="Редактор дорог" />
             <NavButton active={showBusinessProducts} onClick={(e) => { e.stopPropagation(); setShowBusinessProducts(true); setShowAdminPanel(false); }} icon="📦" title="Товары бизнеса" />
-            <NavButton active={showCategoryEditor} onClick={(e) => { e.stopPropagation(); setShowCategoryEditor(true); setShowAdminPanel(false); }} icon="📚" title="Категории" />
+              <NavButton active={showCategoryEditor} onClick={(e) => { e.stopPropagation(); setShowCategoryEditor(true); setShowAdminPanel(false); }} icon="📚" title="Категории" />
+              <NavButton active={showGangRanksEditor} onClick={(e) => { e.stopPropagation(); setShowGangRanksEditor(true); setShowAdminPanel(false); }} icon="🎖️" title="Ранги банд" />
             <NavButton active={showAllItems} onClick={(e) => { e.stopPropagation(); setShowAllItems(true); setShowAdminPanel(false); }} icon="📋" title="Все предметы" />
+            <NavButton active={showRecipeEditor} onClick={(e) => { e.stopPropagation(); setShowRecipeEditor(true); setShowAdminPanel(false); }} icon="🍳" title="Рецепты" />
             <NavButton active={showLocationIconEditor} onClick={(e) => { e.stopPropagation(); setShowLocationIconEditor(true); setShowAdminPanel(false); }} icon="📍" title="Иконки локаций" />
           </div>
         )}

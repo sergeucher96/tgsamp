@@ -73,7 +73,7 @@ export default function MyPropertyMenu({ onClose }: MyPropertyMenuProps) {
                     <div className="flex items-center justify-between mb-3">
                       <div>
                         <div className="text-sm font-black uppercase italic text-white">
-                          {house.name || `Дом #${house.id_name.replace('h_', '')}`}
+                          {house.name || `Дом #${(house.id_name || '').replace('h_', '')}`}
                         </div>
                         <div className="text-[10px] text-slate-400 font-bold mt-0.5">{houseClass.name}</div>
                       </div>

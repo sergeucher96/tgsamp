@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { supabase } from '../services/supabase/client';
 import { usePlayerStore } from './usePlayerStore';
+import { ORGANIZATIONS as ORG_CONFIG } from '../features/gangs/data/organizationsConfig';
 
-// Organizations config (inline since organizationsConfig.ts doesn't exist)
 export interface Organization {
   id: string;
   name: string;
@@ -12,7 +12,18 @@ export interface Organization {
   description?: string;
 }
 
-export const ORGANIZATIONS: Organization[] = [];
+/**
+ * Стартовый справочник до загрузки из БД.
+ * Раньше здесь стоял пустой массив, из-за чего joinOrganization()
+ * находил организацию всегда как undefined и отказывал на входе.
+ */
+export const ORGANIZATIONS: Organization[] = ORG_CONFIG.map(o => ({
+  id: o.id,
+  name: o.name,
+  type: o.type,
+  icon: o.icon,
+  color: o.color,
+}));
 
 export interface DefaultRank {
   rank_name: string;
@@ -129,6 +140,7 @@ interface OrganizationState {
   acceptInvitation: (orgId: string, targetPlayerId: string, rankName?: string) => Promise<boolean>;
   removeMember: (orgId: string, targetPlayerId: string) => Promise<boolean>;
   changeRank: (orgId: string, targetPlayerId: string, newRankName: string) => Promise<boolean>;
+  promoteMember: (orgId: string, targetPlayerId: string) => Promise<boolean>;
   setLeader: (orgId: string, newLeaderId: string) => Promise<boolean>;
   addBalance: (orgId: string, amount: number) => Promise<boolean>;
   deductBalance: (orgId: string, amount: number) => Promise<boolean>;
@@ -263,8 +275,10 @@ export const useOrganizationStore = create<OrganizationState>((set, get) => ({
 
     set({ isLoading: true });
     try {
+      // maybeSingle, а не single: у банды может не быть лидера, и
+      // single() на пустом ответе PostgREST отдаёт 406 в консоль.
       const { data: leader } = await supabase
-        .from('org_members').select('*').eq('org_id', orgId).eq('is_leader', true).single();
+        .from('org_members').select('*').eq('org_id', orgId).eq('is_leader', true).maybeSingle();
 
       if (leader?.player_id === player.id) {
         alert('Лидер не может выйти! Передайте лидерство другому участнику.');
@@ -333,18 +347,68 @@ export const useOrganizationStore = create<OrganizationState>((set, get) => ({
     try {
       const { data: rankInfo } = await supabase
         .from('org_ranks').select('salary')
-        .eq('org_id', orgId).eq('rank_name', newRankName).single();
+        .eq('org_id', orgId).eq('rank_name', newRankName).maybeSingle();
 
       const { error } = await supabase.from('org_members').update({
         rank_name: newRankName,
         salary: rankInfo?.salary || 0,
       }).eq('org_id', orgId).eq('player_id', targetPlayerId);
 
+      // Ранг в профиле читает useWarStore при проверке прав на войны,
+      // поэтому обновляем его здесь же, иначе он останется устаревшим.
+      await supabase.from('profiles')
+        .update({ organization_rank: newRankName })
+        .eq('id', targetPlayerId);
+      if (targetPlayerId === usePlayerStore.getState().player?.id) {
+        await usePlayerStore.getState().updateProfile({ organization_rank: newRankName });
+      }
+
       if (error) { alert('Ошибка при изменении ранга!'); return false; }
       await get().fetchMembers(orgId);
       return true;
     } catch (err) {
       console.error('Failed to change rank:', err);
+      return false;
+    }
+  },
+
+  // Повысить участника ровно на один ранг вверх
+  promoteMember: async (orgId, targetPlayerId) => {
+    try {
+      const { data: rankRows } = await supabase
+        .from('org_ranks').select('*')
+        .eq('org_id', orgId)
+        .order('rank_level', { ascending: true });
+
+      const { data: target } = await supabase
+        .from('org_members').select('*')
+        .eq('org_id', orgId).eq('player_id', targetPlayerId).maybeSingle();
+
+      if (!rankRows?.length || !target) return false;
+      if (target.is_leader) { alert('Лидер не повышается.'); return false; }
+
+      const currentIndex = rankRows.findIndex(r => r.rank_name === target.rank_name);
+      const next = currentIndex >= 0 ? rankRows[currentIndex + 1] : null;
+      if (!next) { alert('Участник уже на максимальном ранге.'); return false; }
+
+      const { error } = await supabase.from('org_members').update({
+        rank_name: next.rank_name,
+        salary: next.salary || 0,
+      }).eq('org_id', orgId).eq('player_id', targetPlayerId);
+
+      if (error) { alert('Ошибка при повышении ранга!'); return false; }
+
+      await supabase.from('profiles')
+        .update({ organization_rank: next.rank_name })
+        .eq('id', targetPlayerId);
+      if (targetPlayerId === usePlayerStore.getState().player?.id) {
+        await usePlayerStore.getState().updateProfile({ organization_rank: next.rank_name });
+      }
+
+      await get().fetchMembers(orgId);
+      return true;
+    } catch (err) {
+      console.error('Failed to promote member:', err);
       return false;
     }
   },
@@ -406,7 +470,7 @@ export const useOrganizationStore = create<OrganizationState>((set, get) => ({
     try {
       const { data, error } = await supabase
         .from('org_safe').select('crop_count, metal_count, part_count')
-        .eq('org_id', orgId).single();
+        .eq('org_id', orgId).maybeSingle();
       if (!error && data) {
         set({ safeResources: { crop_count: data.crop_count || 0, metal_count: data.metal_count || 0, part_count: data.part_count || 0 } });
       } else if (!data) {
@@ -432,7 +496,7 @@ export const useOrganizationStore = create<OrganizationState>((set, get) => ({
       const current = get().safeResources[resourceType] || 0;
       const newCount = current + amount;
       const { data, error } = await supabase
-        .from('org_safe').update({ [resourceType]: newCount }).eq('org_id', orgId).select().single();
+        .from('org_safe').update({ [resourceType]: newCount }).eq('org_id', orgId).select().maybeSingle();
       if (!error && data) {
         set({ safeResources: { crop_count: data.crop_count || 0, metal_count: data.metal_count || 0, part_count: data.part_count || 0 } });
         return true;
@@ -447,7 +511,7 @@ export const useOrganizationStore = create<OrganizationState>((set, get) => ({
       if (current < amount) { alert('Недостаточно ресурса на складе!'); return false; }
       const newCount = current - amount;
       const { data, error } = await supabase
-        .from('org_safe').update({ [resourceType]: newCount }).eq('org_id', orgId).select().single();
+        .from('org_safe').update({ [resourceType]: newCount }).eq('org_id', orgId).select().maybeSingle();
       if (!error && data) {
         set({ safeResources: { crop_count: data.crop_count || 0, metal_count: data.metal_count || 0, part_count: data.part_count || 0 } });
         return true;

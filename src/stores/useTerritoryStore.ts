@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { supabase } from '../services/supabase/client';
 import { DEFAULT_TERRITORIES, DEFAULT_INFLUENCE, Territory, TerritoryInfluence } from '../features/gangs/data/territoriesConfig';
-import { addInfluence, type AddInfluenceResult } from '../game/world/influenceService';
 import {
   startDecayIntervals,
   stopDecayIntervals,
@@ -9,6 +8,11 @@ import {
   runInfluenceDecay,
 } from '../game/world/territoryDecay';
 import { usePlayerStore } from './usePlayerStore';
+import {
+  countAssetsByTerritory,
+  type AssetReport,
+  type LocatableObject,
+} from '../game/world/territoryAssets';
 
 let stabilizationInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -64,11 +68,14 @@ interface TerritoryState {
   createTerritory: (territoryData: Partial<Territory>) => Promise<boolean>;
   updateTerritory: (territoryId: number, updates: Partial<Territory>) => Promise<boolean>;
   deleteTerritory: (territoryId: number) => Promise<boolean>;
-  captureTerritory: (territoryId: number, gangId: string) => Promise<boolean>;
-  loseTerritory: (territoryId: number) => Promise<boolean>;
   updateControl: (territoryId: number, controlDelta: number) => Promise<boolean>;
   getGangTerritories: (gangId: string) => Territory[];
   getTerritoryIncome: (gangId: string) => number;
+
+  // === ОБЪЕКТЫ В ЗОНАХ ===
+  /** Раскладывает дома и бизнесы по территориям */
+  countAssets: (locations: readonly LocatableObject[], owners?: Readonly<Record<string, string | null>>) => AssetReport;
+
   selectTerritory: (territoryId: number) => void;
   loadTerritoryData: () => Promise<void>;
 
@@ -87,7 +94,6 @@ interface TerritoryState {
   getInfluencesForTerritory: (territoryId: number) => TerritoryInfluence[];
   setInfluence: (territoryId: number, gangId: string, influence: number) => Promise<boolean>;
   updateInfluence: (territoryId: number, gangId: string, delta: number) => Promise<boolean>;
-  addInfluence: (territoryId: number, gangId: string, amount: number, reason: string) => Promise<AddInfluenceResult>;
   getTerritoryOwner: (territoryId: number) => string | null;
 }
 
@@ -217,41 +223,6 @@ export const useTerritoryStore = create<TerritoryState>((set, get) => ({
     }
   },
 
-  captureTerritory: async (territoryId, gangId) => {
-    const control = 50;
-    const status = 'CONTROLLED';
-    const ok = await get().updateTerritory(territoryId, {
-      owner_gang_id: gangId,
-      control,
-      status,
-      activity: 50,
-    });
-
-    if (ok) {
-      await get().addInfluence(territoryId, gangId, 30, 'TERRITORY_EVENT');
-    }
-
-    return ok;
-  },
-
-  loseTerritory: async (territoryId) => {
-    const territory = get().territories.find(t => t.id === territoryId);
-    const ownerGangId = territory?.owner_gang_id;
-
-    const ok = await get().updateTerritory(territoryId, {
-      owner_gang_id: null,
-      control: 0,
-      status: 'NEUTRAL',
-      activity: 0,
-    });
-
-    if (ok && ownerGangId) {
-      await get().addInfluence(territoryId, ownerGangId, -20, 'TERRITORY_EVENT');
-    }
-
-    return ok;
-  },
-
   updateControl: async (territoryId, controlDelta) => {
     const territory = get().territories.find(t => t.id === territoryId);
     if (!territory) return false;
@@ -268,6 +239,11 @@ export const useTerritoryStore = create<TerritoryState>((set, get) => ({
     return get().territories
       .filter(t => t.owner_gang_id === gangId)
       .reduce((sum, t) => sum + (t.base_income || 0), 0);
+  },
+
+  countAssets: (locations, owners) => {
+    const source = get().territories.length > 0 ? get().territories : DEFAULT_TERRITORIES;
+    return countAssetsByTerritory({ locations, territories: source, owners });
   },
 
   selectTerritory: (territoryId) => {
@@ -384,34 +360,6 @@ export const useTerritoryStore = create<TerritoryState>((set, get) => ({
     const current = get().influences.find(i => i.territory_id === territoryId && i.gang_id === gangId);
     const newInfluence = Math.max(0, Math.min(100, (current?.influence || 0) + delta));
     return get().setInfluence(territoryId, gangId, newInfluence);
-  },
-
-  addInfluence: async (territoryId, gangId, amount, reason) => {
-    const result = await addInfluence(gangId, territoryId, amount, reason);
-
-    if (result.success && result.influence !== undefined) {
-      set(state => {
-        const existing = state.influences.findIndex(i => i.territory_id === territoryId && i.gang_id === gangId);
-        const newInfluences = [...state.influences];
-        const influenceData = {
-          id: existing >= 0 ? newInfluences[existing].id : Date.now(),
-          territory_id: territoryId,
-          gang_id: gangId,
-          influence: result.influence,
-          updated_at: new Date().toISOString(),
-        };
-
-        if (existing >= 0) {
-          newInfluences[existing] = influenceData;
-        } else {
-          newInfluences.push(influenceData);
-        }
-
-        return { influences: newInfluences };
-      });
-    }
-
-    return result;
   },
 
   getTerritoryOwner: (territoryId) => {

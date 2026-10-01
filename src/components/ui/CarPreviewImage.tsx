@@ -1,6 +1,5 @@
 import { useEffect, useState, type SyntheticEvent } from 'react';
 import { VEHICLE_DATABASE, VEHICLE_COLORS } from '../../features/vehicles/data/vehicleConfig';
-import { carThumbnailService } from '../../game/rendering/carThumbnailGenerator';
 import { Loader2 } from 'lucide-react';
 
 type ViewMode = 'iso' | 'map';
@@ -33,7 +32,11 @@ export default function CarPreviewImage({
     let isMounted = true;
     setLoading(true);
 
-    carThumbnailService.generateCarPNG(model3d, colorHex, 0, viewMode)
+    // Генератор тянет three.js, поэтому он грузится лениво, в момент
+    // первого превью. Статический импорт утягивал three в стартовый
+    // бандл, и three платили все, кто машину не показывал.
+    import('../../game/rendering/carThumbnailGenerator')
+      .then(({ carThumbnailService }) => carThumbnailService.generateCarPNG(model3d, colorHex, 0, viewMode))
       .then((dataUrl: string) => {
         if (isMounted) {
           setImgSrc(dataUrl);

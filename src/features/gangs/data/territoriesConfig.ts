@@ -32,6 +32,10 @@ export interface Territory {
   max_x: number;
   min_y: number;
   max_y: number;
+  /** Точный контур зоны в координатах карты. Если нет — используется прямоугольник */
+  points?: { x: number; y: number }[];
+  /** Цвет отрисовки зоны на карте */
+  color?: string;
 }
 
 export interface TerritoryInfluence {
@@ -92,27 +96,23 @@ export const TERRITORY_STATUSES: Record<TerritoryStatus, TerritoryStatusConfig> 
   STABILIZING: { label: 'Стабилизация', color: 'bg-blue-500', icon: '🔵' },
 };
 
-export const DEFAULT_TERRITORIES: Territory[] = [
-  { id: 1, name: 'Ganton', owner_gang_id: 'tgd', status: 'CONTROLLED', activity: 75, base_income: 1200, control: 82, min_x: 5450, max_x: 5850, min_y: 5050, max_y: 5450 },
-  { id: 2, name: 'Idlewood', owner_gang_id: 'mafia', status: 'CONTROLLED', activity: 68, base_income: 950, control: 71, min_x: 5250, max_x: 5650, min_y: 4450, max_y: 4850 },
-  { id: 3, name: 'Jefferson', owner_gang_id: null, status: 'NEUTRAL', activity: 30, base_income: 800, control: 0, min_x: 5100, max_x: 5500, min_y: 4750, max_y: 5150 },
-  { id: 4, name: 'Glen Park', owner_gang_id: null, status: 'NEUTRAL', activity: 25, base_income: 600, control: 0, min_x: 4900, max_x: 5300, min_y: 5150, max_y: 5550 },
-  { id: 5, name: 'Verona Beach', owner_gang_id: null, status: 'NEUTRAL', activity: 40, base_income: 1000, control: 0, min_x: 5350, max_x: 5750, min_y: 4250, max_y: 4650 },
-  { id: 6, name: 'East Los Santos', owner_gang_id: null, status: 'NEUTRAL', activity: 35, base_income: 900, control: 0, min_x: 5550, max_x: 5950, min_y: 4650, max_y: 5050 },
-  { id: 7, name: 'Market', owner_gang_id: 'tgd', status: 'TENSION', activity: 55, base_income: 1500, control: 45, min_x: 5250, max_x: 5650, min_y: 4550, max_y: 4950 },
-  { id: 8, name: 'Marina', owner_gang_id: null, status: 'NEUTRAL', activity: 20, base_income: 700, control: 0, min_x: 5050, max_x: 5450, min_y: 4250, max_y: 4650 },
-  { id: 9, name: 'Vinewood', owner_gang_id: null, status: 'NEUTRAL', activity: 60, base_income: 1800, control: 0, min_x: 5150, max_x: 5550, min_y: 4050, max_y: 4450 },
-  { id: 10, name: 'Los Santos Docks', owner_gang_id: null, status: 'NEUTRAL', activity: 15, base_income: 2000, control: 0, min_x: 5050, max_x: 5450, min_y: 5550, max_y: 5950 },
-];
+/**
+ * Зоны НЕ хранятся в коде: они рисуются на карте в RoadEditor
+ * (режим «Зона войны») и лежат в таблице territories.
+ *
+ * Раньше здесь был черновой список из прямоугольников 400×400.
+ * Он не годился: прямоугольники пересекались, покрывали не весь
+ * город и оставляли две зоны вовсе без объектов. Из-за этого
+ * подсчёт домов и бизнесов по зонам давал произвольные числа —
+ * 36% объектов попадали сразу в несколько зон.
+ *
+ * Пустой массив — осознанное решение, а не заглушка: пока зон нет,
+ * countAssets возвращает всё в outsideZones, вместо того чтобы
+ * размазать объекты по выдуманным границам.
+ */
+export const DEFAULT_TERRITORIES: Territory[] = [];
 
-export const DEFAULT_INFLUENCE: TerritoryInfluence[] = [
-  { territory_id: 1, gang_id: 'tgd', influence: 85 },
-  { territory_id: 1, gang_id: 'mafia', influence: 10 },
-  { territory_id: 2, gang_id: 'mafia', influence: 78 },
-  { territory_id: 2, gang_id: 'tgd', influence: 15 },
-  { territory_id: 7, gang_id: 'tgd', influence: 60 },
-  { territory_id: 7, gang_id: 'mafia', influence: 35 },
-];
+export const DEFAULT_INFLUENCE: TerritoryInfluence[] = [];
 
 export const ACTIVITY_DECAY_CONFIG: ActivityDecayConfig = {
   intervalMs: 10 * 60 * 1000,

@@ -1,6 +1,23 @@
 import { create } from 'zustand';
 import { supabase } from '../services/supabase/client';
 import { type Vehicle } from './useVehicleStore';
+import {
+  getEffectDef,
+  DEFAULT_BUFF_MINUTES,
+  MAX_MODIFIER_PERCENT,
+  type ModifierKey,
+} from '../features/items/data/itemEffects';
+
+/** Тик метаболизма, мс */
+const METABOLISM_TICK_MS = 120000;
+/** Расход сытости за тик */
+const HUNGER_DRAIN_PER_TICK = 1;
+/** Расход жажды за тик — она уходит быстрее голода */
+const THIRST_DRAIN_PER_TICK = 2;
+/** Ниже этого значения (из 100) персонаж уставший */
+const LOW_STAT_THRESHOLD = 20;
+/** Дополнительный расход энергии при нехватке еды или воды */
+const ENERGY_DRAIN_WHEN_TIRED = 1;
 
 export interface Profile {
   id: string;
@@ -11,6 +28,7 @@ export interface Profile {
   money: number;
   hp: number;
   hunger: number;
+  thirst: number;
   energy: number;
   registered_at: string | null;
   rotation: number;
@@ -53,10 +71,20 @@ export interface Buff {
   name: string;
   duration_minutes: number;
   effect: string;
+  amount: number;
   appliedAt: number;
   expiresAt: number;
   type?: string;
-  amount?: number;
+  /** Откуда пришёл бафф: 'food' | 'clothing' | 'manual' */
+  source?: string;
+}
+
+/** Суммарные системные модификаторы игрока, в процентах */
+export interface PlayerModifiers {
+  xp_gain: number;
+  money_gain: number;
+  energy_regen: number;
+  drop_rate: number;
 }
 
 interface AuthResponse {
@@ -87,12 +115,15 @@ interface PlayerState {
   setLocalActiveVehicle: (veh: Vehicle | null) => void;
   addMoney?: (amount: number) => void;
   addSkillProgress: (skillName: string, amount: number) => Promise<void>;
-  loadBuffs: () => Buff[];
+  loadBuffs: () => Promise<Buff[]>;
   saveBuffs: (buffs: Buff[]) => void;
   applyBuff: (buff: Omit<Buff, 'id' | 'appliedAt' | 'expiresAt'>) => void;
   removeBuff: (buffId: string) => void;
   tickBuffs: () => Promise<void>;
   getActiveBuffs: () => Buff[];
+  getModifiers: () => PlayerModifiers;
+  /** Пересчитать навык с учётом модификатора опыта */
+  applySkillProgress: (skillName: string, amount: number) => Promise<void>;
   finishRegistration: (form: { firstName: string; lastName: string; gender: string }) => Promise<void>;
 }
 
@@ -136,7 +167,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       console.log('[Auth] Response status:', response.status);
 
       if (!response.ok || !result.success) {
-        console.error('Ошибка авторизации Telegram:', result.error);
+        // detail приходит только от dev-обработчика и содержит
+        // настоящую причину отказа Supabase, а не общий текст.
+        console.error('Ошибка авторизации Telegram:', result.error, (result as { detail?: string }).detail || '');
         set({
           loading: false,
           authError: result.error || 'Ошибка проверки подлинности Telegram'
@@ -145,7 +178,6 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       }
 
       const { profile, skills, licenses, activeVehicle } = result;
-      const activeBuffs = get().loadBuffs();
 
       set({
         player: { ...profile, rotation: 0 },
@@ -154,9 +186,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         activeVehicle: activeVehicle || null,
         loading: false,
         needsRegistration: !profile.first_name,
-        activeBuffs,
         authError: null
       });
+
+      // Баффы грузим после установки игрока — нужен его id для выборки из БД
+      const activeBuffs = await get().loadBuffs();
+      set({ activeBuffs });
 
       if (get().metabolismInterval) {
         clearInterval(get().metabolismInterval);
@@ -167,7 +202,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
       const metabolismInterval = setInterval(() => {
         get().processMetabolism();
-      }, 120000);
+      }, METABOLISM_TICK_MS);
 
       const buffsInterval = setInterval(() => {
         get().tickBuffs();
@@ -210,10 +245,26 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
     const updates: Partial<Profile> = {};
 
+    // Голод и жажда расходуются каждый тик
     if (player.hunger > 0) {
-      updates.hunger = Math.max(0, player.hunger - 1);
-    } else if (player.hp > 5) {
-      updates.hp = player.hp - 1;
+      updates.hunger = Math.max(0, player.hunger - HUNGER_DRAIN_PER_TICK);
+    }
+    if (player.thirst > 0) {
+      updates.thirst = Math.max(0, player.thirst - THIRST_DRAIN_PER_TICK);
+    }
+
+    // На голодном желудке или от жажды организм сжигает здоровье
+    const starving = (player.hunger ?? 0) <= 0;
+    const parched = (player.thirst ?? 0) <= 0;
+    if ((starving || parched) && player.hp > 0) {
+      const damage = (starving ? 1 : 0) + (parched ? 1 : 0);
+      updates.hp = Math.max(0, player.hp - damage);
+    }
+
+    // Нехватка еды и воды дополнительно выматывает
+    const tired = (player.hunger ?? 0) < LOW_STAT_THRESHOLD || (player.thirst ?? 0) < LOW_STAT_THRESHOLD;
+    if (tired && player.energy > 0) {
+      updates.energy = Math.max(0, player.energy - ENERGY_DRAIN_WHEN_TIRED);
     }
 
     if (Object.keys(updates).length > 0) {
@@ -269,12 +320,42 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
   },
 
-  loadBuffs: () => {
+  loadBuffs: async () => {
+    const { player } = get();
+    const fallback = (): Buff[] => {
+      try {
+        const raw = localStorage.getItem('player_active_buffs');
+        return raw ? JSON.parse(raw) : [];
+      } catch {
+        return [];
+      }
+    };
+    if (!player) return [];
+
     try {
-      const raw = localStorage.getItem('player_active_buffs');
-      return raw ? JSON.parse(raw) : [];
+      const { data, error } = await supabase
+        .from('player_buffs')
+        .select('*')
+        .eq('player_id', player.id);
+      if (error) return fallback();
+
+      const now = Date.now();
+      const rows = (data || []) as any[];
+      return rows
+        .map(r => ({
+          id: String(r.id),
+          effect: r.effect_key,
+          name: r.name,
+          amount: Number(r.amount) || 0,
+          duration_minutes: Number(r.duration_minutes) || DEFAULT_BUFF_MINUTES,
+          source: r.source || undefined,
+          type: r.type || undefined,
+          appliedAt: new Date(r.applied_at).getTime(),
+          expiresAt: new Date(r.expires_at).getTime(),
+        }))
+        .filter(b => b.expiresAt > now);
     } catch {
-      return [];
+      return fallback();
     }
   },
 
@@ -282,25 +363,74 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     localStorage.setItem('player_active_buffs', JSON.stringify(buffs));
   },
 
+  /**
+   * Накладывает бафф.
+   * Если такой эффект уже активен — новый приём полностью заменяет старый:
+   * остаётся сильнейшее значение, время отсчитывается заново.
+   */
   applyBuff: (buff: Omit<Buff, 'id' | 'appliedAt' | 'expiresAt'>) => {
     const { player, activeBuffs } = get();
     if (!player) return;
+
+    const minutes = Number(buff.duration_minutes) || DEFAULT_BUFF_MINUTES;
+    const now = Date.now();
+    const amount = Number(buff.amount) || 0;
+
+    const previous = activeBuffs.find(b => b.effect === buff.effect && b.expiresAt > now);
+    const strongest = previous ? Math.max(previous.amount, amount) : amount;
+
     const newBuff: Buff = {
       ...buff,
-      id: `buff_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
-      appliedAt: Date.now(),
-      expiresAt: Date.now() + (Number(buff.duration_minutes) || 60) * 60 * 1000,
+      amount: strongest,
+      duration_minutes: minutes,
+      id: `buff_${now}_${Math.random().toString(36).slice(2, 9)}`,
+      appliedAt: now,
+      expiresAt: now + minutes * 60 * 1000,
     };
-    const updated = [...activeBuffs, newBuff];
+
+    // Заменяем предыдущий бафф с тем же эффектом, остальные оставляем как есть
+    const kept = activeBuffs.filter(b => b.effect !== buff.effect || b.expiresAt <= now);
+    const updated = [...kept, newBuff];
+
     set({ activeBuffs: updated });
     get().saveBuffs(updated);
+
+    // Зеркалим в БД, чтобы бафф не пропал при смене устройства
+    void (async () => {
+      try {
+        await supabase
+          .from('player_buffs')
+          .upsert({
+            player_id: player.id,
+            effect_key: newBuff.effect,
+            name: newBuff.name,
+            amount: newBuff.amount,
+            duration_minutes: minutes,
+            type: newBuff.type,
+            source: newBuff.source,
+            applied_at: new Date(newBuff.appliedAt).toISOString(),
+            expires_at: new Date(newBuff.expiresAt).toISOString(),
+          }, { onConflict: 'player_id,effect_key' });
+      } catch {
+        // таблица может быть ещё не создана — работаем на localStorage
+      }
+    })();
   },
 
   removeBuff: (buffId: string) => {
-    const { activeBuffs } = get();
+    const { activeBuffs, player } = get();
+    const target = activeBuffs.find(b => b.id === buffId);
     const updated = activeBuffs.filter(b => b.id !== buffId);
     set({ activeBuffs: updated });
     get().saveBuffs(updated);
+    if (target && player) {
+      void supabase
+        .from('player_buffs')
+        .delete()
+        .eq('player_id', player.id)
+        .eq('effect_key', target.effect)
+        .then(() => {});
+    }
   },
 
   tickBuffs: async () => {
@@ -309,11 +439,20 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
     const now = Date.now();
     const expired = activeBuffs.filter(b => b.expiresAt <= now);
-    const remaining = activeBuffs.filter(b => b.expiresAt > now);
+    if (expired.length === 0) return;
 
-    if (expired.length > 0) {
-      set({ activeBuffs: remaining });
-      get().saveBuffs(remaining);
+    const remaining = activeBuffs.filter(b => b.expiresAt > now);
+    set({ activeBuffs: remaining });
+    get().saveBuffs(remaining);
+
+    try {
+      await supabase
+        .from('player_buffs')
+        .delete()
+        .eq('player_id', player.id)
+        .in('effect_key', expired.map(b => b.effect));
+    } catch {
+      // таблица может быть ещё не создана
     }
   },
 
@@ -321,6 +460,30 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const { activeBuffs } = get();
     const now = Date.now();
     return activeBuffs.filter(b => b.expiresAt > now);
+  },
+
+  /**
+   * Суммарные системные модификаторы.
+   * Проценты складываются, результат ограничен MAX_MODIFIER_PERCENT.
+   */
+  getModifiers: () => {
+    const result: PlayerModifiers = { xp_gain: 0, money_gain: 0, energy_regen: 0, drop_rate: 0 };
+    get().getActiveBuffs().forEach(buff => {
+      const def = getEffectDef(buff.effect);
+      if (def.kind !== 'modifier' || !def.modifier) return;
+      result[def.modifier] += Number(buff.amount) || 0;
+    });
+    (Object.keys(result) as ModifierKey[]).forEach(k => {
+      result[k] = Math.min(MAX_MODIFIER_PERCENT, result[k]);
+    });
+    return result;
+  },
+
+  /** Навык с учётом бонуса «Опыт профессий» */
+  applySkillProgress: async (skillName: string, amount: number) => {
+    const { xp_gain } = get().getModifiers();
+    const multiplier = 1 + xp_gain / 100;
+    await get().addSkillProgress(skillName, amount * multiplier);
   },
 
   finishRegistration: async (form: { firstName: string; lastName: string; gender: string }) => {
