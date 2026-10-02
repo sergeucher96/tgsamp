@@ -26,22 +26,43 @@ import type { QueueFighter } from './types';
 interface PvpQueueState {
   /** Стою ли я в очереди прямо сейчас. */
   inQueue: boolean;
-  /** Есть ли у меня незакрытый бой, который ещё не показан. */
-  hasPending: boolean;
+  /**
+   * Бой, который сервер уже отдал, но который ещё не показан.
+   *
+   * Именно состояние, а не возврат из функции: бой достаётся и по
+   * событию realtime, и по таймеру, и в обработчике события
+   * возвращаемое значение выбросилось бы. Пока он лежит здесь,
+   * модалка подхватывает его откуда угодно — из меню, из карты,
+   * из любого экрана.
+   */
+  lastFight: any | null;
   fighters: QueueFighter[];
   loading: boolean;
   fighting: boolean;
   error: string | null;
   channel: RealtimeChannel | null;
+  poller: ReturnType<typeof setInterval> | null;
 
   refresh: () => Promise<void>;
   join: () => Promise<boolean>;
   leave: () => Promise<void>;
   /** Возвращает готовый результат боя или null, если бой не начался. */
   fight: (opponentId: string) => Promise<any | null>;
-  takePending: () => Promise<any | null>;
-  startRealtime: () => void;
-  stopRealtime: () => void;
+  /**
+   * Забирает бой из очереди и кладёт его в lastFight.
+   * Результат остаётся в сторе, а не возвращается вызывающему:
+   * вызывают эту функцию и realtime, и таймер, и из обработчика
+   * события возвращаемое значение просто терялось бы.
+   */
+  takePending: () => Promise<void>;
+  /** Показать бой и убрать его из lastFight. */
+  clearFight: () => void;
+  /**
+   * Подписка плюс опрос. Идемпотентна: без неё бой приходил бы
+   * только тому, кто случайно открыл меню в момент вызова.
+   */
+  ensureActive: () => void;
+  stop: () => void;
 }
 
 const me = () => usePlayerStore.getState().player?.id ?? null;
@@ -86,12 +107,13 @@ function explain(e: any, what: string): string {
 
 export const usePvpQueueStore = create<PvpQueueState>((set, get) => ({
   inQueue: false,
-  hasPending: false,
+  lastFight: null,
   fighters: [],
   loading: false,
   fighting: false,
   error: null,
   channel: null,
+  poller: null,
 
   refresh: async () => {
     const playerId = me();
@@ -114,10 +136,7 @@ export const usePvpQueueStore = create<PvpQueueState>((set, get) => ({
 
     const row = mine.data as any;
     if (!mine.error) {
-      set({
-        inQueue: row?.status === 'waiting',
-        hasPending: !!row?.fight_id && !row?.acknowledged_at,
-      });
+      set({ inQueue: row?.status === 'waiting' });
     }
 
     set({ loading: false });
@@ -177,46 +196,68 @@ export const usePvpQueueStore = create<PvpQueueState>((set, get) => ({
 
   takePending: async () => {
     const playerId = me();
-    if (!playerId) return null;
+    if (!playerId) return;
+
+    // Пока бой ждёт показания, следующий take ничего не вернёт:
+    // acknowledged_at уже проставлен. Без этой проверки опрос
+    // каждые несколько секунд дёргал бы базу впустую и сыпал
+    // ошибками в консоль.
+    if (get().lastFight) return;
 
     const { data, error } = await supabase.rpc('pvp_queue_take', { p_player_id: playerId });
-    if (error || !data) {
-      if (error) set({ error: explain(error, 'Не удалось забрать бой') });
-      return null;
+    if (error) {
+      set({ error: explain(error, 'Не удалось забрать бой') });
+      return;
     }
+    if (!data?.has_fight) return;
 
-    await get().refresh();
-    return data.has_fight ? data : null;
+    // Бой кладу в стор — его подхватит модалка, где бы игрок ни был.
+    set({ lastFight: data });
   },
 
-  startRealtime: () => {
+  clearFight: () => set({ lastFight: null }),
+
+  ensureActive: () => {
     const playerId = me();
-    if (!playerId || get().channel) return;
+    if (!playerId) return;
 
-    const channel = supabase
-      .channel('pvp-queue')
-      // Моя строка изменилась: меня вызвали в бой. Забираю результат.
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'pvp_queue', filter: `player_id=eq.${playerId}` },
-        () => { get().takePending(); },
-      )
-      // Кто-то встал или вышел — список должен быть живым.
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'pvp_queue' },
-        () => { get().refresh(); },
-      )
-      .subscribe();
+    // Realtime — быстрый путь, но не единственный: публикация
+    // supabase_realtime может не содержать pvp_queue, а соединение
+    // с Realtime рвётся, когда телеграм сворачивают. Поэтому рядом
+    // всегда работает опрос, а realtime просто ускоряет доставку.
+    if (!get().channel) {
+      const channel = supabase
+        .channel('pvp-queue')
+        // Моя строка изменилась: меня вызвали в бой.
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'pvp_queue', filter: `player_id=eq.${playerId}` },
+          () => { void get().takePending(); },
+        )
+        // Кто-то встал или вышел — список должен быть живым.
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'pvp_queue' },
+          () => { void get().refresh(); },
+        )
+        .subscribe();
 
-    set({ channel });
+      set({ channel });
+    }
+
+    if (!get().poller) {
+      const poller = setInterval(() => {
+        void get().takePending();
+        void get().refresh();
+      }, 5000);
+      set({ poller });
+    }
   },
 
-  stopRealtime: () => {
-    const channel = get().channel;
-    if (channel) {
-      supabase.removeChannel(channel);
-      set({ channel: null });
-    }
+  stop: () => {
+    const { channel, poller } = get();
+    if (channel) supabase.removeChannel(channel);
+    if (poller) clearInterval(poller);
+    set({ channel: null, poller: null });
   },
 }));

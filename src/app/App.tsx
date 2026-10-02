@@ -1,5 +1,7 @@
 import React, { useEffect, useState, lazy, Suspense } from 'react';
 import { usePlayerStore, type Profile } from '../stores/usePlayerStore';
+import { usePvpQueueStore } from '../features/pvp/usePvpQueueStore';
+import { presentFight } from '../features/pvp/types';
 import { useNavigationStore } from '../stores/useNavigationStore';
 import { useHouseStore } from '../stores/useHouseStore';
 import { useVehicleStore } from '../stores/useVehicleStore';
@@ -30,6 +32,10 @@ const PvpTestMenu = IS_DEV ? lazy(() => import('../features/pvp/PvpTestMenu')) :
 // Бокс доступен всем игрокам, поэтому не под IS_DEV: очередь PvP —
 // игровая функция, а не инструмент разработчика.
 const BoxView = lazy(() => import('../features/pvp/BoxView'));
+// Модалка итога боя живёт в App, а не в BoxView: вызвать могут,
+// пока игрок и не в меню, и тогда результат обязан показаться
+// всё равно — на том экране, где он сейчас находится.
+const FightResultModal = lazy(() => import('../features/pvp/FightResultModal'));
 
 // Views
 import MapView from '../game/locations/MapView';
@@ -66,6 +72,10 @@ function App() {
   const { isTelegram, isDesktop, isFullscreen, toggleFullscreen } = useTelegram();
   const { startDecay, stopDecay, startStabilization, stopStabilization, fetchTerritories } = useTerritoryStore();
   const { completeExpiredWars, fetchWars, startTicker: startWarTicker, stopTicker: stopWarTicker } = useWarStore();
+  const lastFight = usePvpQueueStore((s) => s.lastFight);
+  const clearFight = usePvpQueueStore((s) => s.clearFight);
+  const ensurePvpActive = usePvpQueueStore((s) => s.ensureActive);
+  const stopPvp = usePvpQueueStore((s) => s.stop);
   
   const [showQuests, setShowQuests] = useState(false);
   const [showCharacter, setShowCharacter] = useState(false);
@@ -128,6 +138,20 @@ function App() {
       stopStabilization();
     };
   }, [startDecay, stopDecay, startStabilization, stopStabilization, fetchTerritories]);
+
+  useEffect(() => {
+    // Очередь боя: подписка плюс опрос раз в 5 секунд.
+    //
+    // ПОЧЕМУ ЗДЕСЬ, А НЕ В БОКСЕ. Вызвать могут, пока игрок
+    // смотрит карту или инвентарь. Если слушать очередь только
+    // пока открыто меню, вызванный игрок узнал бы о бое лишь
+    // при следующем открытии — а он ждёт результат сразу.
+    // ensureActive идемпотентна: повторный вызов не создаст ни
+    // второго канала, ни второго таймера.
+    if (!player?.id) return;
+    ensurePvpActive();
+    return () => stopPvp();
+  }, [player?.id, ensurePvpActive, stopPvp]);
 
   useEffect(() => {
     // Игровые часы: сверка с временем базы и тик. Запускаем сразу,
@@ -344,6 +368,16 @@ function App() {
       {showBox && (
         <Suspense fallback={null}>
           <BoxView onClose={() => setShowBox(false)} />
+        </Suspense>
+      )}
+      {lastFight && (
+        <Suspense fallback={null}>
+          {/* Стор и исход выводит presentFight: он приходит то в
+              my_side/won от вызывающего, то в winner_id от take. */}
+          <FightResultModal
+            fight={presentFight(lastFight)}
+            onClose={clearFight}
+          />
         </Suspense>
       )}
       {IS_DEV && ItemCatalog && showAllItems && (

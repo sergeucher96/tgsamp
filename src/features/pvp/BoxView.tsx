@@ -1,9 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, Loader2, Swords, LogOut, Users } from 'lucide-react';
-import { usePlayerStore } from '../../stores/usePlayerStore';
 import { usePvpQueueStore } from './usePvpQueueStore';
-import FightResultModal from './FightResultModal';
-import { presentFight, type PresentedFight, type QueueFighter } from './types';
+import type { QueueFighter } from './types';
 
 interface BoxViewProps { onClose: () => void; }
 
@@ -23,40 +21,20 @@ interface BoxViewProps { onClose: () => void; }
  * любом случае.
  */
 export default function BoxView({ onClose }: BoxViewProps) {
-  const playerId = usePlayerStore((s) => s.player?.id);
-
   const {
     inQueue, fighters, loading, fighting, error,
-    refresh, join, leave, fight, takePending, startRealtime,
+    refresh, join, leave, fight,
   } = usePvpQueueStore();
 
-  const [shown, setShown] = useState<PresentedFight | null>(null);
   // Выбранный соперник. Бой не запускается с одного клика по карточке:
   // случайно вызвать кого-то в бой — обиднее, чем сделать лишний клик.
   const [target, setTarget] = useState<string>('');
 
-  // Модалка итога живёт здесь и в App: бой могут начать, пока игрок
-  // в другом экране, и тогда показывать его будут уже оттуда.
-  useEffect(() => {
-    startRealtime();
-    refresh();
-
-    // Непоказанный бой забираем сразу: об этом надо узнать при
-    // входе, а не только по realtime, который мог не сработать.
-    (async () => {
-      const pending = await takePending();
-      if (pending) setShown(presentFight(pending, 'd'));
-    })();
-
-    const tick = setInterval(() => refresh(), 8000);
-    return () => {
-      clearInterval(tick);
-      // Подписку не снимаем: она нужна, чтобы заметить бой из
-      // любого экрана. Она и в App стартует, повторный вызов
-      // безопасен — второй канал не создастся.
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playerId]);
+  // Подписка и опрос живут в сторе и стартуют в App, а не здесь.
+  // Если поднимать их на открытии меню, вызванный бой не пришёл бы
+  // тому, кто в этот момент смотрит на карту, — а именно такой
+  // игрок и ждёт результат.
+  useEffect(() => { void refresh(); }, [refresh, inQueue]);
 
   const handleJoin = async () => {
     const ok = await join();
@@ -68,7 +46,9 @@ export default function BoxView({ onClose }: BoxViewProps) {
     // сидит на стороне 'a', и итог приезжает прямо в ответе.
     const result = await fight(opponentId);
     if (result) {
-      setShown(presentFight(result, 'a'));
+      // Кладём в стор, а не в локальный state: тот же путь, что у
+      // защитника, — одна модалка на обоих.
+      usePvpQueueStore.setState({ lastFight: result });
       setTarget('');
     }
   };
@@ -181,8 +161,8 @@ export default function BoxView({ onClose }: BoxViewProps) {
           </div>
         )}
       </div>
-
-      <FightResultModal fight={shown} onClose={() => setShown(null)} />
+{/* Модалка итога намеренно не здесь: её рисует App, чтобы
+          результат показался и тем, кто сейчас не в меню. */}
     </div>
   );
 }
