@@ -12,6 +12,8 @@
     "check:pvp": "node scripts/checkPvpTables.mjs",
     "check:fighter": "node scripts/checkFighterSnapshot.mjs",
     "check:pvp-rpc": "node scripts/probePvpRpc.mjs",
+    "check:pvp-schema": "node scripts/checkPvpSchema.mjs",
+    "check:migrations": "node scripts/checkMigrationSignatures.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

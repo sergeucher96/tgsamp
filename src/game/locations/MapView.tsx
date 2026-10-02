@@ -285,8 +285,21 @@ export default function MapView({ }: MapViewProps) {
   // подлокация может быть 2D внутри 3D-интерьера и наоборот.
   const interiorIs3D = hasScene3D(interiorKey);
 
+  // Локации без собственного 2D-интерьера: ни картинки, ни hotspots
+  // в savedHotspots.json. Заходить «внутрь» им некуда — LocationView
+  // подставил бы чужую картинку (fallback в нём). Такие открываем сразу
+  // своей панелью: шаг «зайти, потом нажать хотспот» тут лишний.
+  const DIRECT_PANEL_IDS = ['box_club'];
+
   const openInterior = (loc) => {
     setInteriorSubLocation(null);
+
+    if (DIRECT_PANEL_IDS.includes(String(loc.id))) {
+      setLocationView(null);
+      handleInteriorAction('enter', loc);
+      return;
+    }
+
     setLocationView(loc);
   };
 
@@ -745,12 +758,22 @@ const initialCenterDone = useRef(false);
   // Сама маршрутизация живёт в locationActions. Здесь только связываем её
   // с состояниями карты: своя копия роутера здесь разъехалась бы с общей
   // при первой же правке, и 2D с 3D стали бы вести себя по-разному.
-  const handleInteriorAction = (action: string) => {
-    const loc: any = locationView;
+  // `overrideLoc` нужен для прямого открытия панели: там интерьер не
+  // открывался, поэтому в состоянии его ещё нет, а роутер работать
+  // должен. Без него пришлось бы сначала показать интерьер и тут же
+  // его закрывать — вспышка чужой картинки на экране.
+  const handleInteriorAction = (action: string, overrideLoc?: any) => {
+    const loc: any = overrideLoc ?? locationView;
     if (!loc) return;
 
     // Экраны, которые открываются поверх интерьера, а не внутри него.
-    if (action === 'buy_vehicle' || loc.id === 'sto_1') setLocationView(null);
+    // Интерьер обязательно закрываем: иначе он остаётся поверх панели
+    // (у BoxClubView слой ниже, чем у LocationView) и кажется, что
+    // ничего не открылось, пока игрок не закроет картинку руками.
+    const OVERLAY_IDS = ['sto_1', 'box_club'];
+    if (action === 'buy_vehicle' || OVERLAY_IDS.includes(String(loc.id))) {
+      setLocationView(null);
+    }
 
     handleLocationAction(action, loc, {
       onUnloadGarbage: () => {

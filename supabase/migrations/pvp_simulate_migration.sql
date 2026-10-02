@@ -66,6 +66,50 @@
 begin;
 
 -- ============================================================
+--  Снос старых перегрузок
+-- ============================================================
+--
+--  `create or replace function` умеет менять тело, но не может
+--  переименовать или переставить входные параметры: на расхождении
+--  Postgres отвечает 42P13 и весь файл откатывается.
+--
+--  Перечислять старые подписи в `drop function` здесь нельзя.
+--  Подписи менялись дважды — сначала добавили три уровня
+--  дисциплин, потом заменили их силой, ловкостью и выносливостью,
+--  — и развёрнутая версия зависит от того, какие файлы игрок
+--  успел применить раньше. Забытая строка даёт ровно ту же ошибку,
+--  что и её отсутствие, то есть ловится только по одной попытке
+--  на пользователя.
+--
+--  Поэтому удаляются все перегрузки сразу, без сравнения подписей:
+--  каждая функция из списка ниже создаётся заново в этом же файле.
+--  Блокировки зависимостей не будет — тела PL/pgSQL в pg_depend
+--  не попадают, а вызывающий pvp_resolve_npc пересоздаёт pvp_simulate
+--  следующей миграцией.
+do $$
+declare
+  r record;
+begin
+  perform set_config('search_path', 'public, pg_temp', true);
+
+  for r in
+    select p.oid::regprocedure::text as sig
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname = any (array[
+        'pvp_rand',
+        'pvp_damage',
+        'pvp_pick_action',
+        'pvp_simulate',
+        'pvp_balance_probe'
+      ])
+  loop
+    execute format('drop function %s', r.sig);
+  end loop;
+end $$;
+
+-- ============================================================
 --  pvp_rand — детерминированное число в [0; 1)
 -- ============================================================
 --
@@ -180,6 +224,9 @@ create or replace function public.pvp_pick_action(
   p_hp_max  integer,
   p_energy  integer,
   p_heal_cost integer,
+  p_strength  integer,
+  p_agility   integer,
+  p_stamina   integer,
   p_seed    bigint,
   p_step    integer
 )
@@ -198,9 +245,22 @@ declare
   r        double precision;
   v_action text;
 begin
-  w_heavy := 20 + greatest(p_attack, 1) * 0.5;
-  w_block := 4 + greatest(p_defense, 0) * 2.0;
-  w_dodge := 4 + greatest(p_luck, 0) * 0.8;
+  -- Вклад дисциплин в веса. Те же действия, но выбираются они
+  -- Три характеристики раскладываются по трём ролям, ровно как в
+  -- Punch Club: сила поднимает тяжёлый удар, выносливость держит
+  -- стойку, ловкость уводит с линии. Без этого характеристика
+  -- влияла бы только на числа, и стиль боя остался бы одинаковым
+  -- у новичка и у мастера.
+  --
+  -- Коэффициенты подобраны так, чтобы на максимуме стат удваивал
+  -- свой вес, а не перекрывал остальные действия: полностью
+  -- «блокирующий» боец не бьёт вовсе.
+  w_heavy := 20 + greatest(p_attack, 1) * 0.5
+                 + greatest(coalesce(p_strength, 0), 0) * 0.30;
+  w_block := 4 + greatest(p_defense, 0) * 2.0
+                 + greatest(coalesce(p_stamina, 0), 0) * 0.35;
+  w_dodge := 4 + greatest(p_luck, 0) * 0.8
+                 + greatest(coalesce(p_agility, 0), 0) * 0.40;
 
   if p_hp < p_hp_max / 2 and p_energy >= p_heal_cost then
     w_heal := 28;
@@ -227,10 +287,13 @@ begin
 end;
 $$;
 
-comment on function public.pvp_pick_action(integer, integer, integer, integer, integer, integer, integer, bigint, integer) is
-  'Выбор действия по состоянию бойца. Тяжёлый удар деградирует до обычного при нехватке энергии.';
+-- Подпись в comment и grant обязана совпадать с объявленной выше
+-- до аргумента: comment on function требует существующей функции и
+-- на расхождении падает с 42883.
+comment on function public.pvp_pick_action(integer, integer, integer, integer, integer, integer, integer, integer, integer, integer, bigint, integer) is
+  'Выбор действия по состоянию бойца. Характеристики сдвигают веса блока, тяжёлого удара и уклонения.';
 
-grant execute on function public.pvp_pick_action(integer, integer, integer, integer, integer, integer, integer, bigint, integer) to anon, authenticated;
+grant execute on function public.pvp_pick_action(integer, integer, integer, integer, integer, integer, integer, integer, integer, integer, bigint, integer) to anon, authenticated;
 
 
 -- ============================================================
@@ -260,6 +323,32 @@ declare
   c_heal_cost       constant integer := 25;
   c_heal_amount     constant integer := 8;
 
+  -- ------------------------------------------------------------
+  --  Скорость и выносливость
+  --
+  --  Обе приходят из снаряжения И из тренировки в спортзале.
+  --  Потолки обязательны: без них один предмет дал бы больше, чем
+  --  весь остальной набор, и сравнение бойцов перестало бы что-то
+  --  значить. Выше потолка стат просто перестаёт давать эффект.
+  --
+  --  Значения совпадают с c_trained_*_cap в снимке бойца: здесь
+  --  берётся уже сложенная характеристика, поэтому второй потолок
+  --  на стороне симуляции — граница, выше которой эффекта нет.
+  -- ------------------------------------------------------------
+  c_agility_cap              constant integer := 60;
+  c_stamina_cap              constant integer := 60;
+
+  -- Выносливость поднимает потолок энергии и восстановление за раунд:
+  -- энергия кончится тем позже, и тяжёлый удар реже сойдёт в обычный.
+  c_energy_from_stamina      constant double precision := 0.5;
+  c_regen_from_stamina       constant double precision := 0.25;
+
+  -- Ловкость сокращает кадр и решает жребий первого хода.
+  c_agility_ms_gain          constant double precision := 0.4;
+  c_agility_init_gain        constant double precision := 0.25;
+  c_ms_floor                 constant integer := 120;
+
+
   -- Темп комикса. Клиент рисует по at_ms, поэтому база задаёт
   -- длительность каждого кадра одинаково для всех бойцов.
   c_ms_attack       constant integer := 420;
@@ -278,6 +367,20 @@ declare
   v_luck     integer[];
   v_evade    boolean[];
   v_block    boolean[];
+
+  -- Три характеристики по сторонам и производные от них: веса
+  -- действий, глубина блока, множитель тяжёлого удара, запас
+  -- энергии и темп кадра. Массивы, а не скаляры: иначе пришлось бы
+  -- дважды писать одну и ту же развилку по стороне.
+  v_strength     integer[];
+  v_agility      integer[];
+  v_stamina      integer[];
+  v_heavy_mult   double precision[];
+  v_block_red    double precision[];
+  v_energy_max   integer[];
+  v_energy_regen integer[];
+  v_tempo         double precision[];
+  v_init_threshold double precision;
 
   v_round    integer := 0;
   v_step     integer := 0;
@@ -308,7 +411,8 @@ begin
     greatest(coalesce((p_defender->>'max_hp')::integer, 100), 1)
   ];
   v_hp_max  := v_hp;
-  v_energy  := array[c_energy_start, c_energy_start];
+  -- Стартовая энергия считается ниже: её потолок зависит от
+  -- выносливости, а тот известен только после разбора снимка.
   v_atk     := array[
     greatest(coalesce((p_attacker->>'attack')::integer, 1), 1),
     greatest(coalesce((p_defender->>'attack')::integer, 1), 1)
@@ -328,6 +432,72 @@ begin
   v_evade   := array[false, false];
   v_block   := array[false, false];
 
+  -- Три характеристики бойца. Снимок NPC их может не класть,
+  -- поэтому coalesce: иначе у соперника был бы null вместо нуля,
+  -- и вся арифметика весов уехала бы в null вместе с ним.
+  v_strength := array[
+    greatest(coalesce((p_attacker->>'strength')::integer, 0), 0),
+    greatest(coalesce((p_defender->>'strength')::integer, 0), 0)
+  ];
+  v_agility  := array[
+    greatest(coalesce((p_attacker->>'agility')::integer, 0), 0),
+    greatest(coalesce((p_defender->>'agility')::integer, 0), 0)
+  ];
+  v_stamina  := array[
+    greatest(coalesce((p_attacker->>'stamina')::integer, 0), 0),
+    greatest(coalesce((p_defender->>'stamina')::integer, 0), 0)
+  ];
+
+  -- Выносливость: запас энергии и восстановление за раунд.
+  -- В оригинале формула 5 + 1.5*STM, здесь тот же смысл при
+  -- другой шкале: потолок растёт, и тяжёлых ударов выходит больше.
+  v_energy_max := array[
+    c_energy_max + round(least(v_stamina[1], c_stamina_cap) * c_energy_from_stamina)::integer,
+    c_energy_max + round(least(v_stamina[2], c_stamina_cap) * c_energy_from_stamina)::integer
+  ];
+  v_energy_regen := array[
+    c_energy_regen + round(least(v_stamina[1], c_stamina_cap) * c_regen_from_stamina)::integer,
+    c_energy_regen + round(least(v_stamina[2], c_stamina_cap) * c_regen_from_stamina)::integer
+  ];
+  -- Старт ниже потолка, чтобы выносливый боец не выходил в бой уже
+  -- с полной шкалой: выигрыш должен быть в том, сколько энергии
+  -- останется к тяжёлым, а не в том, что он начинает с запасом.
+  v_energy := array[
+    least(c_energy_start, v_energy_max[1]),
+    least(c_energy_start, v_energy_max[2])
+  ];
+
+  -- Ловкость задаёт темп кадра и решает жребий первого хода.
+  -- Без жребия она была бы только темпом комикса: число действий
+  -- задаёт число раундов, а не длину кадра, поэтому быстрый боец
+  -- в равном бою получил бы ровно столько же ударов, сколько
+  -- медленный. Потолок 0.1/0.9 оставлен намеренно: иначе стопка
+  -- одного стата просто отменяла бы жребий.
+  v_tempo := array[
+    1.0 - least(v_agility[1], c_agility_cap)::double precision / c_agility_cap * c_agility_ms_gain,
+    1.0 - least(v_agility[2], c_agility_cap)::double precision / c_agility_cap * c_agility_ms_gain
+  ];
+  v_init_threshold := 0.5
+    + (least(v_agility[1], c_agility_cap) - least(v_agility[2], c_agility_cap))::double precision
+      / c_agility_cap * c_agility_init_gain;
+  v_init_threshold := least(greatest(v_init_threshold, 0.1), 0.9);
+
+  -- Множитель тяжёлого удара растёт с силой, но не безгранично:
+  -- +0.002 за единицу даёт на потолке 1.8 вместо базовых 1.6.
+  -- Без потолка пришлось бы гадать, где бой перестаёт быть боем.
+  v_heavy_mult := array[
+    c_heavy_mult + least(v_strength[1], 60) * 0.002,
+    c_heavy_mult + least(v_strength[2], 60) * 0.002
+  ];
+
+  -- Глубина блока. 0.45 — сколько урона проходит сквозь блок.
+  -- Выносливость уменьшает эту долю: уставший боец держит стойку
+  -- хуже, поэтому получает больше, а не просто реже встаёт.
+  v_block_red := array[
+    c_block_reduction * (1.0 - least(v_stamina[1], 60) * 0.004),
+    c_block_reduction * (1.0 - least(v_stamina[2], 60) * 0.004)
+  ];
+
   while v_round < c_max_rounds and not v_done loop
     v_round := v_round + 1;
 
@@ -338,7 +508,7 @@ begin
     -- вместо ~50%. Обеим сторонам нужно одинаковое число ударов,
     -- а первым добивает именно тот, кто ходит первым, — то есть
     -- перекос был не «преимуществом первого хода», а гарантией.
-    if public.pvp_rand(p_seed, v_step) < 0.5 then
+    if public.pvp_rand(p_seed, v_step) < v_init_threshold then
       v_first := 1;
     else
       v_first := 2;
@@ -356,7 +526,9 @@ begin
       v_action := public.pvp_pick_action(
         v_atk[v_side], v_defense[v_side], v_luck[v_side],
         v_hp[v_side], v_hp_max[v_side], v_energy[v_side],
-        c_heal_cost, p_seed, v_step
+        c_heal_cost,
+        v_strength[v_side], v_agility[v_side], v_stamina[v_side],
+        p_seed, v_step
       );
       v_step := v_step + 1;
 
@@ -386,7 +558,7 @@ begin
 
         v_res := public.pvp_damage(
           v_atk[v_side],
-          case when v_action = 'heavy' then c_heavy_mult else 1.0 end,
+          case when v_action = 'heavy' then v_heavy_mult[v_side] else 1.0 end,
           v_defense[v_foe], v_mitig[v_foe],
           public.pvp_rand(p_seed, v_step),
           public.pvp_rand(p_seed, v_step + 1),
@@ -405,14 +577,20 @@ begin
           v_evade[v_foe] := false;
         elsif v_block[v_foe] then
           v_blocked := true;
-          v_dmg := greatest(round(v_dmg * c_block_reduction), 1)::integer;
+          -- Глубина блока берётся у того, кто его поставил, то есть у
+          -- защитника этого удара: v_block[v_foe] хранит стойку
+          -- защитника.
+          v_dmg := greatest(round(v_dmg * v_block_red[v_foe]), 1)::integer;
           v_block[v_foe] := false;
         end if;
 
         v_hp[v_foe] := greatest(v_hp[v_foe] - v_dmg, 0);
       end if;
 
-      v_at_ms := v_at_ms + v_ms;
+      -- Темп применяется здесь, а не в пяти местах выше: длительность
+      -- кадра нужна одна и та же, и править её в одном месте надёжнее,
+      -- чем повторять умножение у каждого действия по отдельности.
+      v_at_ms := v_at_ms + greatest(round(v_ms * v_tempo[v_side])::integer, c_ms_floor);
 
       v_events := v_events || jsonb_build_object(
         'n', v_round,
@@ -437,9 +615,11 @@ begin
       end if;
     end loop;
 
-    -- Энергия восстанавливается в конце раунда у обоих.
-    v_energy[1] := least(v_energy[1] + c_energy_regen, c_energy_max);
-    v_energy[2] := least(v_energy[2] + c_energy_regen, c_energy_max);
+    -- Энергия восстанавливается в конце раунда у обоих, но по
+    -- своему потолку: выносливый боец восстанавливает и быстрее,
+    -- и до большего значения.
+    v_energy[1] := least(v_energy[1] + v_energy_regen[1], v_energy_max[1]);
+    v_energy[2] := least(v_energy[2] + v_energy_regen[2], v_energy_max[2]);
   end loop;
 
   -- Потолок раундов: сравниваем по доле оставшегося здоровья,

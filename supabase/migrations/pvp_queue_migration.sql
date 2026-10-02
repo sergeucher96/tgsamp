@@ -59,6 +59,43 @@
 begin;
 
 -- ============================================================
+--  Снос старых перегрузок
+-- ============================================================
+--
+--  `create or replace function` умеет менять тело, но не может
+--  переименовать или переставить входные параметры: на расхождении
+--  Postgres отвечает 42P13 и весь файл откатывается.
+--
+--  Подписи pvp_queue_fight и pvp_queue_take в базе не совпадают с
+--  объявленными здесь, поэтому перечислять их вручную нельзя:
+--  неизвестно, какие версии файлов применены раньше. Удаляются все
+--  перегрузки сразу — каждая функция из списка создаётся заново ниже
+--  по этому же файлу. Блокировки зависимостей не будет: тела
+--  PL/pgSQL в pg_depend не попадают.
+do $$
+declare
+  r record;
+begin
+  perform set_config('search_path', 'public, pg_temp', true);
+
+  for r in
+    select p.oid::regprocedure::text as sig
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname = any (array[
+        'pvp_queue_join',
+        'pvp_queue_leave',
+        'pvp_queue_list',
+        'pvp_queue_fight',
+        'pvp_queue_take'
+      ])
+  loop
+    execute format('drop function %s', r.sig);
+  end loop;
+end $$;
+
+-- ============================================================
 --  1. Очередь
 -- ============================================================
 --

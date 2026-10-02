@@ -111,11 +111,24 @@ declare
   -- больше максимума из полного комплекта одежды (53).
   c_armor_cap    constant integer := 300;
 
-  -- Из этих двоих берётся боевая характеристика. Кикбоксинг
-  -- в игре пока не выдаётся (скилл есть в каталоге, но grant
-  -- не вызывается ниоткуда), но если появится — подхватится
-  -- сам, без правок здесь.
-  v_skill        integer;
+  -- Потолок характеристики после сложения вещей, баффов и тренировки.
+  -- Уровень в спортзале даёт максимум 20, снаряжение добавляет
+  -- сверху, поэтому 60 — это заведомо недостижимая величина:
+  -- потолок стоит не ради баланса, а чтобы абсурдное значение в
+  -- clothing_stats не разнесло бой.
+  c_stat_cap      constant integer := 60;
+
+
+  -- Уровни боевых дисциплин. Значения кэшируются здесь, потому что
+  -- ниже они используются дважды: на характеристики и в сам снимок,
+  -- откуда их читает симуляция для весов блока, тяжёлого удара и
+  -- уклонения.
+  v_levels       jsonb;
+  -- Уровни трёх характеристик из спортзала. Складываются с вещами
+  -- и баффами при расчёте итоговых значений.
+  v_strength_lvl integer;
+  v_agility_lvl  integer;
+  v_stamina_lvl  integer;
 
   v_profile      record;
   v_owner_is_uuid boolean;
@@ -131,12 +144,13 @@ declare
   v_buff_stamina integer := 0;
   v_buff_strength integer := 0;
   v_buff_speed   integer := 0;
+
   v_buff_luck    integer := 0;
   v_buff_armor   integer := 0;
 
   v_stamina  integer;
   v_strength integer;
-  v_speed    integer;
+  v_agility  integer;
   v_gear_luck_total integer;
   v_armor    integer;
 
@@ -178,14 +192,32 @@ begin
     return jsonb_build_object('ok', false, 'blocked', 'unknown_player');
   end if;
 
-  -- Боевая характеристика: максимум из бокса и кикбоксинга.
-  -- coalesce обязателен: без него у игрока без боевых скиллов
-  -- v_skill будет null, и арифметика внизу даст null вместо
-  -- числа — снимок уехал бы в клиент без нормальных stat'ов.
-  select coalesce(max(value), 0) into v_skill
-    from player_skills
-   where player_id = p_player_id
-     and skill_name in ('boxing', 'kickboxing');
+  -- Характеристики читаются из pvp_boxing_xp, а не из
+  -- player_skills.
+  --
+  -- ПОЧЕМУ НЕ ИЗ player_skills. Эту таблицу писал клиент
+  -- (BoxClubView вызывал applySkillProgress при открытом RLS),
+  -- то есть уровень можно было выписать себе любой одной
+  -- строкой в консоли. Пока бой доверяет этим данным, тренировка
+  -- не имеет смысла: платить за неё и подделывать результат
+  -- одинаково легко. Теперь player_skills — кэш для показа, а
+  -- правда о уровнях лежит в pvp_boxing_xp, куда у клиента нет
+  -- доступа.
+  --
+  -- Отрицательный уровень из снимка вычеркнуть нельзя, только
+  -- зажать: снимок — публичная функция, и доверять её входным
+  -- данным на границе дешевле, чем потом искать, откуда взялся
+  -- боец с -50 уровня бокса.
+  --
+  -- Функция отдаёт уровни сразу по всем трём характеристикам: один
+  -- вызов вместо трёх, а сам pvp_boxing_xp клиенту не виден.
+  v_levels := public.pvp_boxing_levels(p_player_id);
+
+  -- Уровни из спортзала. Складываются с вещами и баффами ниже, а не
+  -- заменяют их: тренировка и снаряжение отвечают за разное.
+  v_strength_lvl := greatest(coalesce((v_levels->>'strength')::integer, 0), 0);
+  v_agility_lvl  := greatest(coalesce((v_levels->>'agility')::integer, 0), 0);
+  v_stamina_lvl  := greatest(coalesce((v_levels->>'stamina')::integer, 0), 0);
 
   -- ------------------------------------------------------------
   --  Одежда
@@ -290,17 +322,24 @@ begin
 
   -- ------------------------------------------------------------
   --  Итоговые характеристики
+  --
+  --  Расклад как в Punch Club: сила — урон, ловкость — уклонение,
+  --  выносливость — здоровье, защита и поглощение урона.
   -- ------------------------------------------------------------
-  v_stamina  := v_gear_stamina  + v_buff_stamina;
-  v_strength := v_gear_strength + v_buff_strength;
-  v_speed    := v_gear_speed    + v_buff_speed;
+  v_stamina  := least(v_gear_stamina  + v_buff_stamina  + v_stamina_lvl,  c_stat_cap);
+  v_strength := least(v_gear_strength + v_buff_strength + v_strength_lvl, c_stat_cap);
+  v_agility  := least(v_gear_speed    + v_buff_speed    + v_agility_lvl,  c_stat_cap);
   v_gear_luck_total := v_gear_luck + v_buff_luck;
-  v_armor    := least(v_gear_armor + v_buff_armor, c_armor_cap);
 
-  v_max_hp  := c_base_hp + v_skill / 4 + v_stamina / 2;
-  v_attack  := c_base_attack + v_skill / 5 + v_weapon_dmg::integer + v_strength / 2;
-  v_defense := c_base_defense + v_skill / 8 + v_stamina / 4;
-  v_luck    := c_base_luck + v_skill / 10 + v_gear_luck_total + v_profile.prof_luck;
+  -- Выносливость даёт и поглощение урона, а не только здоровье:
+  -- в оригинале это ровно её вторая роль, и без неё третий
+  -- характеристик был бы просто ещё одним числом на доске.
+  v_armor := least(v_gear_armor + v_buff_armor + v_stamina * 2, c_armor_cap);
+
+  v_max_hp  := c_base_hp + v_stamina;
+  v_attack  := c_base_attack + v_weapon_dmg::integer + v_strength * 2;
+  v_defense := c_base_defense + v_stamina / 2;
+  v_luck    := c_base_luck + v_gear_luck_total + v_profile.prof_luck;
 
   -- Броня режет входящий урон; выводится отдельным множителем,
   -- чтобы резолвер не делил сам и не разошёлся с этим числом.
@@ -313,7 +352,14 @@ begin
     'username', v_profile.username,
     'lvl', v_profile.lvl,
 
-    'skill',  v_skill,
+    -- Три характеристики отдельными полями, а не одной свёрткой:
+    -- по сумме нельзя понять, что именно натренировал боец, а
+    -- симуляции нужны раздельно — сила поднимает урон, ловкость
+    -- вес уклонения, выносливость запас энергии.
+    'strength_level', v_strength_lvl,
+    'agility_level',  v_agility_lvl,
+    'stamina_level',  v_stamina_lvl,
+
     'max_hp', greatest(v_max_hp, 1),
     'attack', greatest(v_attack, 1),
     'defense', greatest(v_defense, 0),
@@ -322,7 +368,7 @@ begin
     'armor',    v_armor,
     'stamina',  v_stamina,
     'strength', v_strength,
-    'speed',    v_speed,
+    'agility',  v_agility,
 
     'mitigation', round(v_mitigation, 4),
 

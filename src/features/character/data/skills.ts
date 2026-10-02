@@ -23,7 +23,10 @@ export const SKILLS_DATABASE: Skill[] = [
   { id: 'm4', name: 'M4 Карабин', category: 'weapon', icon: '🔫' },
   { id: 'shotgun', name: 'Дробовик', category: 'weapon', icon: '🔫' },
 
-  // БОЙ
+  // БОЙ. Три боевые дисциплины: у каждой своё влияние на стиль
+  // боя (блок, тяжёлый удар, уклонение). Качаются в спортзале и за
+  // бои, уровень считает сервер.
   { id: 'boxing', name: 'Бокс', category: 'combat', icon: '🥊' },
   { id: 'kickboxing', name: 'Кикбоксинг', category: 'combat', icon: '🥋' },
+  { id: 'footwork', name: 'Работа с ногами', category: 'combat', icon: '🦶' },
 ];

@@ -39,6 +39,50 @@
 begin;
 
 -- ============================================================
+--  Снос старых перегрузок
+-- ============================================================
+--
+--  `create or replace function` умеет менять тело, но не может
+--  переименовать или переставить входные параметры: на расхождении
+--  Postgres отвечает 42P13 и весь файл откатывается.
+--
+--  Расхождения тут реальные, а не теоретические: развёрнутая
+--  pvp_resolve_npc объявлена как (p_npc_key, p_player_id), а эта
+--  миграция создаёт её как (p_player_id, p_npc_key). Вызовы клиента
+--  при этом работают, потому что PostgREST сопоставляет аргументы
+--  по именам, а не по позициям, — расхождение видно только при
+--  применении SQL.
+--
+--  Перечислять старые подписи вручную нельзя: неизвестно, какие
+--  версии файлов игрок успел применить раньше, и любая забытая
+--  даёт ту же 42P13. Поэтому удаляются все перегрузки сразу: каждая
+--  функция из списка создаётся заново ниже по этому же файлу.
+--  Блокировки зависимостей не будет — тела PL/pgSQL в pg_depend
+--  не попадают, а очередь вызывает резолвер после пересоздания.
+do $$
+declare
+  r record;
+begin
+  perform set_config('search_path', 'public, pg_temp', true);
+
+  for r in
+    select p.oid::regprocedure::text as sig
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname = any (array[
+        'pvp_npc_snapshot',
+        'pvp_npc_available',
+        'pvp_apply_rating',
+        'pvp_resolve_player',
+        'pvp_resolve_npc'
+      ])
+  loop
+    execute format('drop function %s', r.sig);
+  end loop;
+end $$;
+
+-- ============================================================
 --  1. NPC
 -- ============================================================
 --
@@ -78,11 +122,22 @@ create table if not exists pvp_npcs (
   weapon_icon  text not null default '👊',
   weapon_damage integer not null default 0,
 
+  -- Деньги за победу. Раньше боксёрский клуб платил их с клиента
+  -- по таблице противников, и вместе с переводом боя на сервер
+  -- игрок потерял бы доход. Деньги платит сервер, поэтому сумму
+  -- нельзя подделать и нельзя выплатить за бой, которого не было.
+  reward_money integer not null default 0 check (reward_money >= 0),
+
   enabled boolean not null default true
 );
 
 comment on table pvp_npcs is
   'Противники-боты. Тренировочные доступны всем и не двигают рейтинг, боевые — с порога min_rating.';
+
+-- create table if not exists не добавит колонку в уже созданную
+-- таблицу: без этой строки переприменение файла прошло бы молча,
+-- а выплата за победу падала бы на отсутствующем поле.
+alter table pvp_npcs add column if not exists reward_money integer not null default 0;
 
 alter table pvp_npcs enable row level security;
 
@@ -370,7 +425,10 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
-  c_rules_version constant integer := 1;
+  -- Версия правил боя. Поднята до 2 вместе с подключением скорости и
+  -- выносливости: старые бои и новые считаются по-разному, и версия
+  -- нужна, чтобы отличить один расчёт от другого при разборе.
+  c_rules_version constant integer := 2;
 
   v_snap_a jsonb;
   v_snap_d jsonb;
@@ -439,6 +497,17 @@ begin
   perform public.pvp_apply_rating(p_challenger_id, v_rd, case when v_a_won then 1 else 0 end);
   perform public.pvp_apply_rating(p_defender_id,   v_ra, case when v_a_won then 0 else 1 end);
 
+  -- Опыт дисциплинам за бой. Победа даёт больше, поражение тоже
+  -- даёт: иначе новичок, проигравший первый бой, остался бы с
+  -- нулевым прогрессом и не понял бы, что тренировки работают.
+  --
+  -- Какая именно дисциплина растёт — по тому, чем боец реально
+  -- пользовался. Считать вклад пришлось бы по всему журналу, а
+  -- он уже посчитан; вместо этого распределение делает
+  -- pvp_boxing_award_fight ниже.
+  perform public.pvp_boxing_award_fight(p_challenger_id, 'a', v_result, v_a_won);
+  perform public.pvp_boxing_award_fight(p_defender_id,   'd', v_result, not v_a_won);
+
   return v_result
     || jsonb_build_object(
       'fight_id', v_fight_id,
@@ -473,7 +542,10 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
-  c_rules_version constant integer := 1;
+  -- Версия правил боя. Поднята до 2 вместе с подключением скорости и
+  -- выносливости: старые бои и новые считаются по-разному, и версия
+  -- нужна, чтобы отличить один расчёт от другого при разборе.
+  c_rules_version constant integer := 2;
 
   v_rating integer;
   v_npc    pvp_npcs%rowtype;
@@ -483,6 +555,7 @@ declare
   v_result jsonb;
   v_fight_id bigint;
   v_won boolean;
+  v_reward bigint := 0;
 begin
   select * into v_npc
   from pvp_npcs
@@ -537,12 +610,29 @@ begin
   returning id into v_fight_id;
 
   -- Рейтинг намеренно не меняется.
+  -- Опыт бокса при этом растёт: тренировка с NPC не должна была
+  -- становиться фармом рейтинга, но навык за неё качать можно и
+  -- нужно, иначе новичку негде было бы тренироваться до первого
+  -- реального соперника.
+  perform public.pvp_boxing_award_fight(p_player_id, 'a', v_result, v_won);
+
+  -- Деньги платятся здесь и только здесь. Раньше боксёрский клуб
+  -- считал выплату на клиенте по своей таблице противников: сумму
+  -- можно было выписать себе в консоли, а победа зависела от
+  -- Math.random() в браузере. Теперь выплата следует за реально
+  -- решённым боем, поэтому её нельзя получить без него.
+  v_reward := case when v_won then v_npc.reward_money else 0 end;
+  if v_reward > 0 then
+    update profiles set money = coalesce(money, 0) + v_reward where id = p_player_id;
+  end if;
+
   return v_result
     || jsonb_build_object(
       'fight_id', v_fight_id,
       'kind', 'npc',
       'npc_key', p_npc_key,
       'won', v_won,
+      'reward_money', v_reward,
       'attacker_snapshot', v_snap_a,
       'defender_snapshot', v_snap_n,
       'rules_version', c_rules_version
@@ -586,6 +676,24 @@ values
   ('real_3', 'Железный Лев', 'real', 1300, 14, 125, 24, 9, 5, 60,
    'rifle', 'Винтовка', '🔫', 20)
 on conflict (key) do nothing;
+
+-- Награда добирается отдельным update, а не через основной insert:
+-- тот на конфликте ничего не делает, чтобы не затирать правки NPC,
+-- сделанные в панели. Здесь то же самое — заполняем только то,
+-- чего ещё нет, поэтому ручная настройка не пропадёт, а новые
+-- противники получат награду сразу.
+update pvp_npcs n
+   set reward_money = v.reward
+  from (values
+    ('train_1',  150::bigint),
+    ('train_2',  400::bigint),
+    ('train_3',  900::bigint),
+    ('real_1',  1800::bigint),
+    ('real_2',  3200::bigint),
+    ('real_3',  6000::bigint)
+  ) as v(key, reward)
+ where n.key = v.key
+   and n.reward_money = 0;
 
 -- Прямого grant на select здесь нет намеренно: RLS включён без
 -- политик, поэтому anon/authenticated всё равно ничего не видят.

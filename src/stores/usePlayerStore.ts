@@ -18,6 +18,18 @@ const THIRST_DRAIN_PER_TICK = 2;
 const LOW_STAT_THRESHOLD = 20;
 /** Дополнительный расход энергии при нехватке еды или воды */
 const ENERGY_DRAIN_WHEN_TIRED = 1;
+/**
+ * Порог сытости и жажды, с которого организм тратит энергию на
+ * восстановление, а не слив. Ниже LOW_STAT_THRESHOLD начинается
+ * расход, выше — восстановление, между ними энергия стоит на месте:
+ * так игрок не чувствует, что поправка на каждый шаг выедает его
+ * запас, и не получает его обратно на автомате, толком не поев.
+ */
+const ENERGY_REGEN_THRESHOLD = 50;
+/** Прирост энергии за тик при нормальном питании */
+const ENERGY_REGEN_PER_TICK = 1;
+/** Потолок энергии. Тот же, что у полосы в профиле. */
+const ENERGY_MAX = 100;
 
 export interface Profile {
   id: string;
@@ -30,6 +42,7 @@ export interface Profile {
   hunger: number;
   thirst: number;
   energy: number;
+  sportEnergy: number;
   registered_at: string | null;
   rotation: number;
   inv_slots: number;
@@ -265,6 +278,20 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const tired = (player.hunger ?? 0) < LOW_STAT_THRESHOLD || (player.thirst ?? 0) < LOW_STAT_THRESHOLD;
     if (tired && player.energy > 0) {
       updates.energy = Math.max(0, player.energy - ENERGY_DRAIN_WHEN_TIRED);
+    }
+
+    // Сытого организм восстанавливает сам. Без этого энергия была бы
+    // односторонним сливом: раньше она только убывала от голода, и
+    // спортзал нельзя было бы тренировать дважды — второй подход
+    // стоил бы ресурса, которого взять уже неоткуда.
+    //
+    // Порог отличается от порога усталости намеренно: восстановление
+    // начинается раньше, чем начинается слив. Иначе энергия застряла
+    // бы в нуле у того, кто поел, но не до конца.
+    const fed = (player.hunger ?? 0) >= ENERGY_REGEN_THRESHOLD
+      && (player.thirst ?? 0) >= ENERGY_REGEN_THRESHOLD;
+    if (fed && player.energy < ENERGY_MAX) {
+      updates.energy = Math.min(ENERGY_MAX, player.energy + ENERGY_REGEN_PER_TICK);
     }
 
     if (Object.keys(updates).length > 0) {

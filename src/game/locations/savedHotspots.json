@@ -213,5 +213,23 @@
       }
     ],
     "updatedAt": "2026-09-30T21:46:13.493Z"
+  },
+  "box_club": {
+    "default": "/locations/box_club.webp",
+    "bgMusic": "",
+    "musicVolume": 0.5,
+    "hotspots": [
+      {
+        "id": "hotspot_1790927284000",
+        "type": "rect",
+        "label": "Новая зона",
+        "action": "enter",
+        "x": 36.036,
+        "y": 33.563,
+        "w": 26.108,
+        "h": 20.364
+      }
+    ],
+    "updatedAt": "2026-10-02T07:48:11.367Z"
   }
 }
