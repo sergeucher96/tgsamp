@@ -1,4 +1,5 @@
 import React from 'react';
+import { StyleBonus } from './useBoxingStore';
 import { X, Dumbbell, Swords, Shield, Zap, Heart, Trophy, Gauge, User, Brain, Target, Battery } from 'lucide-react';
 import { useBoxingStore } from './useBoxingStore';
 import { usePlayerStore } from '../../stores/usePlayerStore';
@@ -43,8 +44,15 @@ const COMBAT_STATS = [
 export default function BoxingCharacterView({ onClose }: BoxingCharacterViewProps) {
   const progress = useBoxingStore((s) => s.progress);
   const fighterSnapshot = useBoxingStore((s) => s.stats);
+  const styleBonuses = useBoxingStore((s) => s.styleBonuses);
+  const refreshStyleBonuses = useBoxingStore((s) => s.refreshStyleBonuses);
   const player = usePlayerStore((s) => s.player);
   const sportEnergy = player?.sportEnergy ?? 100;
+
+  // Загружаем бонусы при открытии
+  React.useEffect(() => {
+    void refreshStyleBonuses();
+  }, [refreshStyleBonuses]);
 
   return (
     <div className="fixed inset-0 z-[840] bg-[#0a0505] flex flex-col text-white">
@@ -195,6 +203,11 @@ export default function BoxingCharacterView({ onClose }: BoxingCharacterViewProp
             под стиль своего боя.
           </p>
         </Section>
+
+        {/* ------------------------------------- стилевые бонусы */}
+        <Section icon={<Trophy size={14} />} title="Стилевые бонусы">
+          <StyleBonusesList bonuses={styleBonuses} />
+        </Section>
       </div>
     </div>
   );
@@ -211,6 +224,54 @@ function Section({ icon, title, children }: {
       </h2>
       <div className="text-[11px] text-slate-300 leading-relaxed">{children}</div>
     </section>
+  );
+}
+
+function StyleBonusesList({ bonuses }: { bonuses: StyleBonus[] }) {
+  if (bonuses.length === 0) {
+    return (
+      <div className="text-center text-slate-500 py-4 text-[11px]">
+        Пока нет бонусов. Качай характеристики до 5 уровня.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="mb-3 text-[11px] text-slate-300">
+        На 5 / 10 / 15 / 20 уровне каждой характеристики включается
+        пассивный бонус. Выбирать ничего не нужно — он работает сам.
+      </p>
+      {bonuses.map((b) => (
+        <div key={b.key} className="p-3 rounded-xl bg-white/5 border border-white/10">
+          <div className="flex items-start gap-2">
+            <span className="text-[#8cff4a] shrink-0">✦</span>
+            <div className="min-w-0">
+              <div className="text-[11px] font-black flex items-center gap-1">
+                {b.name}
+                <span className="text-[9px] text-slate-500 font-normal">
+                  {b.effect === 'heavy_cost_reduction' && `−${b.value} энергии`}
+                  {b.effect === 'execute_chance' && `${b.value}% шанс`}
+                  {b.effect === 'armor_pen' && `${b.value}% бронепробития`}
+                  {b.effect === 'damage_bonus' && `+${b.value}% урон`}
+                  {b.effect === 'initiative_bonus' && 'всегда первый'}
+                  {b.effect === 'riposte_chance' && 'авто-контратака'}
+                  {b.effect === 'dodge_bonus' && `+${b.value}% уклонение`}
+                  {b.effect === 'defense_cost_reduction' && `−${b.value} энергии`}
+                  {b.effect === 'block_bonus' && `+${b.value}% блок`}
+                  {b.effect === 'low_hp_regen_mult' && `×${b.value} реген`}
+                  {b.effect === 'hp_bonus' && `+${b.value} HP / +5 защ`}
+                  {b.effect === 'damage_reduction' && `−${b.value}% урон`}
+                </span>
+              </div>
+              <div className="text-[10px] text-slate-400 leading-relaxed mt-0.5">
+                {b.desc}
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 

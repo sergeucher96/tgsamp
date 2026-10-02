@@ -40,6 +40,15 @@ export interface BoxingStat {
   max_level: boolean;
 }
 
+export interface StyleBonus {
+  key: string;
+  name: string;
+  desc: string;
+  effect: string;
+  value: number;
+  active: boolean;
+}
+
 export interface BoxingProgress {
   ok: boolean;
   /** Запас энергии. Это же он и есть ограничитель тренировок. */
@@ -74,6 +83,8 @@ interface BoxingState {
   progress: BoxingProgress | null;
   /** Характеристики бойца для панели в меню. */
   stats: BoxingStats | null;
+  /** Активные стилевые бонусы. */
+  styleBonuses: StyleBonus[];
   loading: boolean;
   training: Stat | null;
   error: string | null;
@@ -82,6 +93,7 @@ interface BoxingState {
 
   refresh: () => Promise<void>;
   refreshStats: () => Promise<void>;
+  refreshStyleBonuses: () => Promise<void>;
   train: (stat: Stat) => Promise<boolean>;
   clearLevelUp: () => void;
 }
@@ -107,10 +119,43 @@ function reasonText(reason: string): string {
 export const useBoxingStore = create<BoxingState>((set, get) => ({
   progress: null,
   stats: null,
+  styleBonuses: [],
   loading: false,
   training: null,
   error: null,
   levelUp: null,
+
+  refreshStyleBonuses: async () => {
+    const playerId = me();
+    if (!playerId) return;
+
+    // Получаем уровни из снимка бойца
+    const { data: snap, error: snapErr } = await supabase.rpc('pvp_fighter_snapshot', {
+      p_player_id: playerId,
+    });
+
+    if (snapErr || !snap || snap.ok === false) return;
+
+    const { data, error } = await supabase.rpc('pvp_style_bonuses', {
+      p_strength_level: Number(snap.strength_level ?? 0),
+      p_agility_level: Number(snap.agility_level ?? 0),
+      p_stamina_level: Number(snap.stamina_level ?? 0),
+    });
+
+    if (error) return;
+
+    const bonuses = data as Record<string, { name: string; desc: string; effect: string; value: number }>;
+    const activeBonuses: StyleBonus[] = Object.entries(bonuses).map(([key, bonus]) => ({
+      key,
+      name: bonus.name,
+      desc: bonus.desc,
+      effect: bonus.effect,
+      value: bonus.value,
+      active: true,
+    }));
+
+    set({ styleBonuses: activeBonuses });
+  },
 
   refreshStats: async () => {
     const playerId = me();

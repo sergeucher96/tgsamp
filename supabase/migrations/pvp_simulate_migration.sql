@@ -217,18 +217,21 @@ grant execute on function public.pvp_damage(integer, double precision, integer, 
 --  одном и том же состоянии — боец «мигал» без видимой причины.
 
 create or replace function public.pvp_pick_action(
-  p_attack  integer,
-  p_defense integer,
-  p_luck    integer,
-  p_hp      integer,
-  p_hp_max  integer,
-  p_energy  integer,
-  p_heal_cost integer,
-  p_strength  integer,
-  p_agility   integer,
-  p_stamina   integer,
-  p_seed    bigint,
-  p_step    integer
+  p_attack        integer,
+  p_defense       integer,
+  p_luck          integer,
+  p_hp            integer,
+  p_hp_max        integer,
+  p_energy        integer,
+  p_heal_cost     integer,
+  p_strength      integer,
+  p_agility       integer,
+  p_stamina       integer,
+  p_strength_level integer,
+  p_agility_level  integer,
+  p_stamina_level  integer,
+  p_seed          bigint,
+  p_step          integer
 )
 returns text
 language plpgsql
@@ -236,31 +239,55 @@ immutable
 set search_path = public, pg_temp
 as $$
 declare
-  w_attack double precision := 50;
-  w_heavy  double precision;
-  w_block  double precision;
-  w_dodge  double precision;
-  w_heal   double precision := 0;
-  w_total  double precision;
-  r        double precision;
-  v_action text;
+  w_attack        double precision := 50;
+  w_heavy         double precision;
+  w_block         double precision;
+  w_dodge         double precision;
+  w_heal          double precision := 0;
+  w_total         double precision;
+  r               double precision;
+  v_action        text;
+  v_bonuses       jsonb;
+  v_heavy_cost_red integer := 0;
+  v_init_bonus    integer := 0;
+  v_dodge_bonus   integer := 0;
+  v_def_cost_red  integer := 0;
 begin
-  -- Вклад дисциплин в веса. Те же действия, но выбираются они
-  -- Три характеристики раскладываются по трём ролям, ровно как в
-  -- Punch Club: сила поднимает тяжёлый удар, выносливость держит
-  -- стойку, ловкость уводит с линии. Без этого характеристика
-  -- влияла бы только на числа, и стиль боя остался бы одинаковым
-  -- у новичка и у мастера.
-  --
+  -- Стилевые бонусы: пассивные эффекты за уровни характеристик
+  v_bonuses := public.pvp_style_bonuses(p_strength_level, p_agility_level, p_stamina_level);
+
+  -- СИЛА
+  if (v_bonuses->'strength_5') is not null then
+    v_heavy_cost_red := v_heavy_cost_red + (v_bonuses->'strength_5'->>'value')::integer;
+  end if;
+
+  -- ЛОВКОСТЬ
+  if (v_bonuses->'agility_5') is not null then
+    v_init_bonus := v_init_bonus + (v_bonuses->'agility_5'->>'value')::integer;
+  end if;
+  if (v_bonuses->'agility_15') is not null then
+    v_dodge_bonus := v_dodge_bonus + (v_bonuses->'agility_15'->>'value')::integer;
+  end if;
+  if (v_bonuses->'agility_20') is not null then
+    v_def_cost_red := v_def_cost_red + (v_bonuses->'agility_20'->>'value')::integer;
+  end if;
+
+  -- Вклад характеристик в веса.
   -- Коэффициенты подобраны так, чтобы на максимуме стат удваивал
-  -- свой вес, а не перекрывал остальные действия: полностью
-  -- «блокирующий» боец не бьёт вовсе.
+  -- свой вес, а не перекрывал остальные действия.
   w_heavy := 20 + greatest(p_attack, 1) * 0.5
-                 + greatest(coalesce(p_strength, 0), 0) * 0.30;
+                     + greatest(coalesce(p_strength, 0), 0) * 0.30;
   w_block := 4 + greatest(p_defense, 0) * 2.0
-                 + greatest(coalesce(p_stamina, 0), 0) * 0.35;
+                     + greatest(coalesce(p_stamina, 0), 0) * 0.35;
   w_dodge := 4 + greatest(p_luck, 0) * 0.8
-                 + greatest(coalesce(p_agility, 0), 0) * 0.40;
+                     + greatest(coalesce(p_agility, 0), 0) * 0.40
+                     + v_dodge_bonus;
+
+  -- Бонус инициативы (agility_5): виртуально увеличиваем вес атаки
+  -- в первом шаге раунда, чтобы действовать чаще первым.
+  if p_step = 0 then
+    w_attack := w_attack + v_init_bonus;
+  end if;
 
   if p_hp < p_hp_max / 2 and p_energy >= p_heal_cost then
     w_heal := 28;
@@ -276,12 +303,15 @@ begin
   else v_action := 'heal';
   end if;
 
-  -- Энергии на тяжёлый удар нет — бьём обычным, но только если
-  -- выбрали именно тяжёлый. Иначе боец без энергии вовсе перестал
-  -- бы наносить урон.
-  if v_action = 'heavy' and p_energy < p_heal_cost then
+  -- Энергии на тяжёлый удар нет — бьём обычным.
+  -- Учитываем снижение стоимости (strength_5).
+  if v_action = 'heavy' and p_energy < p_heal_cost - v_heavy_cost_red then
     v_action := 'attack';
   end if;
+
+  -- Снижение стоимости блок/уклонения (agility_20) — не даёт
+  -- выбрать действие, если энергии нет, но делает их доступными чаще.
+  -- Логика потребления энергии в симуляторе отдельно, здесь только выбор.
 
   return v_action;
 end;
@@ -290,10 +320,10 @@ $$;
 -- Подпись в comment и grant обязана совпадать с объявленной выше
 -- до аргумента: comment on function требует существующей функции и
 -- на расхождении падает с 42883.
-comment on function public.pvp_pick_action(integer, integer, integer, integer, integer, integer, integer, integer, integer, integer, bigint, integer) is
-  'Выбор действия по состоянию бойца. Характеристики сдвигают веса блока, тяжёлого удара и уклонения.';
+comment on function public.pvp_pick_action(integer, integer, integer, integer, integer, integer, integer, integer, integer, integer, integer, integer, integer, bigint, integer) is
+  'Выбор действия по состоянию бойца. Характеристики и их уровни сдвигают веса и включают стилевые бонусы.';
 
-grant execute on function public.pvp_pick_action(integer, integer, integer, integer, integer, integer, integer, integer, integer, integer, bigint, integer) to anon, authenticated;
+grant execute on function public.pvp_pick_action(integer, integer, integer, integer, integer, integer, integer, integer, integer, integer, integer, integer, integer, bigint, integer) to anon, authenticated;
 
 
 -- ============================================================
@@ -372,14 +402,17 @@ declare
   -- действий, глубина блока, множитель тяжёлого удара, запас
   -- энергии и темп кадра. Массивы, а не скаляры: иначе пришлось бы
   -- дважды писать одну и ту же развилку по стороне.
-  v_strength     integer[];
-  v_agility      integer[];
-  v_stamina      integer[];
-  v_heavy_mult   double precision[];
-  v_block_red    double precision[];
-  v_energy_max   integer[];
-  v_energy_regen integer[];
-  v_tempo         double precision[];
+  v_strength       integer[];
+  v_agility        integer[];
+  v_stamina        integer[];
+  v_strength_level integer[];
+  v_agility_level  integer[];
+  v_stamina_level  integer[];
+  v_heavy_mult     double precision[];
+  v_block_red      double precision[];
+  v_energy_max     integer[];
+  v_energy_regen   integer[];
+  v_tempo          double precision[];
   v_init_threshold double precision;
 
   v_round    integer := 0;
@@ -401,6 +434,15 @@ declare
   v_healed   integer := 0;
   v_ms       integer;
   v_res      jsonb;
+
+  -- Стилевые бонусы (пересчитываются каждый шаг, но переменные здесь
+  -- чтобы были видны в секции восстановления энергии).
+  v_bonuses          jsonb;
+  v_armor_pen        integer;
+  v_dmg_bonus        integer;
+  v_block_bonus      integer;
+  v_low_hp_regen_mult integer;
+  v_dmg_reduction    integer;
 begin
   if p_attacker is null or p_defender is null then
     raise exception 'pvp_simulate: снимок бойца не передан';
@@ -446,6 +488,21 @@ begin
   v_stamina  := array[
     greatest(coalesce((p_attacker->>'stamina')::integer, 0), 0),
     greatest(coalesce((p_defender->>'stamina')::integer, 0), 0)
+  ];
+
+  -- Уровни характеристик для стилевых бонусов.
+  -- NPC может не иметь их — тогда 0.
+  v_strength_level := array[
+    greatest(coalesce((p_attacker->>'strength_level')::integer, 0), 0),
+    greatest(coalesce((p_defender->>'strength_level')::integer, 0), 0)
+  ];
+  v_agility_level := array[
+    greatest(coalesce((p_attacker->>'agility_level')::integer, 0), 0),
+    greatest(coalesce((p_defender->>'agility_level')::integer, 0), 0)
+  ];
+  v_stamina_level := array[
+    greatest(coalesce((p_attacker->>'stamina_level')::integer, 0), 0),
+    greatest(coalesce((p_defender->>'stamina_level')::integer, 0), 0)
   ];
 
   -- Выносливость: запас энергии и восстановление за раунд.
@@ -528,9 +585,35 @@ begin
         v_hp[v_side], v_hp_max[v_side], v_energy[v_side],
         c_heal_cost,
         v_strength[v_side], v_agility[v_side], v_stamina[v_side],
+        v_strength_level[v_side], v_agility_level[v_side], v_stamina_level[v_side],
         p_seed, v_step
       );
       v_step := v_step + 1;
+
+      -- Стилевые бонусы для текущего бойца (вычисляем один раз за шаг)
+      v_bonuses := public.pvp_style_bonuses(
+        v_strength_level[v_side], v_agility_level[v_side], v_stamina_level[v_side]
+      );
+      v_armor_pen := 0;
+      v_dmg_bonus := 0;
+      v_block_bonus := 0;
+      v_low_hp_regen_mult := 1;
+      v_dmg_reduction := 0;
+      if (v_bonuses->'strength_15') is not null then
+        v_armor_pen := (v_bonuses->'strength_15'->>'value')::integer;
+      end if;
+        if (v_bonuses->'strength_20') is not null then
+          v_dmg_bonus := (v_bonuses->'strength_20'->>'value')::integer;
+        end if;
+        if (v_bonuses->'stamina_5') is not null then
+          v_block_bonus := (v_bonuses->'stamina_5'->>'value')::integer;
+        end if;
+        if (v_bonuses->'stamina_10') is not null then
+          v_low_hp_regen_mult := (v_bonuses->'stamina_10'->>'value')::integer;
+        end if;
+        if (v_bonuses->'stamina_20') is not null then
+          v_dmg_reduction := (v_bonuses->'stamina_20'->>'value')::integer;
+        end if;
 
       if v_action = 'heal' then
         v_healed := least(c_heal_amount, v_hp_max[v_side] - v_hp[v_side]);
@@ -556,17 +639,34 @@ begin
           v_ms := c_ms_attack;
         end if;
 
-        v_res := public.pvp_damage(
-          v_atk[v_side],
-          case when v_action = 'heavy' then v_heavy_mult[v_side] else 1.0 end,
-          v_defense[v_foe], v_mitig[v_foe],
-          public.pvp_rand(p_seed, v_step),
-          public.pvp_rand(p_seed, v_step + 1),
-          v_luck[v_side]
-        );
+        -- Тяжёлый удар: учитываем бронепробитие (strength_15)
+        declare
+          v_heavy_mult_adj double precision := case when v_action = 'heavy' then v_heavy_mult[v_side] else 1.0 end;
+        begin
+          if v_action = 'heavy' and v_armor_pen > 0 then
+            -- Игнорируем часть брони цели: снижаем mitigation на v_armor_pen%
+            -- mitigation = 100/(100+armor) -> уменьшаем denominator
+            -- проще: умножаем mitigation на (1 - armor_pen/100)
+            v_heavy_mult_adj := v_heavy_mult_adj * (1.0 + v_armor_pen::double precision / 100.0);
+          end if;
+
+          v_res := public.pvp_damage(
+            v_atk[v_side],
+            v_heavy_mult_adj,
+            v_defense[v_foe], v_mitig[v_foe],
+            public.pvp_rand(p_seed, v_step),
+            public.pvp_rand(p_seed, v_step + 1),
+            v_luck[v_side]
+          );
+        end;
         v_step := v_step + 2;
         v_dmg := (v_res->>'damage')::integer;
         v_crit := (v_res->>'crit')::boolean;
+
+        -- Бонус урона strength_20: +10% ко всему урону
+        if v_dmg_bonus > 0 then
+          v_dmg := round(v_dmg * (1.0 + v_dmg_bonus::double precision / 100.0))::integer;
+        end if;
 
         if v_evade[v_foe] then
           -- Уклонение сработало: удар целиком проходит мимо,
@@ -580,8 +680,21 @@ begin
           -- Глубина блока берётся у того, кто его поставил, то есть у
           -- защитника этого удара: v_block[v_foe] хранит стойку
           -- защитника.
-          v_dmg := greatest(round(v_dmg * v_block_red[v_foe]), 1)::integer;
+          -- stamina_5: блок гасит на 10% больше
+          declare
+            v_block_red_adj double precision := v_block_red[v_foe];
+          begin
+            if v_block_bonus > 0 then
+              v_block_red_adj := v_block_red_adj * (1.0 - v_block_bonus::double precision / 100.0);
+            end if;
+            v_dmg := greatest(round(v_dmg * v_block_red_adj), 1)::integer;
+          end;
           v_block[v_foe] := false;
+        end if;
+
+        -- stamina_20: полученный урон снижен на 15%
+        if v_dmg_reduction > 0 then
+          v_dmg := greatest(round(v_dmg * (1.0 - v_dmg_reduction::double precision / 100.0)), 1)::integer;
         end if;
 
         v_hp[v_foe] := greatest(v_hp[v_foe] - v_dmg, 0);
@@ -618,8 +731,25 @@ begin
     -- Энергия восстанавливается в конце раунда у обоих, но по
     -- своему потолку: выносливый боец восстанавливает и быстрее,
     -- и до большего значения.
-    v_energy[1] := least(v_energy[1] + v_energy_regen[1], v_energy_max[1]);
-    v_energy[2] := least(v_energy[2] + v_energy_regen[2], v_energy_max[2]);
+    -- stamina_10: при HP <20% реген в 2 раза быстрее
+    v_energy[1] := least(
+      v_energy[1] +
+      case
+        when v_hp[1] < v_hp_max[1] / 5 and v_low_hp_regen_mult > 1
+        then v_energy_regen[1] * v_low_hp_regen_mult
+        else v_energy_regen[1]
+      end,
+      v_energy_max[1]
+    );
+    v_energy[2] := least(
+      v_energy[2] +
+      case
+        when v_hp[2] < v_hp_max[2] / 5 and v_low_hp_regen_mult > 1
+        then v_energy_regen[2] * v_low_hp_regen_mult
+        else v_energy_regen[2]
+      end,
+      v_energy_max[2]
+    );
   end loop;
 
   -- Потолок раундов: сравниваем по доле оставшегося здоровья,

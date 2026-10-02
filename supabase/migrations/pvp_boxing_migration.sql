@@ -235,6 +235,127 @@ grant execute on function public.pvp_sport_energy_current(uuid) to anon, authent
 
 
 -- ============================================================
+--  Стилевые бонусы (пассивные пороги)
+-- ============================================================
+--
+--  На 5 / 10 / 15 / 20 уровне каждой характеристики разблокируется
+--  небольшой пассивный эффект. Игрок не выбирает — бонус включается
+--  автоматически при достижении уровня. Это даёт цель качать до
+--  конкретных чисел, не усложняя интерфейс.
+--
+--  Бонусы подобраны так, чтобы усиливать стиль, а не давать
+--  универсальную силу: сила — агрессия, ловкость — контроль, выносливость — выживание.
+create or replace function public.pvp_style_bonuses(
+  p_strength_level integer,
+  p_agility_level  integer,
+  p_stamina_level  integer
+)
+returns jsonb
+language plpgsql
+immutable
+set search_path = public, pg_temp
+as $$
+declare
+  v_result jsonb := '{}'::jsonb;
+begin
+  -- СИЛА
+  if p_strength_level >= 5 then
+    v_result := v_result || jsonb_build_object('strength_5', jsonb_build_object(
+      'name', 'Тяжёлая рука',
+      'desc', 'Тяжёлый удар тратит на 5 энергии меньше',
+      'effect', 'heavy_cost_reduction', 'value', 5
+    ));
+  end if;
+  if p_strength_level >= 10 then
+    v_result := v_result || jsonb_build_object('strength_10', jsonb_build_object(
+      'name', 'Добивающий',
+      'desc', 'При цели <20% HP шанс 25% мгновенно закончить бой',
+      'effect', 'execute_chance', 'value', 25
+    ));
+  end if;
+  if p_strength_level >= 15 then
+    v_result := v_result || jsonb_build_object('strength_15', jsonb_build_object(
+      'name', 'Разгром',
+      'desc', 'Тяжёлый удар игнорирует 30% брони цели',
+      'effect', 'armor_pen', 'value', 30
+    ));
+  end if;
+  if p_strength_level >= 20 then
+    v_result := v_result || jsonb_build_object('strength_20', jsonb_build_object(
+      'name', 'Чемпион',
+      'desc', 'Все удары наносят +10% урона',
+      'effect', 'damage_bonus', 'value', 10
+    ));
+  end if;
+
+  -- ЛОВКОСТЬ
+  if p_agility_level >= 5 then
+    v_result := v_result || jsonb_build_object('agility_5', jsonb_build_object(
+      'name', 'Первый шаг',
+      'desc', 'Всегда действуешь первым в раунде',
+      'effect', 'initiative_bonus', 'value', 100
+    ));
+  end if;
+  if p_agility_level >= 10 then
+    v_result := v_result || jsonb_build_object('agility_10', jsonb_build_object(
+      'name', 'Контратака',
+      'desc', 'После успешного уклонения — бесплатный ответный удар',
+      'effect', 'riposte_chance', 'value', 100
+    ));
+  end if;
+  if p_agility_level >= 15 then
+    v_result := v_result || jsonb_build_object('agility_15', jsonb_build_object(
+      'name', 'Тень',
+      'desc', 'Шанс уклонения +15%, блок не снижает урон ниже 1',
+      'effect', 'dodge_bonus', 'value', 15
+    ));
+  end if;
+  if p_agility_level >= 20 then
+    v_result := v_result || jsonb_build_object('agility_20', jsonb_build_object(
+      'name', 'Мастер',
+      'desc', 'Все защитные действия стоят на 5 энергии меньше',
+      'effect', 'defense_cost_reduction', 'value', 5
+    ));
+  end if;
+
+  -- ВЫНОСЛИВОСТЬ
+  if p_stamina_level >= 5 then
+    v_result := v_result || jsonb_build_object('stamina_5', jsonb_build_object(
+      'name', 'Железное menton',
+      'desc', 'Блок гасит на 10% больше урона',
+      'effect', 'block_bonus', 'value', 10
+    ));
+  end if;
+  if p_stamina_level >= 10 then
+    v_result := v_result || jsonb_build_object('stamina_10', jsonb_build_object(
+      'name', 'Вторая дыхание',
+      'desc', 'При HP <20% регенерация энергии в бою ×2',
+      'effect', 'low_hp_regen_mult', 'value', 2
+    ));
+  end if;
+  if p_stamina_level >= 15 then
+    v_result := v_result || jsonb_build_object('stamina_15', jsonb_build_object(
+      'name', 'Каменная стойка',
+      'desc', 'Максимальное здоровье +20, защита +5',
+      'effect', 'hp_bonus', 'value', 20
+    ));
+  end if;
+  if p_stamina_level >= 20 then
+    v_result := v_result || jsonb_build_object('stamina_20', jsonb_build_object(
+      'name', 'Неуязвимый',
+      'desc', 'Получаемый урон снижен на 15%',
+      'effect', 'damage_reduction', 'value', 15
+    ));
+  end if;
+
+  return v_result;
+end;
+$$;
+
+grant execute on function public.pvp_style_bonuses(integer, integer, integer) to anon, authenticated;
+
+
+-- ============================================================
 --  3. Кривая уровней
 -- ============================================================
 --
@@ -595,9 +716,10 @@ begin
   end if;
 
   -- Спорт-энергия списывается здесь, после всех проверок. Обновляем
-  -- и значение, и timestamp, чтобы восстановление считалось от текущего момента.
+  -- рассчитанное текущее значение (с учётом регена), а не хранимое,
+  -- иначе при низком хранимом значении и высоком регене уходим в минус.
   update profiles
-     set sport_energy = sport_energy - c_train_energy,
+     set sport_energy = v_energy - c_train_energy,
          sport_energy_updated_at = now()
    where id = p_player_id;
 
