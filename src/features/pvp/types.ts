@@ -97,6 +97,7 @@ const str = (v: unknown, fallback: string): string =>
 export function presentFight(raw: any, viewerSide?: Actor): PresentedFight {
   const snapA: FighterSnapshot | undefined = raw?.attacker_snapshot;
   const snapD: FighterSnapshot | undefined = raw?.defender_snapshot;
+  const log: FightEvent[] = Array.isArray(raw?.log) ? (raw.log as FightEvent[]) : [];
 
   const mySide: Actor =
     raw?.my_side === 'a' || raw?.my_side === 'd' ? raw.my_side : (viewerSide ?? 'a');
@@ -116,6 +117,15 @@ export function presentFight(raw: any, viewerSide?: Actor): PresentedFight {
         ? winner === mySide
         : false;
 
+  // ПОЧЕМУ ЗАПАСНОЙ ПУТЬ ЧЕРЕЗ ПОСЛЕДНИЙ КАДР
+  // Сервер отдаёт остаток здоровья не в каждом вызове: у него
+  // есть attacker_hp/defender_hp, но нет *_hp_max — максимум
+  // лежит только в снимках. Подставлять вместо отсутствующего
+  // поля максимум нельзя: получились бы две полные полоски,
+  // то есть бой выглядел бы как не начавшийся. Последний кадр
+  // журнала содержит то же самое здоровье, поэтому берём его.
+  const last = log.length ? log[log.length - 1] : null;
+
   return {
     mySide,
     won,
@@ -129,11 +139,11 @@ export function presentFight(raw: any, viewerSide?: Actor): PresentedFight {
       name: str(raw?.defender_name, snapD?.username ?? 'Боец'),
       icon: str(raw?.defender_icon, snapD?.weapon?.icon ?? '👊'),
     },
-    aHp: num(raw?.attacker_hp, aMax),
-    dHp: num(raw?.defender_hp, dMax),
+    aHp: num(raw?.attacker_hp, last ? last.a_hp : aMax),
+    dHp: num(raw?.defender_hp, last ? last.d_hp : dMax),
     aHpMax: aMax,
     dHpMax: dMax,
-    log: Array.isArray(raw?.log) ? (raw.log as FightEvent[]) : [],
+    log,
   };
 }
 

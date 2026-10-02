@@ -387,6 +387,13 @@ begin
     'won', v_won,
     'seed', v_result->'seed',
     'rounds', v_result->'rounds',
+    -- Остаток здоровья после боя. Без него защитник видел бы обе
+    -- полные полоски: pvp_fights хранит attacker_hp/defender_hp, а
+    -- pvp_queue_take их не отдавал, и presentFight подставлял вместо
+    -- них максимум. Максимумы берутся из снимков (max_hp) — своих
+    -- колонок у pvp_fights нет.
+    'attacker_hp', v_result->'attacker_hp',
+    'defender_hp', v_result->'defender_hp',
     'attacker_snapshot', v_result->'attacker_snapshot',
     'defender_snapshot', v_result->'defender_snapshot',
     'log', v_result->'log'
