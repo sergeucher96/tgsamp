@@ -59,9 +59,6 @@ export const useTravelStore = create<TravelState>((set, get) => ({
 
     if (!player || get().isMoving || !location) return;
 
-    const token = get().routeToken + 1;
-    set({ routeToken: token, isMoving: true });
-
     const speedCfg = activeVehicle ? VEHICLE_DATABASE[activeVehicle.model_id] : { speed: 150 };
     const moveSpeed = speedCfg?.speed || 150;
 
@@ -84,7 +81,18 @@ export const useTravelStore = create<TravelState>((set, get) => ({
     }
 
     const path = findShortestPath(startNodeId as NodeId, endNodeId as NodeId);
-    if (path.length === 0) return;
+    if (path.length === 0) {
+      // Пути нет — снимаем блокировку, иначе isMoving остался бы
+      // true и все маркеры на карте стали бы недоступны навсегда.
+      console.warn('[travel] Путь не найден', { startNodeId, endNodeId });
+      set({ isMoving: false, routeToken: get().routeToken });
+      return;
+    }
+
+    // Блокировку ставим только после того, как маршрут построен:
+    // isMoving отключает все кнопки локаций на карте.
+    const token = get().routeToken + 1;
+    set({ routeToken: token, isMoving: true });
 
     const routeCoordinates = path.map(id => waypoints[id]).filter(Boolean);
     const fullRoute = [{ x: player.pos_x, y: player.pos_y }, ...routeCoordinates, { x: location.x, y: location.y }];

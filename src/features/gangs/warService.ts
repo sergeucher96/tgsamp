@@ -271,120 +271,86 @@ export async function fetchPlayerWarPoints(gangId: string, rankName: string | nu
   return points > 0 ? points : num(row?.rank_number);
 }
 
-export interface StartWarContext {
-  territoryId: number;
-  gangId: string;
-  playerId: string;
-  rankNumber: number;
-  /** Сколько денег лежит в общем складе банды */
-  safeBalance: number;
-}
+/** Почему сервер отказал в объявлении войны. */
+export type DeclareWarBlock =
+  | 'unknown_player'
+  | 'unknown_territory'
+  | 'not_gang'
+  | 'no_rank'
+  | 'low_rank'
+  | 'territory_busy'
+  | 'own_territory'
+  | 'cooldown'
+  | 'not_enough_money'
+  | 'unavailable';
+
+const DECLARE_TEXTS: Record<DeclareWarBlock, string> = {
+  unknown_player: 'Профиль не найден.',
+  unknown_territory: 'Территория не найдена.',
+  not_gang: 'Воевать могут только уличные банды.',
+  no_rank: 'У вас не назначен ранг в банде.',
+  low_rank: `Объявить войну может участник с рангом ${WAR_CONFIG.canStartWarMinRank} или выше.`,
+  territory_busy: 'За эту территорию уже воюют. Дождитесь окончания текущей войны.',
+  own_territory: 'Это уже ваша территория.',
+  cooldown: 'По этой территории у банды недавно была война. Подождите окончания перезарядки.',
+  not_enough_money: 'В общем складе банды недостаточно средств на войну.',
+  unavailable: 'Не удалось объявить войну. Попробуйте позже.',
+};
 
 /**
  * Объявить войну за территорию.
  *
- * Проверки идут по порядку: ранг → деньги → кулдаун → свободна
- * ли территория. Каждая возвращает понятную причину, потому что
- * все они показываются игроку.
+ * Всё решение принимает база (declare_war): ранг, деньги,
+ * перезарядка и занятость территории. Отсюда приходят только
+ * id игрока и id территории — банду и ранг база берёт из
+ * org_members сама.
+ *
+ * Почему раньше было плохо. Проверки стояли здесь, в браузере,
+ * и каждая была отдельным запросом: посмотреть занятость →
+ * вставить строку войны → обновить зону. Два объявления,
+ * отправленные почти одновременно (два лидера, две вкладки), оба
+ * видели «занято 1 банду из maxGangsPerWar» и оба вставляли.
+ * Дальше на зоне было две строки WAR_ACTIVE: два значка ⚔️ в
+ * одной точке карты, интерфейс показывал счёт первой войны,
+ * а считалась вторая, и владельца зоны назначал тот, кто дольше
+ * грузил страницу. Плюс стоимость списывалась отдельным запросом
+ * уже после вставки, так что при нехватке денег война всё равно
+ * начиналась.
+ *
+ * Теперь проверка и вставка — одна транзакция с блокировкой
+ * строки территории, а поверх стоит частичный уникальный индекс
+ * idx_wars_single_active_per_territory. Обойти это из браузера
+ * нельзя: RLS на wars открыт, но индекс проверяется базой всегда.
  */
-export async function startWar(ctx: StartWarContext): Promise<StartWarResult> {
-  const { territoryId, gangId, playerId, rankNumber, safeBalance } = ctx;
+export async function startWar(playerId: string, territoryId: number): Promise<StartWarResult> {
+  const { data, error } = await supabase.rpc('declare_war', {
+    p_player_id: playerId,
+    p_territory_id: territoryId,
+  });
 
-  if (rankNumber < WAR_CONFIG.canStartWarMinRank) {
-    return {
-      ok: false,
-      reason: `Объявить войну может участник с рангом ${WAR_CONFIG.canStartWarMinRank} или выше. У вас ранг ${rankNumber || '—'}.`,
-    };
+  if (error || !data) {
+    console.error('Не удалось объявить войну:', error?.message ?? 'пустой ответ');
+    return { ok: false, reason: DECLARE_TEXTS.unavailable };
   }
 
-  if (safeBalance < WAR_CONFIG.cost) {
-    return {
-      ok: false,
-      reason: `Война стоит $${WAR_CONFIG.cost.toLocaleString()}. В общем складе банды $${safeBalance.toLocaleString()}.`,
-    };
+  const res = data as { ok?: boolean; blocked?: string; rank?: number };
+
+  if (!res.ok) {
+    const code = res.blocked as DeclareWarBlock | undefined;
+    const text = code && code in DECLARE_TEXTS ? DECLARE_TEXTS[code] : DECLARE_TEXTS.unavailable;
+
+    // Свой ранг игрок знает и сам, а вот точную сумму недоступных
+    // денег — нет: её считает сервер.
+    if (code === 'low_rank') {
+      return { ok: false, reason: `${text} У вас ранг ${res.rank ?? '—'}.` };
+    }
+    if (code === 'not_enough_money') {
+      return { ok: false, reason: `Война стоит $${WAR_CONFIG.cost.toLocaleString()}. ${DECLARE_TEXTS.not_enough_money}` };
+    }
+    return { ok: false, reason: text };
   }
 
-  // Кулдаун: та же банда, та же территория, недавняя война
-  const { data: recent } = await supabase
-    .from('wars')
-    .select('started_at')
-    .eq('territory_id', territoryId)
-    .eq('attacker_gang_id', gangId)
-    .gte('started_at', new Date(Date.now() - WAR_CONFIG.cooldownMs).toISOString())
-    .limit(1);
-
-  if (recent && recent.length > 0) {
-    return { ok: false, reason: 'По этой территории у банда недавно была война. Подождите окончания перезарядки.' };
-  }
-
-  // На одной территории одновременно воюет только WAR_CONFIG.maxGangsPerWar банд
-  const { data: active } = await supabase
-    .from('wars')
-    .select('attacker_gang_id, defender_gang_id')
-    .eq('territory_id', territoryId)
-    .eq('status', 'WAR_ACTIVE');
-
-  const busyGangs = new Set<string>();
-  for (const w of (active ?? []) as { attacker_gang_id: string; defender_gang_id: string | null }[]) {
-    busyGangs.add(w.attacker_gang_id);
-    if (w.defender_gang_id) busyGangs.add(w.defender_gang_id);
-  }
-
-  if (busyGangs.size >= WAR_CONFIG.maxGangsPerWar) {
-    return { ok: false, reason: 'За эту территорию уже воюют. Дождитесь окончания текущей войны.' };
-  }
-
-  const { data: territory } = await supabase
-    .from('territories')
-    .select('id, name, owner_gang_id')
-    .eq('id', territoryId)
-    .maybeSingle();
-
-  if (!territory) {
-    return { ok: false, reason: 'Территория не найдена.' };
-  }
-
-  const owner = (territory as { owner_gang_id: string | null }).owner_gang_id;
-
-  // Свою территорию атаковать бессмысленно
-  if (owner === gangId) {
-    return { ok: false, reason: 'Это уже ваша территория.' };
-  }
-
-  // Если территория свободна, атакующий становится и защитником:
-  // без защитника очки начислять некому и война выродится в
-  // формальность. Тогда победа при ничьей не отменяет захват.
-  const defenderGangId = owner ?? gangId;
-  const now = new Date();
-  const endsAt = new Date(now.getTime() + WAR_CONFIG.durationMs);
-
-  const { data: war, error } = await supabase
-    .from('wars')
-    .insert({
-      territory_id: territoryId,
-      attacker_gang_id: gangId,
-      defender_gang_id: defenderGangId,
-      status: 'WAR_ACTIVE',
-      started_at: now.toISOString(),
-      ends_at: endsAt.toISOString(),
-      started_by: playerId,
-      attacker_score: 0,
-      defender_score: 0,
-    })
-    .select()
-    .single();
-
-  if (error || !war) {
-    return { ok: false, reason: `Не удалось начать войну: ${error?.message ?? 'неизвестная ошибка'}` };
-  }
-
-  // Территория на время войны становится оспариваемой
-  await supabase
-    .from('territories')
-    .update({ status: 'WAR_ACTIVE' })
-    .eq('id', territoryId);
-
-  return { ok: true, war: war as War };
+  return { ok: true };
 }
 
 /**
@@ -449,7 +415,15 @@ export async function leaveWar(warId: number, playerId: string): Promise<JoinWar
   return { ok: true };
 }
 
-/** Закрывает все открытые сессии — вызывается при подведении итогов. */
+/**
+ * Закрывает все открытые сессии войны.
+ *
+ * Сессии закрывает база в settle_war — до подсчёта очков, иначе
+ * открытая сессия посчиталась бы по now(), а закрытая по
+ * left_at, и очки двух банд считались бы по разным моментам.
+ * Эта функция осталась для выхода из участия вручную (leaveWar)
+ * и как запасной путь, если RPC недоступен.
+ */
 export async function closeOpenSessions(warId: number): Promise<void> {
   await supabase
     .from('war_sessions')
@@ -468,109 +442,60 @@ export interface SettleWarResult {
 /**
  * Подвести итоги войны и отдать территорию победителю.
  *
- * Закрытие идёт условным UPDATE по статусу: из WAR_ACTIVE в ENDED
- * переходит ровно одна попытка, остальные видят 0 строк и выходят.
- * Это защита от двойного расчёта, когда итоги подводят несколько
- * клиентов одновременно.
+ * Теперь это делает база (settle_war): подсчёт очков, закрытие
+ * сессий, смена владельца зоны и влияние — одна транзакция.
+ *
+ * Что было не так в клиентской версии:
+ *
+ *  * Итоги можно было подвести досрочно. ends_at присылал сам
+ *    клиент вместе с войной, и проверка isWarFinished тоже
+ *    выполнялась на его часах. Вызвав settleWar сразу после
+ *    объявления, можно было получить победу с нулём очков.
+ *    Теперь not_finished проверяет серверное now() против
+ *    ends_at, который тоже записала база.
+ *
+ *  * Владельца зоны назначал последний по времени запрос. При
+ *    двух войнах за одну территорию исход определяло то, кто дольше
+ *    грузил страницу. Теперь запись войны защищена частичным
+ *    уникальным индексом, а settle_war берёт строку войны на
+ *    FOR UPDATE: двое подводящие итоги разом не могут посчитать
+ *    очки по разным моментам.
+ *
+ *  * already_settled — нормальный исход, а не ошибка: тик у
+ *    каждого клиента свой, и первым до финала дойдёт один.
  */
-export async function settleWar(war: War): Promise<SettleWarResult> {
-  if (war.status !== 'WAR_ACTIVE') {
-    return { ok: false, winnerGangId: null, isTie: false, reason: 'Война не активна' };
+export async function settleWar(warId: number): Promise<SettleWarResult> {
+  const { data, error } = await supabase.rpc('settle_war', { p_war_id: warId });
+
+  if (error || !data) {
+    console.error(`Не удалось подвести итоги войны #${warId}:`, error?.message ?? 'пустой ответ');
+    return { ok: false, winnerGangId: null, isTie: false, reason: error?.message ?? 'нет ответа' };
   }
 
-  await closeOpenSessions(war.id);
+  const res = data as {
+    ok?: boolean;
+    blocked?: string;
+    winner_gang_id?: string | null;
+    is_tie?: boolean;
+  };
 
-  const scores = await fetchWarScores(war);
-  const winnerGangId = scores.leader;
-
-  const { data: closed, error } = await supabase
-    .from('wars')
-    .update({
-      status: 'ENDED',
-      winner_gang_id: winnerGangId,
-      attacker_score: scores.attacker?.score ?? 0,
-      defender_score: scores.defender?.score ?? 0,
-      ended_at: new Date().toISOString(),
-    })
-    .eq('id', war.id)
-    .eq('status', 'WAR_ACTIVE')
-    .select();
-
-  if (error) {
-    return { ok: false, winnerGangId: null, isTie: false, reason: error.message };
+  // already_settled и not_finished — не сбой. В первом случае
+  // итоги уже подвёл другой клиент, во втором время ещё есть.
+  // Оба случая сообщаем успехом с тем победителем, что вернула
+  // база, чтобы показать игроку верный итог.
+  if (!res.ok) {
+    const settled = res.blocked === 'already_settled' || res.blocked === 'not_finished';
+    return {
+      ok: settled,
+      winnerGangId: res.winner_gang_id ?? null,
+      isTie: res.is_tie ?? false,
+      reason: settled ? res.blocked : res.blocked ?? 'неизвестная ошибка',
+    };
   }
 
-  // Никто не успел закрыть войну — значит её уже рассчитали.
-  if (!closed || closed.length === 0) {
-    return { ok: false, winnerGangId: null, isTie: false, reason: 'Война уже рассчитана' };
-  }
-
-  if (!winnerGangId) {
-    return { ok: true, winnerGangId: null, isTie: false, reason: 'Ничья, территория не меняется' };
-  }
-
-  const { data: territory } = await supabase
-    .from('territories')
-    .select('id, name, owner_gang_id, control')
-    .eq('id', war.territory_id)
-    .maybeSingle();
-
-  const previousOwner = (territory as { owner_gang_id: string | null } | null)?.owner_gang_id ?? null;
-
-  await supabase
-    .from('territories')
-    .update({
-      owner_gang_id: winnerGangId,
-      status: 'CONTROLLED',
-      // Контроль отражает разрыв по очкам: чем убедительнее
-      // победа, тем прочнее захват.
-      control: controlFromScores(scores),
-      activity: 50,
-    })
-    .eq('id', war.territory_id);
-
-  // Влияние: победитель прибавляет, проигравший теряет
-  await addInfluenceSafe(war.territory_id, winnerGangId, 30);
-  if (previousOwner && previousOwner !== winnerGangId) {
-    await addInfluenceSafe(war.territory_id, previousOwner, -20);
-  }
-
-  return { ok: true, winnerGangId, isTie: scores.isTie };
-}
-
-/** Контроль зоны по разрыву очков: 50 при ничьей, до 100 при полном разгоне. */
-function controlFromScores(scores: WarScores): number {
-  const a = scores.attacker?.score ?? 0;
-  const d = scores.defender?.score ?? 0;
-  if (a === 0 && d === 0) return 50;
-  const total = a + d;
-  if (total === 0) return 50;
-  const margin = Math.abs(a - d) / total; // 0…1
-  return Math.round(50 + margin * 50);
-}
-
-/** Влияние при подведении итогов пишем напрямую, без счётчика действий. */
-async function addInfluenceSafe(territoryId: number, gangId: string, delta: number): Promise<void> {
-  const { data } = await supabase
-    .from('territory_influence')
-    .select('id, influence')
-    .eq('territory_id', territoryId)
-    .eq('gang_id', gangId)
-    .maybeSingle();
-
-  if (!data) {
-    if (delta <= 0) return;
-    await supabase.from('territory_influence').insert({
-      territory_id: territoryId,
-      gang_id: gangId,
-      influence: Math.min(100, delta),
-    });
-    return;
-  }
-
-  const row = data as { id: number; influence: number };
-  await supabase
-    .from('territory_influence')
-    .update({ influence: Math.max(0, Math.min(100, row.influence + delta)) })
-    .eq('id', row.id);
+  return {
+    ok: true,
+    winnerGangId: res.winner_gang_id ?? null,
+    isTie: res.is_tie ?? false,
+  };
 }

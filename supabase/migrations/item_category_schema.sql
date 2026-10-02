@@ -368,7 +368,7 @@ insert into item_categories (name, key, description, icon) values
   ('Ингредиенты', 'ingredient', 'Сырые продукты для готовки.', '🧅'),
   ('Одежда', 'clothing', 'Предметы одежды и аксессуары.', '👕'),
   ('Оружие', 'weapon', 'Оружие и боеприпасы.', '🔫'),
-  ('Топливо', 'fuel', 'Топливные материалы для транспорта.', '�'),
+  ('Топливо', 'fuel', 'Топливные материалы для транспорта.', '⛽'),
   ('Инструменты', 'tool', 'Инструменты для добычи и ремонта.', '🔧'),
   ('Автозапчасти', 'auto_part', 'Запчасти и компоненты для транспорта.', '🔩'),
   ('Ресурсы', 'resource', 'Сырьё и базовые материалы.', '🪨'),
@@ -463,7 +463,7 @@ ON CONFLICT (category_id, tag_id) DO NOTHING;
 -- ==========================================
 insert into items_db (item_key, name, description, icon, price, sell_price, stackable, max_stack, properties, effects, tags) values
   ('burger', 'Бургер', 'Вкусный бургер. Восстанавливает 25 энергии.', '🍔', 500, 250, true, 5, '{"weight": 0.3, "max_stack": 5, "shelf_life": 12}', '[{"effect_key": "heal_energy", "value": 25}]', '{food, consumable, prepared_food, fast_food}'),
-  ('pizza', 'Пицца', 'Горячая пицца. Восстанавливает 40 энергии.', '�', 800, 400, true, 5, '{"weight": 0.5, "max_stack": 5, "shelf_life": 8}', '[{"effect_key": "heal_energy", "value": 40}]', '{food, consumable, prepared_food}'),
+  ('pizza', 'Пицца', 'Горячая пицца. Восстанавливает 40 энергии.', '🍕', 800, 400, true, 5, '{"weight": 0.5, "max_stack": 5, "shelf_life": 8}', '[{"effect_key": "heal_energy", "value": 40}]', '{food, consumable, prepared_food}'),
   ('apple', 'Яблоко', 'Свежее яблоко. Восстанавливает 8 энергии.', '🍎', 50, 25, true, 10, '{"weight": 0.15, "max_stack": 10, "shelf_life": 72}', '[{"effect_key": "heal_energy", "value": 8}]', '{food, consumable, healthy}'),
   ('phone', 'Телефон', 'Смартфон для связи.', '📱', 1500, 700, false, 1, '{"weight": 0.2}', '[]', '{item}'),
   ('cap_basic', 'Бейсболка', 'Простая бейсболка.', '🧢', 800, 400, false, 1, '{"weight": 0.05}', '[]', '{clothing}'),

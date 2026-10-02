@@ -8,6 +8,10 @@
     "build": "vite build",
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
+    "check:clothing": "node scripts/checkClothingStats.mjs",
+    "check:pvp": "node scripts/checkPvpTables.mjs",
+    "check:fighter": "node scripts/checkFighterSnapshot.mjs",
+    "check:pvp-rpc": "node scripts/probePvpRpc.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -27,6 +27,13 @@ export function findShortestPath(startNodeId: NodeId, endNodeId: NodeId): string
         return [];
     }
 
+    // Старт и финиш — один узел. Многие локации делят одну точку
+    // въезда (например, банк, больница и бандовский логово — узел 212),
+    // поэтому сюда попадает переход между соседними объектами.
+    // Маршрут нужен из одного узла: иначе вызывающий код решит, что
+    // пути нет, и переход не произойдёт вовсе.
+    if (sId === eId) return [sId];
+
     const nodes = Object.keys(waypoints);
     const distances: DistanceMap = {};
     const previous: PreviousMap = {};

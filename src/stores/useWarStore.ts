@@ -25,7 +25,7 @@ import {
   type War,
   type WarScores,
 } from '../features/gangs/warService';
-import { GANGS, WAR_CONFIG } from '../features/gangs/data/organizationsConfig';
+import { GANGS } from '../features/gangs/data/organizationsConfig';
 import { usePlayerStore } from './usePlayerStore';
 import { useOrganizationStore } from './useOrganizationStore';
 import { useTerritoryStore } from './useTerritoryStore';
@@ -99,7 +99,7 @@ export const useWarStore = create<WarState>((set, get) => ({
     for (const war of get().wars) {
       if (war.status !== 'WAR_ACTIVE' || !isWarFinished(war, now)) continue;
 
-      const result = await settleWar(war);
+      const result = await settleWar(war.id);
       if (result.ok) {
         set({
           lastResult: {
@@ -110,8 +110,9 @@ export const useWarStore = create<WarState>((set, get) => ({
           },
         });
       } else {
-        // Иначе война навсегда остаётся WAR_ACTIVE, тикер бьёт по ней
-        // каждый такт, а в консоли видны только сырые коды ответа.
+        // Иначе война навсегда остаётся WAR_ACTIVE, а с ней
+        // территория — занятой по уникальному индексу: воевать за
+        // неё будет нельзя никому. В лог идёт код отказа базы.
         console.error(`Не удалось подвести итоги войны #${war.id}:`, result.reason);
       }
     }
@@ -145,27 +146,20 @@ export const useWarStore = create<WarState>((set, get) => ({
 
     set({ isBusy: true });
     try {
-      const [rankNumber, balance] = await Promise.all([
-        get().refreshMyRank(),
-        useOrganizationStore.getState().getBalance(gangId),
-      ]);
+      // Ранг нужен только чтобы показать его в интерфейсе: сама
+      // проверка «может ли этот игрок объявить войну» — в declare_war,
+      // по org_members, на сервере.
+      await get().refreshMyRank();
 
-      const result = await startWar({
-        territoryId,
-        gangId,
-        playerId: player.id,
-        rankNumber,
-        safeBalance: balance,
-      });
-
+      // Стоимость войны тоже списывает declare_war, в той же
+      // транзакции, что и создаёт войну. Раньше клиент платил
+      // отдельным запросом после вставки, и при нехватке денег
+      // война всё равно начиналась.
+      const result = await startWar(player.id, territoryId);
       if (!result.ok) return { ok: false, reason: result.reason };
 
-      // Деньги списываем только после того, как война реально создана,
-      // иначе при отказе базы деньги сгорели бы впустую.
-      const paid = await useOrganizationStore.getState().deductBalance(gangId, WAR_CONFIG.cost);
-      if (!paid) {
-        return { ok: false, reason: 'Война началась, но списать её стоимость не удалось' };
-      }
+      // Баланс в сторе organizations устарел: списание прошло в базе.
+      useOrganizationStore.getState().fetchOrganizations();
 
       await get().fetchWars();
       return { ok: true };

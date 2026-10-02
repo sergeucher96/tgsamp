@@ -26,6 +26,10 @@ const GangRanksEditor = IS_DEV ? lazy(() => import('../features/gangs/GangRanksE
 const ItemCatalog = IS_DEV ? lazy(() => import('../features/market/ItemCatalog')) : null;
 const RecipeEditorHub = IS_DEV ? lazy(() => import('../features/market/RecipeEditorHub')) : null;
 const LocationIconEditor = IS_DEV ? lazy(() => import('../game/locations/LocationIconEditor')) : null;
+const PvpTestMenu = IS_DEV ? lazy(() => import('../features/pvp/PvpTestMenu')) : null;
+// Бокс доступен всем игрокам, поэтому не под IS_DEV: очередь PvP —
+// игровая функция, а не инструмент разработчика.
+const BoxView = lazy(() => import('../features/pvp/BoxView'));
 
 // Views
 import MapView from '../game/locations/MapView';
@@ -71,6 +75,8 @@ function App() {
   const [showBusinessProducts, setShowBusinessProducts] = useState(false);
   const [showCategoryEditor, setShowCategoryEditor] = useState(false);
   const [showGangRanksEditor, setShowGangRanksEditor] = useState(false);
+  const [showPvpTestMenu, setShowPvpTestMenu] = useState(false);
+  const [showBox, setShowBox] = useState(false);
   const [showAllItems, setShowAllItems] = useState(false);
   const [showRecipeEditor, setShowRecipeEditor] = useState(false);
   const [showLocationIconEditor, setShowLocationIconEditor] = useState(false);
@@ -275,7 +281,7 @@ function App() {
         </Suspense>
       )}
 
-      {/* � Модальное окно 3D Фермы SA-MP (НА ВЕСЬ ЭКРАН БЕЗ ПОЛЕЙ И РАМОК) */}
+      {/* 🚜 Модальное окно 3D Фермы SA-MP (НА ВЕСЬ ЭКРАН БЕЗ ПОЛЕЙ И РАМОК) */}
       {showFarmGame && (
         <div className="fixed inset-0 z-[100] w-full h-full bg-black overflow-hidden">
           <Suspense fallback={<div className="flex items-center justify-center w-full h-full text-white"><Loader2 className="animate-spin mr-2" /> Загрузка 3D сцены...</div>}>
@@ -328,6 +334,16 @@ function App() {
       {IS_DEV && GangRanksEditor && showGangRanksEditor && (
         <Suspense fallback={null}>
           <GangRanksEditor onClose={() => setShowGangRanksEditor(false)} />
+        </Suspense>
+      )}
+      {IS_DEV && PvpTestMenu && showPvpTestMenu && (
+        <Suspense fallback={null}>
+          <PvpTestMenu onClose={() => setShowPvpTestMenu(false)} />
+        </Suspense>
+      )}
+      {showBox && (
+        <Suspense fallback={null}>
+          <BoxView onClose={() => setShowBox(false)} />
         </Suspense>
       )}
       {IS_DEV && ItemCatalog && showAllItems && (
@@ -444,6 +460,15 @@ function App() {
                 🔧
               </button>
 
+              {/* 🥊 КНОПКА БОКСА — очередь PvP */}
+              <button
+                onClick={() => setShowBox(true)}
+                className="w-14 h-14 rounded-2xl flex items-center justify-center text-xl transition-all duration-300 gta-button border border-rose-500/50 text-rose-300 shadow-[0_0_20px_rgba(244,63,94,0.25)] active:scale-105 hover:bg-rose-950/30 shrink-0"
+                title="Бокс — PvP"
+              >
+                🥊
+              </button>
+
               <button
                 onClick={() => activeVehicle && setShowVehicleInfo(true)}
                 disabled={!activeVehicle}
@@ -529,6 +554,7 @@ function App() {
             <NavButton active={showAllItems} onClick={(e) => { e.stopPropagation(); setShowAllItems(true); setShowAdminPanel(false); }} icon="📋" title="Все предметы" />
             <NavButton active={showRecipeEditor} onClick={(e) => { e.stopPropagation(); setShowRecipeEditor(true); setShowAdminPanel(false); }} icon="🍳" title="Рецепты" />
             <NavButton active={showLocationIconEditor} onClick={(e) => { e.stopPropagation(); setShowLocationIconEditor(true); setShowAdminPanel(false); }} icon="📍" title="Иконки локаций" />
+            <NavButton active={showPvpTestMenu} onClick={(e) => { e.stopPropagation(); setShowPvpTestMenu(true); setShowAdminPanel(false); }} icon="⚔️" title="Тест боёв" />
           </div>
         )}
       </div>

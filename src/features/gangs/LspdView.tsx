@@ -478,7 +478,7 @@ export default function LspdView({ onClose }: LspdViewProps) {
               <div className="text-xs text-slate-500 space-y-1">
                 <p>🔍 Список розыска</p>
                 <p>📁 Дела и расследования</p>
-                <p>�️ Internal Affairs</p>
+                <p>⚖️ Internal Affairs</p>
               </div>
             </div>
           </>
